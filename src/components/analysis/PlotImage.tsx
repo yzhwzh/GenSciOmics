@@ -28,12 +28,12 @@ export default function PlotImage({
   return (
     <div className="relative flex items-center justify-center w-full h-full">
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
-          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
+          <Loader2 className="w-5 h-5 text-brand animate-spin" />
         </div>
       )}
       {err && (
-        <div className="text-sm text-gray-400 p-4 text-center">{err}</div>
+        <div className="text-sm text-text-muted p-4 text-center">{err}</div>
       )}
       {src && (
         <ZoomableImage src={src} alt={`${plotType} plot`} className="max-w-full max-h-full object-contain" />

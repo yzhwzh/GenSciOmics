@@ -35,9 +35,9 @@ export default function UpdateLog() {
   if (loading) {
     return (
       <section>
-        <h2 className="text-base font-semibold text-brand-dark mb-3">Update Log</h2>
-        <div className="bg-white rounded-xl border border-brand-border shadow-sm p-6 text-center">
-          <Loader2 className="w-5 h-5 text-gray-300 mx-auto animate-spin" />
+        <h2 className="text-[15px] font-semibold text-text-primary mb-3">Update Log</h2>
+        <div className="bg-surface rounded-xl shadow-card p-6 text-center">
+          <Loader2 className="w-5 h-5 text-text-muted mx-auto animate-spin" />
         </div>
       </section>
     )
@@ -45,17 +45,17 @@ export default function UpdateLog() {
 
   return (
     <section>
-      <h2 className="text-base font-semibold text-brand-dark mb-3">Update Log</h2>
-      <div className="bg-white rounded-xl border border-brand-border shadow-sm divide-y divide-gray-100 max-h-[320px] overflow-y-auto">
+      <h2 className="text-[15px] font-semibold text-text-primary mb-3">Update Log</h2>
+      <div className="bg-surface rounded-xl shadow-card divide-y divide-border-light max-h-[320px] overflow-y-auto">
         {logs.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-gray-400">
+          <div className="px-4 py-6 text-center text-xs text-text-muted">
             No events yet
           </div>
         ) : (
           logs.map((entry, i) => (
             <div
               key={`${entry.time}-${entry.type}-${i}`}
-              className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-gray-50 transition-colors"
+              className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-surface-raised transition-colors"
             >
               <span className="text-sm mt-0.5 shrink-0">
                 {TYPE_ICONS[entry.type] || ''}
@@ -65,17 +65,17 @@ export default function UpdateLog() {
                   <span className="text-xs text-brand font-medium whitespace-nowrap">
                     {entry.time}
                   </span>
-                  <span className="text-sm text-gray-700 truncate">
+                  <span className="text-sm text-text-primary truncate">
                     {entry.message}
                   </span>
                 </div>
                 {entry.detail && (
-                  <p className="text-[11px] text-gray-400 truncate mt-0.5">
+                  <p className="text-[11px] text-text-muted truncate mt-0.5">
                     {entry.detail}
                   </p>
                 )}
               </div>
-              <ArrowUpRight className="w-3 h-3 text-gray-200 mt-1 shrink-0" />
+              <ArrowUpRight className="w-3 h-3 text-text-muted mt-1 shrink-0" />
             </div>
           ))
         )}

@@ -3,11 +3,86 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
+  /* ===== Brand Colors ===== */
   --color-brand: #3B44AC;
   --color-brand-dark: #323A62;
   --color-brand-light: #8093DC;
   --color-brand-gold: #FFB548;
-  --color-brand-bg: #f8f9fc;
-  --color-brand-border: #e8eaf0;
+  --color-brand-gold-light: #FFD699;
+  --color-brand-bg: #f6f7fb;
+  --color-brand-border: #e3e6f0;
+  --color-brand-accent: #FFB548;
+
+  /* ===== Text Colors ===== */
+  --color-text-primary: #1a1d2e;
+  --color-text-secondary: #5a5f7a;
+  --color-text-muted: #9399b4;
+  --color-text-inverse: #ffffff;
+
+  /* ===== Surface Colors ===== */
+  --color-surface: #ffffff;
+  --color-surface-raised: #f8f9fc;
+  --color-surface-muted: #f3f4f6;
+
+  /* ===== Border Colors ===== */
+  --color-border-light: #e8ecf2;
+  --color-border-medium: #d4d8e0;
+
+  /* ===== Status Colors ===== */
+  --color-success: #2ea056;
+  --color-success-bg: #f0fdf4;
+  --color-warning: #f0a030;
+  --color-warning-bg: #fff7ed;
+  --color-error: #d94040;
+  --color-error-bg: #fef2f2;
+
+  /* ===== Typography ===== */
   --font-family-sans: 'Montserrat', system-ui, sans-serif;
+  --font-size-caption: 0.6875rem;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-base: 0.9375rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.65;
+
+  /* ===== Spacing ===== */
+  --spacing-section: 1.5rem;
+  --spacing-card: 1.25rem;
+  --spacing-item: 0.75rem;
+  --spacing-tight: 0.5rem;
+
+  /* ===== Border Radius ===== */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* ===== Shadows ===== */
+  --shadow-card: 0 0 0 1px rgba(26,29,46,0.04), 0 1px 2px rgba(26,29,46,0.04);
+  --shadow-raised: 0 0 0 1px rgba(26,29,46,0.04), 0 2px 8px rgba(26,29,46,0.06);
+  --shadow-overlay: 0 0 0 1px rgba(26,29,46,0.04), 0 8px 24px rgba(26,29,46,0.10);
+}
+
+/* Cell Field — single-cell scatter background pattern */
+@utility bg-cell-field {
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(59,68,172,0.06) 1px, transparent 1px),
+    radial-gradient(circle at 85% 35%, rgba(59,68,172,0.04) 1.5px, transparent 1.5px),
+    radial-gradient(circle at 50% 65%, rgba(255,181,72,0.05) 1px, transparent 1px),
+    radial-gradient(circle at 75% 55%, rgba(128,147,220,0.05) 0.8px, transparent 0.8px);
+  background-size: 200px 200px, 240px 240px, 180px 180px, 220px 220px;
+}
+
+/* Pulse dot animation */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }

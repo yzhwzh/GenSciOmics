@@ -287,6 +287,11 @@ export async function sendLiteratureMessageStreaming(
   }
 }
 
+export async function fetchCompositionPlot(realPath: string, gene: string, palette = 'default', gene2 = ''): Promise<PlotResult> {
+  const g2 = gene2 ? `&gene2=${encodeURIComponent(gene2)}` : ''
+  return apiFetch<PlotResult>(`/api/composition-plot?real_path=${encodeURIComponent(realPath)}&gene=${encodeURIComponent(gene)}&palette=${palette}${g2}`)
+}
+
 export async function fetchUmapRatioPlots(
   realPath: string,
   groupVar = 'Group',

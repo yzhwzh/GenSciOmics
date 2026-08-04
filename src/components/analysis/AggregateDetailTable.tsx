@@ -51,8 +51,8 @@ export default function AggregateDetailTable({
       .finally(() => setLoading(false))
   }, [realPath, gene, conditionCol])
 
-  if (loading) return <div className="flex items-center justify-center py-4 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
-  if (!data?.rows.length) return <div className="text-xs text-gray-400 py-4 text-center">No data</div>
+  if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
+  if (!data?.rows.length) return <div className="text-xs text-text-muted py-4 text-center">No data</div>
 
   const { rows, groups } = data
   const activeRows = filteredRows as unknown as AggregateRow[]
@@ -110,22 +110,22 @@ export default function AggregateDetailTable({
         <div className="flex items-center gap-2">
           {hasActiveFilters && (
             <>
-              <button onClick={clearAllFilters} className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+              <button onClick={clearAllFilters} className="inline-flex items-center gap-1 text-[10px] text-brand hover:text-brand-dark">
                 <XCircle className="w-3 h-3" />
                 Clear filters
               </button>
-              <span className="text-[10px] text-gray-400">
+              <span className="text-[10px] text-text-muted">
                 {cellTypes.length} cell types, {genes.length} genes
               </span>
             </>
           )}
         </div>
-        <button onClick={downloadCSV} className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline font-medium">Download CSV</button>
+        <button onClick={downloadCSV} className="text-[10px] text-brand hover:text-brand-dark hover:underline font-medium">Download CSV</button>
       </div>
       <table className="w-full text-[10px] border-collapse">
         <thead>
-          <tr className="bg-gray-100 text-gray-600 sticky top-0 z-10">
-            <th colSpan={1} className="px-1.5 py-0.5 text-left font-semibold border-r border-gray-300">
+          <tr className="bg-surface-muted text-text-secondary sticky top-0 z-10">
+            <th colSpan={1} className="px-1.5 py-0.5 text-left font-semibold border-r border-border-medium">
               <FilterDropdown
                 label="Gene"
                 values={getUniqueValues('Gene')}
@@ -137,7 +137,7 @@ export default function AggregateDetailTable({
                 portal
               />
             </th>
-            <th colSpan={1} className="px-1.5 py-0.5 text-left font-semibold border-r border-gray-300">
+            <th colSpan={1} className="px-1.5 py-0.5 text-left font-semibold border-r border-border-medium">
               <FilterDropdown
                 label="CellType"
                 values={getUniqueValues('CellType')}
@@ -150,20 +150,20 @@ export default function AggregateDetailTable({
               />
             </th>
             {groups.length === 0 ? (
-              <th colSpan={STAT_COLS.length} className="px-1.5 py-0.5 text-center font-semibold border-r border-gray-300 bg-gray-100 text-gray-400 text-[9px]">All Cells</th>
+              <th colSpan={STAT_COLS.length} className="px-1.5 py-0.5 text-center font-semibold border-r border-border-medium bg-gray-100 text-text-muted text-[9px]">All Cells</th>
             ) : groups.map(g => (
-              <th key={g} colSpan={STAT_COLS.length} className="px-1.5 py-0.5 text-center font-semibold border-r border-gray-300 bg-gray-100">{g}</th>
+              <th key={g} colSpan={STAT_COLS.length} className="px-1.5 py-0.5 text-center font-semibold border-r border-border-medium bg-gray-100">{g}</th>
             ))}
           </tr>
-          <tr className="bg-gray-50 text-gray-500 sticky top-[22px] z-10">
-            <th className="px-1.5 py-0.5 text-left font-medium border-r border-gray-200">&nbsp;</th>
-            <th className="px-1.5 py-0.5 text-left font-medium border-r border-gray-200">&nbsp;</th>
+          <tr className="bg-surface-raised text-text-muted sticky top-[22px] z-10">
+            <th className="px-1.5 py-0.5 text-left font-medium border-r border-border-light">&nbsp;</th>
+            <th className="px-1.5 py-0.5 text-left font-medium border-r border-border-light">&nbsp;</th>
             {groups.length === 0 ? (
               STAT_COLS_SHORT.map((label, si) => (
-                <th key={si} className="px-1 py-0.5 text-right font-medium whitespace-nowrap border-r border-gray-200 last:border-r-0">{label}</th>
+                <th key={si} className="px-1 py-0.5 text-right font-medium whitespace-nowrap border-r border-border-light last:border-r-0">{label}</th>
               ))
             ) : groups.map(g => STAT_COLS_SHORT.map((label, si) => (
-              <th key={`${g}|${si}`} className="px-1 py-0.5 text-right font-medium whitespace-nowrap border-r border-gray-200 last:border-r-0">{label}</th>
+              <th key={`${g}|${si}`} className="px-1 py-0.5 text-right font-medium whitespace-nowrap border-r border-border-light last:border-r-0">{label}</th>
             )))}
           </tr>
         </thead>
@@ -171,8 +171,8 @@ export default function AggregateDetailTable({
           {cellTypes.map(ct =>
             genes.map(gn => {
               const cells = COL_HEADERS.map(ch => {
-                if (ch.key === '_gene') return <td key="g" className="px-1.5 py-0.5 text-gray-700 border-r border-gray-100 font-medium">{gn}</td>
-                if (ch.key === '_ct') return <td key="ct" className="px-1.5 py-0.5 text-gray-700 border-r border-gray-100">{ct}</td>
+                if (ch.key === '_gene') return <td key="g" className="px-1.5 py-0.5 text-text-secondary border-r border-border-light font-medium">{gn}</td>
+                if (ch.key === '_ct') return <td key="ct" className="px-1.5 py-0.5 text-text-secondary border-r border-border-light">{ct}</td>
                 const parts = ch.key.split('|')
                 const statKey = parts[0]
                 const grp = parts.length > 1 ? parts[1] : ''
@@ -185,9 +185,9 @@ export default function AggregateDetailTable({
                     : typeof v === 'number' && (statKey === 'CellTypeRatio' || statKey === 'GeneExpressionPct') ? v.toFixed(2)
                     : v ?? ''
                 }
-                return <td key={ch.key} className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{val}</td>
+                return <td key={ch.key} className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{val}</td>
               })
-              return <tr key={`${gn}|${ct}`} className="border-t border-gray-100 hover:bg-gray-50">{cells}</tr>
+              return <tr key={`${gn}|${ct}`} className="border-t border-border-light hover:bg-surface-raised">{cells}</tr>
             })
           )}
         </tbody>

@@ -21,9 +21,9 @@ export default class ErrorBoundary extends Component<Props, State> {
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
             <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">Something went wrong</p>
+            <p className="text-sm text-text-muted">Something went wrong</p>
             <button onClick={() => this.setState({ hasError: false })}
-              className="mt-2 text-xs text-blue-600 hover:underline">
+              className="mt-2 text-xs text-brand hover:underline">
               Try again
             </button>
           </div>

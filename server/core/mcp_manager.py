@@ -128,6 +128,7 @@ class MCPServerConnection:
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json, text/event-stream',
+            'User-Agent': 'GenSci-MCP/1.0',
         }
         api_key = self.config.get('api_key', '')
         if api_key:

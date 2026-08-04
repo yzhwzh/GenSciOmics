@@ -170,10 +170,10 @@ export default function UmapPlot({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 shrink-0">
-        <span className="text-[11px] font-medium text-gray-500">Color by</span>
+      <div className="flex items-center gap-2 px-3 py-1 border-b border-border-light shrink-0">
+        <span className="text-[11px] font-medium text-text-muted">Color by</span>
         <select value={colorBy} onChange={(e) => onColorByChange(e.target.value)}
-          className="text-xs border border-gray-200 rounded px-2 py-0.5 bg-white text-gray-700 outline-none focus:border-blue-400">
+          className="text-xs border border-border-light rounded px-2 py-0.5 bg-surface text-text-secondary outline-none focus:border-blue-400">
           <option value="CellType">CellType</option>
           <option value="Patient">Patient</option>
           <option value="Sample">Sample</option>
@@ -182,21 +182,21 @@ export default function UmapPlot({
         {colorBy === 'Gene' && (
           <div className="flex items-center gap-1">
             <input type="text" value={geneName} onChange={(e) => onGeneNameChange(e.target.value)}
-              placeholder="Gene1" className="text-xs border border-gray-200 rounded px-2 py-0.5 bg-white text-gray-700 outline-none focus:border-blue-400 w-[72px]" />
+              placeholder="Gene1" className="text-xs border border-border-light rounded px-2 py-0.5 bg-surface text-text-secondary outline-none focus:border-blue-400 w-[72px]" />
             <input type="text" value={geneName2} onChange={(e) => onGeneName2Change(e.target.value)}
-              placeholder="Gene2" className="text-xs border border-gray-200 rounded px-2 py-0.5 bg-white text-gray-700 outline-none focus:border-blue-400 w-[72px]" />
+              placeholder="Gene2" className="text-xs border border-border-light rounded px-2 py-0.5 bg-surface text-text-secondary outline-none focus:border-blue-400 w-[72px]" />
           </div>
         )}
         {data?.sampled && data.n_cells > 0 && (
-          <span className="text-[10px] text-gray-400 ml-auto" title={`Dataset has ${data.n_cells.toLocaleString()} cells — showing 1 out of every ${data.sample_step} points for performance`}>
+          <span className="text-[10px] text-text-muted ml-auto" title={`Dataset has ${data.n_cells.toLocaleString()} cells — showing 1 out of every ${data.sample_step} points for performance`}>
             {data.n_cells.toLocaleString()} cells · shown 1/{data.sample_step}
           </span>
         )}
       </div>
       <div className="flex-1 relative">
         {(loading || !data) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
-            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
+            <Loader2 className="w-5 h-5 text-brand animate-spin" />
           </div>
         )}
         <div ref={chartRef} className="w-full h-full" />
@@ -225,14 +225,14 @@ export default function UmapPlot({
             ref={legendRef}
             onMouseDown={(e) => onDragStart(e.clientX, e.clientY)}
             onTouchStart={(e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX, e.touches[0].clientY) }}
-            className="absolute cursor-grab active:cursor-grabbing bg-white/90 rounded-lg border border-gray-200 p-2 text-[11px] max-h-[85%] overflow-y-auto max-w-[200px] shadow-md backdrop-blur-sm"
+            className="absolute cursor-grab active:cursor-grabbing bg-surface/90 rounded-lg border border-border-light p-2 text-[11px] max-h-[85%] overflow-y-auto max-w-[200px] shadow-md backdrop-blur-sm"
             style={{ top: 1 + legendOff.y, right: 1 - legendOff.x }}
           >
             {data.legend.map((item) => (
-              <div key={item.name} className="flex items-center gap-2 py-[2px] hover:bg-gray-50 rounded px-1 -mx-1">
+              <div key={item.name} className="flex items-center gap-2 py-[2px] hover:bg-surface-raised rounded px-1 -mx-1">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                <span className="text-gray-700 truncate">{item.name}</span>
-                {item.count != null && <span className="text-gray-400 ml-auto tabular-nums">{formatNumber(item.count)}</span>}
+                <span className="text-text-secondary truncate">{item.name}</span>
+                {item.count != null && <span className="text-text-muted ml-auto tabular-nums">{formatNumber(item.count)}</span>}
               </div>
             ))}
           </div>
@@ -244,7 +244,7 @@ export default function UmapPlot({
             ref={legendRef}
             onMouseDown={(e) => onDragStart(e.clientX, e.clientY)}
             onTouchStart={(e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX, e.touches[0].clientY) }}
-            className="absolute cursor-grab active:cursor-grabbing bg-white/90 rounded-lg border border-gray-200 p-2 shadow-md backdrop-blur-sm select-none"
+            className="absolute cursor-grab active:cursor-grabbing bg-surface/90 rounded-lg border border-border-light p-2 shadow-md backdrop-blur-sm select-none"
             style={{ top: 1 + legendOff.y, right: 1 - legendOff.x }}
           >
             <div className="flex items-stretch gap-2">
@@ -257,12 +257,12 @@ export default function UmapPlot({
                 }}
               />
               {/* Labels */}
-              <div className="flex flex-col justify-between text-[10px] text-gray-500 leading-none py-0.5">
+              <div className="flex flex-col justify-between text-[10px] text-text-muted leading-none py-0.5">
                 <span>{data.legend[0].max != null ? data.legend[0].max.toFixed(2) : ''}</span>
                 <span>{data.legend[0].min != null ? data.legend[0].min.toFixed(2) : ''}</span>
               </div>
             </div>
-            <div className="text-[10px] text-gray-500 font-medium text-center mt-1 pt-1 border-t border-gray-100">
+            <div className="text-[10px] text-text-muted font-medium text-center mt-1 pt-1 border-t border-border-light">
               {data.legend[0].name}
             </div>
           </div>

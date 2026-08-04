@@ -49,10 +49,10 @@ export default function DetailTable({
   }, [realPath, gene, conditionCol])
 
   if (loading) {
-    return <div className="flex items-center justify-center py-4 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading table...</div>
+    return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading table...</div>
   }
   if (!rows.length) {
-    return <div className="text-xs text-gray-400 py-4 text-center">No data</div>
+    return <div className="text-xs text-text-muted py-4 text-center">No data</div>
   }
 
   const downloadCSV = () => {
@@ -81,30 +81,30 @@ export default function DetailTable({
         <div className="flex items-center gap-2">
           {hasActiveFilters && (
             <button onClick={clearAllFilters}
-              className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+              className="inline-flex items-center gap-1 text-[10px] text-brand hover:text-brand-dark">
               <XCircle className="w-3 h-3" />
               Clear filters
             </button>
           )}
           {hasActiveFilters && (
-            <span className="text-[10px] text-gray-400">
+            <span className="text-[10px] text-text-muted">
               {filteredRows.length} / {rows.length} rows
             </span>
           )}
           {tooLarge && !hasActiveFilters && (
-            <span className="text-[10px] text-gray-400 italic">
+            <span className="text-[10px] text-text-muted italic">
               {rows.length} rows — filters disabled for performance
             </span>
           )}
         </div>
         <button onClick={downloadCSV}
-          className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline font-medium">Download CSV</button>
+          className="text-[10px] text-brand hover:text-brand-dark hover:underline font-medium">Download CSV</button>
       </div>
       <table className="w-full text-[10px] border-collapse">
         <thead>
-          <tr className="bg-gray-50 text-gray-500 sticky top-0 z-10">
+          <tr className="bg-surface-raised text-text-muted sticky top-0 z-10">
             {COLUMNS.map(col => (
-              <th key={col.key} className="px-1.5 py-1 text-left font-medium whitespace-nowrap border-r border-gray-200 last:border-r-0">
+              <th key={col.key} className="px-1.5 py-1 text-left font-medium whitespace-nowrap border-r border-border-light last:border-r-0">
                 {col.filterable && !tooLarge ? (
                   <FilterDropdown
                     label={col.label}
@@ -125,17 +125,17 @@ export default function DetailTable({
         </thead>
         <tbody>
           {(filteredRows as unknown as PerSampleRow[]).map((row, i) => (
-            <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
-              <td className="px-1.5 py-0.5 text-gray-700 border-r border-gray-100">{row.SampleID}</td>
-              <td className="px-1.5 py-0.5 text-gray-700 border-r border-gray-100">{row.CellType}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.CellTypeNumber}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.CellTotalNumber}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.CellTypeRatio.toFixed(2)}</td>
-              <td className="px-1.5 py-0.5 text-gray-700 border-r border-gray-100 font-medium">{row.Gene}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.GeneMeanExpression.toFixed(4)}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.GeneExpressionPct.toFixed(2)}</td>
-              <td className="px-1.5 py-0.5 text-right text-gray-700 border-r border-gray-100">{row.GeneExpressionNumber}</td>
-              <td className="px-1.5 py-0.5 text-gray-700">{row.Group}</td>
+            <tr key={i} className="border-t border-border-light hover:bg-surface-raised">
+              <td className="px-1.5 py-0.5 text-text-secondary border-r border-border-light">{row.SampleID}</td>
+              <td className="px-1.5 py-0.5 text-text-secondary border-r border-border-light">{row.CellType}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.CellTypeNumber}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.CellTotalNumber}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.CellTypeRatio.toFixed(2)}</td>
+              <td className="px-1.5 py-0.5 text-text-secondary border-r border-border-light font-medium">{row.Gene}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.GeneMeanExpression.toFixed(4)}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.GeneExpressionPct.toFixed(2)}</td>
+              <td className="px-1.5 py-0.5 text-right text-text-secondary border-r border-border-light">{row.GeneExpressionNumber}</td>
+              <td className="px-1.5 py-0.5 text-text-secondary">{row.Group}</td>
             </tr>
           ))}
         </tbody>

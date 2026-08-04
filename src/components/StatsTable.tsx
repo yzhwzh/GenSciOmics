@@ -21,22 +21,22 @@ export default function StatsTable() {
 
   if (loading) return (
     <section>
-      <h2 className="text-base font-semibold text-brand-dark mb-3">
+      <h2 className="text-[15px] font-semibold text-text-primary mb-3">
         Dataset Statistics by Tissue
       </h2>
-      <div className="bg-white rounded-xl border border-brand-border shadow-sm p-8">
+      <div className="bg-surface rounded-xl shadow-card p-8">
         <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-200 rounded w-1/3" />
-          <div className="h-20 bg-gray-100 rounded" />
-          <div className="h-4 bg-gray-200 rounded w-1/2" />
+          <div className="h-4 bg-surface-muted rounded w-1/3" />
+          <div className="h-20 bg-surface-muted rounded" />
+          <div className="h-4 bg-surface-muted rounded w-1/2" />
         </div>
       </div>
     </section>
   )
   if (error) return (
     <section>
-      <h2 className="text-base font-semibold text-brand-dark mb-3">Dataset Statistics by Tissue</h2>
-      <div className="bg-white rounded-xl border border-brand-border shadow-sm p-6 text-center text-sm text-gray-400">{error}</div>
+      <h2 className="text-[15px] font-semibold text-text-primary mb-3">Dataset Statistics by Tissue</h2>
+      <div className="bg-surface rounded-xl shadow-card p-6 text-center text-sm text-text-muted">{error}</div>
     </section>
   )
   if (!stats || stats.tissues.length === 0) return null
@@ -61,14 +61,14 @@ export default function StatsTable() {
 
   return (
     <section>
-      <h2 className="text-base font-semibold text-brand-dark mb-3">
+      <h2 className="text-[15px] font-semibold text-text-primary mb-3">
         Dataset Statistics by Tissue
       </h2>
-      <div className="bg-white rounded-xl border border-brand-border shadow-sm overflow-x-auto max-h-[380px] overflow-y-auto">
+      <div className="bg-surface rounded-xl shadow-card overflow-x-auto max-h-[380px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <tr className="bg-surface-raised border-b border-border-light">
+              <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <FilterDropdown
                     label="Tissue"
@@ -79,7 +79,7 @@ export default function StatsTable() {
                     isActive={!!tissueFilter}
                   />
                   {tissueFilter && (
-                    <button onClick={clearFilter} className="text-blue-600 hover:text-blue-800" title="Clear filter">
+                    <button onClick={clearFilter} className="text-brand hover:text-brand-dark" title="Clear filter">
                       <XCircle className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -89,12 +89,12 @@ export default function StatsTable() {
                 const hCount = stats.species_health_counts?.[sp] ?? 0
                 const dCount = stats.species_disease_counts?.[sp] ?? 0
                 return (
-                  <th key={sp} className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  <th key={sp} className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <span>{sp}</span>
                       {hCount + dCount > 0 && (
-                        <span className="font-normal text-gray-400 text-[10px] leading-tight">
-                          <span className="text-green-500">{hCount}H</span>
+                        <span className="font-normal text-text-muted text-[10px] leading-tight">
+                          <span className="text-success">{hCount}H</span>
                           <span className="mx-0.5">·</span>
                           <span>{dCount}D</span>
                         </span>
@@ -105,10 +105,10 @@ export default function StatsTable() {
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border-light">
             {filteredTissues.map((tis) => (
-              <tr key={tis} className="hover:bg-blue-50/40 transition-colors">
-                <td className="py-3 px-4 text-sm font-medium text-gray-800 capitalize whitespace-nowrap">
+              <tr key={tis} className="hover:bg-surface-muted/60 transition-colors">
+                <td className="py-3 px-4 text-sm font-medium text-text-primary capitalize whitespace-nowrap">
                   {tis}
                 </td>
                 {ALL_SPECIES.map((sp) => {
@@ -117,15 +117,15 @@ export default function StatsTable() {
                   return (
                     <td key={sp} className="py-3 px-4">
                       {!cell || diseases.length === 0 ? (
-                        <span className="text-xs text-gray-300">-</span>
+                        <span className="text-xs text-text-muted">-</span>
                       ) : (
                         <div className="flex flex-wrap gap-x-3 gap-y-1">
                           {diseases.map((d) => (
-                            <span key={d.name} className="text-xs text-gray-600 whitespace-nowrap">
-                              {d.name} <span className="font-medium text-gray-800">{d.count}</span>
+                            <span key={d.name} className="text-xs text-text-secondary whitespace-nowrap">
+                              {d.name} <span className="font-medium text-text-primary">{d.count}</span>
                             </span>
                           ))}
-                          <span className="text-[11px] text-gray-400 border-l border-gray-200 pl-3">
+                          <span className="text-[11px] text-text-muted border-l border-border-light pl-3">
                             {cell.total_datasets} dataset{cell.total_datasets > 1 ? 's' : ''}
                           </span>
                         </div>

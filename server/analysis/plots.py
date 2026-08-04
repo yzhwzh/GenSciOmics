@@ -194,6 +194,121 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
         return {'error': str(e) + '\n' + traceback.format_exc()}
 
 
+def _generate_celltype_composition(real_path: str, gene: str,
+                                    palette_name: str = 'default',
+                                    gene2: str = '') -> dict:
+    """Generate stacked bar chart: among gene-positive cells, cell type proportions.
+    If gene2 is provided, show co-expression breakdown: gene1+, gene1+gene2+, gene2+."""
+    try:
+        adata = anndata.read_h5ad(str(real_path), backed='r')
+
+        def find_gene_idx(g):
+            idx_series = pd.Series(adata.var.index.astype(str))
+            matches = idx_series.str.lower() == g.lower()
+            if matches.any():
+                return int(matches.values.nonzero()[0][0])
+            for col in ['index', 'gene_ids', 'gene_symbols', 'feature_name']:
+                if col in adata.var.columns:
+                    matches = adata.var[col].astype(str).str.lower() == g.lower()
+                    if matches.any():
+                        return int(matches.values.nonzero()[0][0])
+            return None
+
+        g1_idx = find_gene_idx(gene)
+        if g1_idx is None:
+            adata.file.close()
+            return {'error': f'Gene "{gene}" not found'}
+
+        ct_vals = adata.obs['CellType'].values
+        # Read only the needed gene columns (avoid full matrix)
+        g1_expr = adata[:, g1_idx].X
+        g1_expr = np.asarray(g1_expr.toarray() if hasattr(g1_expr, 'toarray') else g1_expr).flatten()
+
+        has_g2 = bool(gene2.strip())
+        g2_expr = None
+        if has_g2:
+            g2_idx = find_gene_idx(gene2)
+            if g2_idx is not None:
+                g2_expr = adata[:, g2_idx].X
+                g2_expr = np.asarray(g2_expr.toarray() if hasattr(g2_expr, 'toarray') else g2_expr).flatten()
+        adata.file.close()
+
+        unique_ct = sorted(set(ct_vals))
+        cat_colors, _ = get_palette(palette_name)
+        palette = cat_colors[:len(unique_ct)] if len(cat_colors) >= len(unique_ct) else \
+                  cat_colors * (len(unique_ct) // len(cat_colors) + 1)
+
+        if has_g2 and g2_expr is not None:
+            groups = [(f'{gene}+', g1_expr > 0),
+                      (f'{gene}+_{gene2}+', (g1_expr > 0) & (g2_expr > 0)),
+                      (f'{gene2}+', g2_expr > 0)]
+            n_groups = 3
+        else:
+            groups = [(f'{gene}+', g1_expr > 0)]
+            n_groups = 1
+
+        # Compute cell type composition per group
+        group_data = []  # list of {ct: count}
+        for label, mask in groups:
+            ct_counts = {}
+            for ct in unique_ct:
+                ct_mask = ct_vals == ct
+                n_pos = int((mask & ct_mask).sum())
+                ct_counts[ct] = n_pos
+            group_data.append(ct_counts)
+
+        # Plot vertical stacked bars
+        fig, ax = plt.subplots(figsize=(max(3, n_groups * 2.8), 4.5))
+        bar_width = 0.5
+        x_positions = list(range(n_groups))
+        bar_containers = []
+
+        for gi, (label, _) in enumerate(groups):
+            counts = group_data[gi]
+            total = sum(counts.values())
+            bottom = 0.0
+            for ci, ct in enumerate(unique_ct):
+                cnt = counts[ct]
+                pct = cnt / total * 100 if total > 0 else 0
+                color = palette[ci % len(palette)]
+                bc = ax.bar(gi, pct, bar_width, bottom=bottom, color=color,
+                            edgecolor='white', linewidth=0.5)
+                if gi == 0:
+                    bar_containers.append(bc)
+                if pct >= 4:
+                    ax.text(gi, bottom + pct/2, f'{pct:.1f}%',
+                            ha='center', va='center', fontsize=7, fontweight='medium')
+                bottom += pct
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([g[0] for g in groups], fontsize=9)
+        ax.set_ylabel('% of Gene-Positive Cells', fontsize=10)
+        ax.set_ylim(0, 100)
+        ax.set_title('Cell Type Composition', fontsize=12, fontweight='bold', pad=8)
+        # Legend on right side, auto columns based on count
+        ncol = 1 if len(unique_ct) <= 8 else 2 if len(unique_ct) <= 20 else 3
+        leg = ax.legend([b[0] for b in bar_containers], unique_ct,
+                        fontsize=7, loc='center left',
+                        bbox_to_anchor=(1.02, 0.5), ncol=ncol,
+                        frameon=False)
+        sns.despine()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white',
+                    bbox_extra_artists=[leg])
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+        buf.close()
+        plt.close(fig)
+
+        return {'image': f'data:image/png;base64,{b64}'}
+    except Exception as e:
+        print(f'[GenSci] Composition plot error: {e}', file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
 def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
                                palette_name: str = 'default') -> dict:
     """Generate cell type ratio plots: stacked bar per sample + hypothesis test boxplot.

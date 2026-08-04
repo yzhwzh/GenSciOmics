@@ -24,7 +24,7 @@ from pubmed import _fetch_abstract
 from analysis.umap import _get_umap_data
 from analysis.expression import _get_expression_stats
 from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_aggregate_table, _get_raw_expression
-from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots
+from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition
 from analysis.utils import CATEGORICAL_PALETTE_MAP
 from search import _get_genes
 from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
@@ -77,7 +77,7 @@ def validate_real_path(path_str: str):
         # But validate the ORIGINAL (unresolved) path is within DATA_DIRS
         # This allows symlinks inside DATA_DIRS pointing to external storage
         original = Path(path_str)
-        allowed = any(original.is_relative_to(d.resolve()) for d in DATA_DIRS)
+        allowed = any(original.is_relative_to(d) for d in DATA_DIRS)
         return original if allowed else None
     except Exception:
         return None
@@ -343,6 +343,19 @@ def handle_cell_ratio_plot(handler, q):
     condition_col = q.get('condition_col', '')
     palette = get_palette_name(q)
     result = _generate_cell_ratio_plot(str(real_path), condition_col, palette)
+    handler._json(result)
+
+
+def handle_composition_plot(handler, q):
+    real_path_str = q.get('real_path', '')
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    gene = q.get('gene', '')
+    gene2 = q.get('gene2', '')
+    palette = get_palette_name(q)
+    result = _generate_celltype_composition(str(real_path), gene, palette, gene2)
     handler._json(result)
 
 
@@ -733,6 +746,7 @@ ROUTES = {
     ('GET', '/api/per-sample-mutest'): handle_per_sample_mutest,
     ('GET', '/api/aggregate-table'): handle_aggregate_table,
     ('GET', '/api/plot'): handle_plot,
+    ('GET', '/api/composition-plot'): handle_composition_plot,
     ('GET', '/api/cell-ratio-plot'): handle_cell_ratio_plot,
     ('GET', '/api/umap-ratio-plots'): handle_umap_ratio_plots,
     ('GET', '/api/skills'): handle_skills_list,

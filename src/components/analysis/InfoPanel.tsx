@@ -12,29 +12,29 @@ export default function InfoPanel({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+        <Loader2 className="w-6 h-6 text-brand animate-spin" />
       </div>
     )
   }
   if (!info) {
-    return <div className="text-sm text-gray-400 p-4">No info available</div>
+    return <div className="text-sm text-text-muted p-4">No info available</div>
   }
 
   const { abstract, stats } = info
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3">
       <div>
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Abstract</h3>
+        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Abstract</h3>
         {abstract.title && (
-          <h4 className="text-sm font-semibold text-gray-800 mb-1 leading-snug">{abstract.title}</h4>
+          <h4 className="text-sm font-semibold text-text-primary mb-1 leading-snug">{abstract.title}</h4>
         )}
         {abstract.abstract ? (
-          <p className="text-xs text-gray-600 leading-relaxed">{abstract.abstract}</p>
+          <p className="text-xs text-text-secondary leading-relaxed">{abstract.abstract}</p>
         ) : (
-          <p className="text-xs text-gray-400 italic">Abstract not available</p>
+          <p className="text-xs text-text-muted italic">Abstract not available</p>
         )}
         {(abstract.journal || abstract.authors) && (
-          <p className="text-[11px] text-gray-400 mt-1">
+          <p className="text-[11px] text-text-muted mt-1">
             {abstract.authors && <span>{abstract.authors}. </span>}
             {abstract.journal && <span className="italic">{abstract.journal}. </span>}
             {abstract.year && <span>{abstract.year}.</span>}
@@ -46,13 +46,13 @@ export default function InfoPanel({
 
       {abstract.methods && (
         <div>
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Methods</h3>
-          <div className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">{abstract.methods}</div>
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Methods</h3>
+          <div className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap">{abstract.methods}</div>
         </div>
       )}
 
       <div>
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Dataset Summary</h3>
+        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Dataset Summary</h3>
         <div className="grid grid-cols-5 gap-2">
           {[
             { label: 'Donors', value: stats.patient_count },
@@ -61,16 +61,16 @@ export default function InfoPanel({
             { label: 'Cell Types', value: stats.celltype_count },
             { label: 'Genes', value: formatNumber(stats.genes) },
           ].map((item) => (
-            <div key={item.label} className="bg-gray-50 rounded-lg p-2 text-center">
-              <div className="text-lg font-bold text-gray-800">{item.value ?? '-'}</div>
-              <div className="text-[10px] text-gray-500">{item.label}</div>
+            <div key={item.label} className="bg-surface-raised rounded-lg p-2 text-center">
+              <div className="text-lg font-bold text-text-primary">{item.value ?? '-'}</div>
+              <div className="text-[10px] text-text-muted">{item.label}</div>
             </div>
           ))}
         </div>
         {stats.cell_type_names.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {stats.cell_type_names.map((ct) => (
-              <span key={ct} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">
+              <span key={ct} className="text-[10px] bg-brand/10 text-brand-dark px-1.5 py-0.5 rounded">
                 {ct}
               </span>
             ))}

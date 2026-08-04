@@ -183,12 +183,12 @@ def process_chat_streaming(
     base_url: str = 'https://api.deepseek.com',
     temperature: float = 0.7,
     max_iterations: int = 100,
-    tools_filter: list[str] | None = None,
+    skills_filter: list[str] | None = None,
 ) -> dict:
     """Streaming agent pipeline — yields SSE event dicts.
 
     Same components as process_chat() but streams events in real-time.
-    tools_filter: optional list of tool names to restrict (e.g. ['mcp__exa__web_search_exa']).
+    skills_filter: optional list of tool names to restrict (e.g. ['mcp__exa__web_search_exa']).
     """
     from llm_proxy import _stream_sse, _api_url as _api_url_proxy
     from concurrent.futures import ThreadPoolExecutor, as_completed as _ac, TimeoutError as _Timeout
@@ -206,14 +206,21 @@ def process_chat_streaming(
 
     # Build supervisor prompt — 列出所有可用 skill，LLM 自己路由
     md_skills = scan_skills()
-    if tools_filter:
-        md_skills = [s for s in md_skills if s["name"] in tools_filter or s["folder"] in tools_filter]
+    def _match_filter(name, filters):
+        for f in filters:
+            if f.endswith('*') and name.startswith(f[:-1]):
+                return True
+            if name == f:
+                return True
+        return False
+
+    # Filter which skills appear in the prompt (LLM sees these as primary options)
+    if skills_filter:
+        md_skills = [s for s in md_skills if _match_filter(s["name"], skills_filter) or _match_filter(s["folder"], skills_filter)]
     system_prompt = assemble_prompt(user_msg, intent='unknown', skills=md_skills, real_path=real_path)
+    # All tools remain available for function calling (shell, skill, MCP, memory, etc.)
     all_openai_tools = _get_tools()
-    if tools_filter:
-        tools = [t for t in all_openai_tools if t['function']['name'] in tools_filter]
-    else:
-        tools = all_openai_tools
+    tools = all_openai_tools
 
     working_messages = list(messages)
     if not working_messages or working_messages[0].get('role') != 'system':

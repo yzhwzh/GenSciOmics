@@ -35,8 +35,8 @@ export default function MuTestTable({
       .finally(() => setLoading(false))
   }, [realPath, gene, minCells, conditionCol])
 
-  if (loading) return <div className="flex items-center justify-center py-4 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading MU test...</div>
-  if (!data) return <div className="text-xs text-gray-400 py-4 text-center">No MU test data</div>
+  if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading MU test...</div>
+  if (!data) return <div className="text-xs text-text-muted py-4 text-center">No MU test data</div>
 
   const maxCt = 30
 
@@ -70,11 +70,11 @@ export default function MuTestTable({
     const filteredMatrix = getFilteredMatrix(matrix)
     return (
       <div className="mb-2">
-        <div className="text-[10px] font-semibold text-gray-500 px-1 pb-0.5">{title}</div>
+        <div className="text-[10px] font-semibold text-text-muted px-1 pb-0.5">{title}</div>
         <table className="w-full text-[10px] border-collapse">
           <thead>
-            <tr className="bg-gray-50 text-gray-500 sticky top-0 z-10">
-              <th className="px-1.5 py-1 text-left font-medium whitespace-nowrap border-r border-gray-200">
+            <tr className="bg-surface-raised text-text-muted sticky top-0 z-10">
+              <th className="px-1.5 py-1 text-left font-medium whitespace-nowrap border-r border-border-light">
                 <FilterDropdown
                   label="Pair"
                   values={data.pairs}
@@ -85,7 +85,7 @@ export default function MuTestTable({
                 />
               </th>
               {data.cell_types.slice(0, maxCt).map(ct => (
-                <th key={ct} className="px-1.5 py-1 text-right font-medium whitespace-nowrap border-r border-gray-200 last:border-r-0" title={ct}>
+                <th key={ct} className="px-1.5 py-1 text-right font-medium whitespace-nowrap border-r border-border-light last:border-r-0" title={ct}>
                   {ct.length > 10 ? ct.slice(0, 10) + '...' : ct}
                 </th>
               ))}
@@ -93,14 +93,14 @@ export default function MuTestTable({
           </thead>
           <tbody>
             {filteredPairs.map((pair, pi) => (
-              <tr key={pair} className="border-t border-gray-100 hover:bg-gray-50">
-                <td className="px-1.5 py-0.5 text-gray-700 font-medium border-r border-gray-100">{pair.replace('_vs_', ' vs ')}</td>
+              <tr key={pair} className="border-t border-border-light hover:bg-surface-raised">
+                <td className="px-1.5 py-0.5 text-text-secondary font-medium border-r border-border-light">{pair.replace('_vs_', ' vs ')}</td>
                 {(filteredMatrix[pi] ?? []).slice(0, maxCt).map((pVal, ci) => {
                   const sig = pVal !== null && pVal <= 0.05
                   const valStr = pVal === null ? '-' : pVal < 0.001 ? '<0.001' : pVal.toFixed(4)
                   return (
                     <td key={ci}
-                      className={`px-1.5 py-0.5 text-right font-mono border-r border-gray-100 ${sig ? 'text-red-600 font-bold bg-red-50' : 'text-gray-600'}`}>
+                      className={`px-1.5 py-0.5 text-right font-mono border-r border-border-light ${sig ? 'text-red-600 font-bold bg-error-bg' : 'text-text-secondary'}`}>
                       {valStr}
                     </td>
                   )
@@ -110,7 +110,7 @@ export default function MuTestTable({
           </tbody>
         </table>
         {data.cell_types.length > maxCt && (
-          <div className="text-[9px] text-gray-400 text-center py-0.5">Showing {maxCt} of {data.cell_types.length} cell types</div>
+          <div className="text-[9px] text-text-muted text-center py-0.5">Showing {maxCt} of {data.cell_types.length} cell types</div>
         )}
       </div>
     )
@@ -123,14 +123,14 @@ export default function MuTestTable({
     <div className="overflow-auto max-h-full px-2 py-1">
       <div className="flex items-center gap-2 px-1 pb-1 min-h-[18px]">
         {pairFilter && (
-          <button onClick={clearPairFilter} className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+          <button onClick={clearPairFilter} className="inline-flex items-center gap-1 text-[10px] text-brand hover:text-brand-dark">
             <XCircle className="w-3 h-3" />
             Clear pair filter
           </button>
         )}
       </div>
       {showMean && renderTable('Mean Expression — MU test P-values', data.mean_matrix)}
-      {showMean && showPct && <div className="border-t border-gray-200 my-1" />}
+      {showMean && showPct && <div className="border-t border-border-light my-1" />}
       {showPct && renderTable('Expression % — MU test P-values', data.pct_matrix)}
     </div>
   )

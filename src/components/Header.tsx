@@ -100,7 +100,7 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-white border-b border-brand-border sticky top-0 z-50">
+    <header className="bg-surface shadow-card sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center justify-between h-16">
           <a href="/" className="flex items-center gap-2.5 shrink-0">
@@ -112,8 +112,8 @@ export default function Header() {
           </a>
 
           <div className="flex-1 max-w-xl mx-8 relative" ref={dropdownRef}>
-            <div className="flex items-center gap-2 bg-brand-bg border border-brand-border rounded-xl px-4 py-2 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand-accent transition-all">
-              <Search className="w-4 h-4 text-brand-text-secondary shrink-0" />
+            <div className="flex items-center gap-2 bg-brand-bg border border-border-light rounded-xl px-4 py-2 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30 transition-all">
+              <Search className="w-4 h-4 text-text-muted shrink-0" />
               <input
                 ref={inputRef}
                 type="text"
@@ -122,7 +122,7 @@ export default function Header() {
                 onKeyDown={handleKeyDown}
                 onFocus={() => { if (preview.length) setShowDropdown(true) }}
                 placeholder="Search cells, disease, PMID..."
-                className="flex-1 bg-transparent outline-none text-sm text-brand-text placeholder:text-gray-400"
+                className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
               />
               <button
                 onClick={() => doSearch()}
@@ -133,25 +133,25 @@ export default function Header() {
             </div>
 
             {showDropdown && query.trim() && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border-light rounded-xl shadow-overlay z-50 overflow-hidden">
                 {loading ? (
-                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-400">
+                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-text-muted">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Searching...
                   </div>
                 ) : preview.length === 0 ? (
-                  <div className="py-6 text-center text-sm text-gray-400">
+                  <div className="py-6 text-center text-sm text-text-muted">
                     No results for &ldquo;{query}&rdquo;
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-2 border-b border-gray-100">
+                    <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-2 border-b border-border-light">
                       {Object.entries(previewCounts()).map(([type, count]) => (
-                        <span key={type} className="inline-flex items-center gap-1 text-[11px] text-gray-600 bg-gray-50 px-2 py-0.5 rounded-full">
+                        <span key={type} className="inline-flex items-center gap-1 text-[11px] text-text-secondary bg-surface-raised px-2 py-0.5 rounded-full">
                           {MATCH_ICONS[type] || ''} {type} {count}
                         </span>
                       ))}
-                      <span className="text-[11px] text-gray-400 ml-auto">{preview.length} datasets</span>
+                      <span className="text-[11px] text-text-muted ml-auto">{preview.length} datasets</span>
                     </div>
 
                     <div className="max-h-[300px] overflow-y-auto">
@@ -159,16 +159,16 @@ export default function Header() {
                         <button
                           key={i}
                           onClick={() => doSearch(query)}
-                          className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
+                          className="w-full text-left px-4 py-2.5 hover:bg-surface-muted transition-colors border-b border-border-light last:border-0"
                         >
                           <div className="flex items-center gap-2 text-sm">
-                            <span className="font-medium text-gray-800">{r.disease}</span>
-                            <span className="text-gray-400 text-xs">· {r.tissue}</span>
-                            <span className="text-gray-300 font-mono text-[11px]">{r.pmid}</span>
+                            <span className="font-medium text-text-primary">{r.disease}</span>
+                            <span className="text-text-muted text-xs">· {r.tissue}</span>
+                            <span className="text-text-muted font-mono text-[11px]">{r.pmid}</span>
                           </div>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {(r.search_matches ?? []).slice(0, 3).map(([type, val]) => (
-                              <span key={`${type}-${val}`} className="inline-flex items-center gap-0.5 text-[10px] text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+                              <span key={`${type}-${val}`} className="inline-flex items-center gap-0.5 text-[10px] text-text-muted bg-surface-raised px-1.5 py-0.5 rounded">
                                 {MATCH_ICONS[type] || '·'} {val.length > 18 ? val.slice(0, 18) + '…' : val}
                               </span>
                             ))}
@@ -179,7 +179,7 @@ export default function Header() {
 
                     <button
                       onClick={() => doSearch()}
-                      className="w-full text-center py-2.5 text-xs font-medium text-brand bg-brand-bg hover:bg-brand-light/10 transition-colors border-t border-gray-100"
+                      className="w-full text-center py-2.5 text-xs font-medium text-brand bg-brand-bg hover:bg-brand-light/10 transition-colors border-t border-border-light"
                     >
                       View all {preview.length}+ results →
                     </button>
@@ -190,8 +190,8 @@ export default function Header() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-brand-text-secondary hidden sm:block">
-              Single-cell Atlas
+            <span className="text-xs text-text-muted hidden sm:block">
+              Multi-omics Atlas
             </span>
           </div>
         </div>

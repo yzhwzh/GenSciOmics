@@ -9,9 +9,9 @@ import { sendLiteratureMessageStreaming } from '../../api/analysis'
 import type { ChatMessage, LLMConfig, ToolResult, SkillDef } from '../../api/types'
 
 const DEFAULT_CONFIG: LLMConfig = {
-  model: 'qwen3:30b-a3b-q4_K_M',
-  apiKey: '',
-  baseUrl: 'http://localhost:11434/v1',
+  model: 'Qwen3.5-397B-A17B-FP8-Thinking',
+  apiKey: 'sk-fdQEp3ZkOOxz50BVJWbhGaHzHHIiBztLPtBTDyxFwbPMLcfo',
+  baseUrl: 'http://llm-gateway.ai.dgtmeta.com/v1',
   temperature: 0.7,
 }
 

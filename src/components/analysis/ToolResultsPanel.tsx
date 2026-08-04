@@ -81,12 +81,12 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
 
   if (totalCount === 0 && !loading) {
     return (
-      <div className="h-full flex flex-col bg-gray-50/50 border-l border-gray-200">
-        <div className="shrink-0 px-3 py-1.5 border-b border-gray-100 bg-white">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tool Results</span>
+      <div className="h-full flex flex-col bg-surface-raised/50 border-l border-border-light">
+        <div className="shrink-0 px-3 py-1.5 border-b border-border-light bg-surface">
+          <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Tool Results</span>
         </div>
         <div className="flex-1 flex items-center justify-center px-4">
-          <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+          <p className="text-[11px] text-text-muted text-center leading-relaxed">
             Send a message to see skill usage,<br />executed code, and results here.
           </p>
         </div>
@@ -95,37 +95,37 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50/50 border-l border-gray-200">
+    <div className="h-full flex flex-col bg-surface-raised/50 border-l border-border-light">
       {/* Header */}
-      <div className="shrink-0 px-3 py-1.5 border-b border-gray-100 bg-white">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+      <div className="shrink-0 px-3 py-1.5 border-b border-border-light bg-surface">
+        <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">
           Tool Results
           {totalCount > 0 && <span className="ml-1 font-normal">({totalCount})</span>}
         </span>
       </div>
 
       {/* Results */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4 text-[11px] text-gray-700">
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4 text-[11px] text-text-secondary">
         {groups.map((group) => (
           <div key={group.msgIndex}>
             {/* Group header */}
             <div className="flex items-center gap-1.5 mb-2">
-              <span className="text-[9px] font-medium text-gray-400 uppercase">Msg {group.msgIndex + 1}</span>
+              <span className="text-[9px] font-medium text-text-muted uppercase">Msg {group.msgIndex + 1}</span>
               {group.userPreview && (
-                <span className="text-[9px] text-gray-300 truncate">— {group.userPreview}</span>
+                <span className="text-[9px] text-text-muted truncate">— {group.userPreview}</span>
               )}
             </div>
 
             {/* Items */}
             {group.items.map((item, idx) => (
-              <div key={idx} className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:pb-0">
+              <div key={idx} className="mb-3 pb-3 border-b border-border-light last:border-b-0 last:pb-0">
                 {/* Skill name */}
                 <div className="flex items-center gap-1 mb-1">
-                  <span className="text-[10px] font-semibold text-blue-600">
+                  <span className="text-[10px] font-semibold text-brand">
                     {item.command ? extractScriptName(item.command) || item.name : item.name}
                   </span>
                   {item.name === 'shell' && (
-                    <span className="text-[8px] bg-gray-200 text-gray-500 px-1 rounded">shell</span>
+                    <span className="text-[8px] bg-surface-muted text-text-muted px-1 rounded">shell</span>
                   )}
                 </div>
 
@@ -142,7 +142,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
                     <img
                       src={img.url}
                       alt={img.alt}
-                      className="max-w-full h-auto rounded border border-gray-200"
+                      className="max-w-full h-auto rounded border border-border-light"
                       style={{ maxHeight: 120 }}
                     />
                   </div>
@@ -151,7 +151,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
                 {/* Download links from stdout */}
                 {item.stdout && extractDownloadLinks(item.stdout).filter(l => !l.label.startsWith('⬇')).map((link, i) => (
                   <div key={i}>
-                    <a href={link.url} download className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline">
+                    <a href={link.url} download className="text-[9px] text-brand hover:text-brand-dark hover:underline">
                       ⬇ {link.label}
                     </a>
                   </div>
@@ -159,7 +159,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
 
                 {/* Result summary for non-shell results */}
                 {item.name !== 'shell' && (item.result as any) ? (
-                  <div className="text-[10px] text-gray-500 mt-0.5">
+                  <div className="text-[10px] text-text-muted mt-0.5">
                     {typeof item.result === 'object'
                       ? Object.entries(item.result as Record<string, unknown>)
                           .filter(([k]) => !k.startsWith('_'))
@@ -175,7 +175,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
 
                 {/* Key numbers from stdout */}
                 {item.stdout && !item.command && (
-                  <div className="text-[10px] text-gray-500 mt-0.5 whitespace-pre-wrap line-clamp-3">
+                  <div className="text-[10px] text-text-muted mt-0.5 whitespace-pre-wrap line-clamp-3">
                     {item.stdout.slice(0, 200)}
                   </div>
                 )}
@@ -186,7 +186,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
 
         {loading && (
           <div className="flex items-center justify-center py-3">
-            <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 text-brand-light animate-spin" />
           </div>
         )}
 

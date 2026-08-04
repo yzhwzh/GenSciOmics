@@ -56,8 +56,8 @@ export default function DragHandle({
       ref={handleRef}
       className={`shrink-0 transition-colors ${
         orientation === 'vertical'
-          ? 'w-[5px] cursor-col-resize bg-gray-100 hover:bg-blue-300 active:bg-blue-400 border-x border-gray-200'
-          : 'h-[5px] cursor-row-resize bg-gray-100 hover:bg-blue-300 active:bg-blue-400 border-t border-b border-gray-200'
+          ? 'w-[5px] cursor-col-resize bg-gray-100 hover:bg-brand-light/40 active:bg-brand-light border-x border-border-light'
+          : 'h-[5px] cursor-row-resize bg-gray-100 hover:bg-brand-light/40 active:bg-brand-light border-t border-b border-border-light'
       }`}
       title="Drag to resize"
     />

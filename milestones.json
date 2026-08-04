@@ -1,0 +1,62 @@
+[
+  {
+    "time": "2026-08-04 13:16:45",
+    "type": "milestone",
+    "message": "Update Log shows development milestones",
+    "detail": "Changelog-style records replace missing version control"
+  },
+  {
+    "time": "2026-08-04 13:16:44",
+    "type": "milestone",
+    "message": "Blood & Intestine dataset cards merged",
+    "detail": "11 core datasets in 4x3 grid"
+  },
+  {
+    "time": "2026-08-04 13:16:43",
+    "type": "milestone",
+    "message": "Added missing organs: Eye, Thyroid, Heart, Pancreas, Bladder, Reproductive",
+    "detail": "Matched GEPIA reference organ coverage"
+  },
+  {
+    "time": "2026-08-04 13:16:42",
+    "type": "milestone",
+    "message": "Only real filesystem data shown (no hardcoded fallbacks)",
+    "detail": "Tooltip displays only backend-scanned dataset counts"
+  },
+  {
+    "time": "2026-08-04 13:16:41",
+    "type": "milestone",
+    "message": "Liver / Stomach left-right positions corrected",
+    "detail": "Liver on viewer-left (person-right), Stomach on viewer-right (person-left)"
+  },
+  {
+    "time": "2026-08-04 13:16:40",
+    "type": "milestone",
+    "message": "Breast position corrected",
+    "detail": "Moved from upper chest to anatomically correct position"
+  },
+  {
+    "time": "2026-08-04 13:16:39",
+    "type": "milestone",
+    "message": "SVG precise organ outlines replace rectangles",
+    "detail": "Anatomical Bezier curve paths on body diagram"
+  },
+  {
+    "time": "2026-08-04 13:16:38",
+    "type": "milestone",
+    "message": "Dynamic cellxgene VIP analysis launcher",
+    "detail": "One-click launch with lifecycle management"
+  },
+  {
+    "time": "2026-08-04 13:16:37",
+    "type": "milestone",
+    "message": "Real-time filesystem dataset scanner",
+    "detail": "Auto-detects .h5ad files in data directories"
+  },
+  {
+    "time": "2026-08-04 13:16:36",
+    "type": "milestone",
+    "message": "Project initialized - GenSci single-cell analysis platform",
+    "detail": "React 19 + Vite 8 + Python API"
+  }
+]

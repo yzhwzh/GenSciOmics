@@ -138,7 +138,7 @@ export default function DualGeneColorMap({ gene1Name, gene2Name, gene1Max, gene2
   }, [gene1Name, gene2Name, gene1Max, gene2Max, GRID, ML, MB, MT, CW, CH, FONT_SIZE, TICK_LEN, s])
 
   return (
-    <div className="bg-white/95 rounded-lg border border-gray-200 shadow-md backdrop-blur-sm select-none inline-block leading-none">
+    <div className="bg-surface/95 rounded-lg border border-border-light shadow-md backdrop-blur-sm select-none inline-block leading-none">
       <canvas
         ref={canvasRef}
         style={{ width: CW, height: CH, display: 'block' }}

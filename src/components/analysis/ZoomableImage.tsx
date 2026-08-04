@@ -43,7 +43,7 @@ export default function ZoomableImage({
             />
             <button
               onClick={() => setZoomed(false)}
-              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center text-gray-600 hover:text-gray-900 text-lg font-bold border border-gray-200"
+              className="absolute -top-3 -right-3 w-8 h-8 bg-surface rounded-full shadow-md flex items-center justify-center text-text-secondary hover:text-text-primary text-lg font-bold border border-border-light"
             >
               X
             </button>

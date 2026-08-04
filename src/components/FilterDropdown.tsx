@@ -112,39 +112,39 @@ function FilterDropdown({
   }
 
   const popupContent = (
-    <div className="w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 flex flex-col">
+    <div className="w-56 bg-surface border border-border-light rounded-lg shadow-lg max-h-72 flex flex-col">
       {/* Header with select/deselect */}
-      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-gray-100">
+      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-border-light">
         <button
           onClick={handleSelectAll}
           disabled={allSelected}
-          className="text-[11px] text-blue-600 hover:text-blue-800 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="text-[11px] text-brand hover:text-brand-dark disabled:text-text-muted disabled:cursor-not-allowed"
         >
           Select All
         </button>
         <button
           onClick={handleDeselectAll}
           disabled={noneSelected}
-          className="text-[11px] text-gray-500 hover:text-gray-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="text-[11px] text-text-muted hover:text-text-secondary disabled:text-text-muted disabled:cursor-not-allowed"
         >
           Deselect All
         </button>
         <button
           onClick={() => { setOpen(false); setSearch('') }}
-          className="text-gray-400 hover:text-gray-600"
+          className="text-text-muted hover:text-text-secondary"
         >
           <X className="w-3 h-3" />
         </button>
       </div>
 
       {/* Search input */}
-      <div className="px-2.5 py-1.5 border-b border-gray-100">
+      <div className="px-2.5 py-1.5 border-b border-border-light">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search values..."
-          className="w-full text-[11px] px-2 py-1 border border-gray-200 rounded outline-none focus:border-blue-400"
+          className="w-full text-[11px] px-2 py-1 border border-border-light rounded outline-none focus:border-blue-400"
           autoFocus
         />
       </div>
@@ -152,9 +152,9 @@ function FilterDropdown({
       {/* Value list — lazy render if many values */}
       <div className="flex-1 overflow-y-auto">
         {filteredValues.length === 0 ? (
-          <div className="px-2.5 py-3 text-[11px] text-gray-400 text-center">No values</div>
+          <div className="px-2.5 py-3 text-[11px] text-text-muted text-center">No values</div>
         ) : filteredValues.length > 200 && !search.trim() ? (
-          <div className="px-2.5 py-6 text-[11px] text-gray-400 text-center">
+          <div className="px-2.5 py-6 text-[11px] text-text-muted text-center">
             {filteredValues.length} values — type to search
           </div>
         ) : (
@@ -163,7 +163,7 @@ function FilterDropdown({
             return (
               <label
                 key={v}
-                className="flex items-center gap-2 px-2.5 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-gray-700"
+                className="flex items-center gap-2 px-2.5 py-1 hover:bg-surface-raised cursor-pointer text-[11px] text-text-secondary"
               >
                 <input
                   type="checkbox"
@@ -179,7 +179,7 @@ function FilterDropdown({
       </div>
 
       {/* Footer with count */}
-      <div className="px-2.5 py-1 border-t border-gray-100 text-[10px] text-gray-400">
+      <div className="px-2.5 py-1 border-t border-border-light text-[10px] text-text-muted">
         {selectedValues?.size ?? 0} / {values.length} selected
       </div>
     </div>
@@ -191,12 +191,12 @@ function FilterDropdown({
         ref={buttonRef}
         onClick={openDropdown}
         className={`inline-flex items-center gap-1 transition-colors ${
-          isActive ? 'text-blue-600' : ''
+          isActive ? 'text-brand' : ''
         }`}
         title={`Filter by ${label}`}
       >
         <span>{label}</span>
-        <Filter className={`w-3 h-3 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+        <Filter className={`w-3 h-3 ${isActive ? 'text-brand' : 'text-text-muted'}`} />
         {isActive && selectedValues && (
           <span className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold text-white bg-blue-500 rounded-full">
             {selectedValues.size}

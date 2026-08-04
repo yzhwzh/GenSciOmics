@@ -220,6 +220,7 @@ def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
         messages=messages, real_path=real_path, api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
         max_iterations=MAX_TOOL_ITERATIONS,
+        skills_filter=['single-*', 'statistical-analysis'],
     ):
         yield {'event': event['event'], 'data': json.dumps(event['data'], ensure_ascii=False, default=str)}
 
@@ -239,8 +240,8 @@ def process_literature_chat_streaming(messages, api_key, context='',
     for event in _stream(
         messages=msgs, real_path='', api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
-        max_iterations=MAX_TOOL_ITERATIONS,  # Align with Free Analysis
-        tools_filter=None,
+        max_iterations=MAX_TOOL_ITERATIONS,
+        skills_filter=['light-*'],
     ):
         yield {'event': event['event'], 'data': json.dumps(event['data'], ensure_ascii=False, default=str)}
 
