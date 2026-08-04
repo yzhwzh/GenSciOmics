@@ -1,0 +1,289 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1410 720" width="100%" height="100%" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8"/>
+    </marker>
+    <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000010"/></filter>
+  </defs>
+
+  <!-- TITLE -->
+  <text x="705" y="30" text-anchor="middle" font-size="20" font-weight="bold" fill="#1E293B">ECC 开发工程链路图</text>
+  <text x="705" y="46" text-anchor="middle" font-size="10" fill="#64748B">Everything Claude Code — 8 阶段开发流水线</text>
+
+  <!-- LEGEND -->
+  <g transform="translate(20,55)">
+    <rect width="1370" height="28" rx="5" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8"/>
+    <text x="15" y="19" font-size="7.5" font-weight="bold" fill="#475569">Single-cell Atlas 实际使用:</text>
+    <rect x="155" y="10" width="36" height="13" rx="3" fill="#F0FDF4" stroke="#86EFAC" stroke-width="0.6"/>
+    <text x="173" y="20" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#16A34A">已用</text>
+    <rect x="195" y="10" width="36" height="13" rx="3" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.6"/>
+    <text x="213" y="20" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#D97706">部分</text>
+    <rect x="235" y="10" width="36" height="13" rx="3" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.6"/>
+    <text x="253" y="20" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#64748B">未用</text>
+
+    <rect x="300" y="10" width="14" height="14" rx="3" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.8"/>
+    <text x="318" y="20" font-size="6.5" fill="#64748B">= 灰色（未实际使用）</text>
+    <rect x="440" y="10" width="14" height="14" rx="3" fill="#EFF6FF" stroke="#93C5FD" stroke-width="0.8"/>
+    <text x="458" y="20" font-size="6.5" fill="#475569">= 亮色（已实际使用）</text>
+  </g>
+
+  <!-- ════════════════════════════════════════════════════════════
+       PHASES 0–7
+       Each box now has: usage status for Single-cell Atlas
+     ════════════════════════════════════════════════════════════ -->
+
+  <!-- ── Phase 0: x=20  Single-cell Atlas=Partial  Color=Muted violet ── -->
+  <g transform="translate(20,95)">
+    <rect width="140" height="310" rx="8" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#7C3AED"/>
+    <rect y="20" width="140" height="16" fill="#7C3AED"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">🔍  Phase 0</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#5B21B6">研究与复用</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#7C3AED">Research &amp; Reuse</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#C4B5FD" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#475569">▸ gh search repos/code</text>
+    <text x="14" y="100" font-size="7" fill="#475569">▸ ecc:docs-lookup</text>
+    <text x="14" y="118" font-size="7" fill="#475569">▸ Explore agent</text>
+    <text x="14" y="136" font-size="7" fill="#475569">▸ WebSearch / Exa</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#C4B5FD" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#EDE9FE" stroke="#8B5CF6" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#6D28D9">✅ Gate: 复用报告</text>
+    <!-- Usage row -->
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#D97706">⚠️ Single-cell Atlas: 部分使用</text>
+  </g>
+  <line x1="162" y1="250" x2="180" y2="250" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 1: x=190  Single-cell Atlas=Used  Color=Bright blue ── -->
+  <g transform="translate(190,95)">
+    <rect width="140" height="310" rx="8" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#2563EB"/>
+    <rect y="20" width="140" height="16" fill="#2563EB"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">📐  Phase 1</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#1E3A5F">架构与规划</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#2563EB">Architecture &amp; Plan</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#93C5FD" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#475569">▸ ecc:architect</text>
+    <text x="14" y="100" font-size="7" fill="#475569">▸ ecc:code-architect</text>
+    <text x="14" y="118" font-size="7" fill="#475569">▸ ecc:planner</text>
+    <text x="14" y="136" font-size="7" fill="#475569">▸ 设计文档产出</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#93C5FD" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#DBEAFE" stroke="#3B82F6" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#1D4ED8">✅ Gate: 批准计划</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#93C5FD" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#F0FDF4" stroke="#86EFAC" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#16A34A">✅ Single-cell Atlas: 已用</text>
+  </g>
+  <line x1="332" y1="250" x2="350" y2="250" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 2: x=360  Single-cell Atlas=NotUsed  Color=Gray ── -->
+  <g transform="translate(360,95)">
+    <rect width="140" height="310" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#CBD5E1"/>
+    <rect y="20" width="140" height="16" fill="#CBD5E1"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">🔴  Phase 2</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#64748B">TDD: RED</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#94A3B8">写测试 · 预期失败</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#E2E8F0" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#94A3B8">▸ ecc:tdd-guide 引导</text>
+    <text x="14" y="100" font-size="7" fill="#94A3B8">▸ 编写单元+集成测试</text>
+    <text x="14" y="118" font-size="7" fill="#94A3B8">▸ npm test → FAIL</text>
+    <text x="14" y="136" font-size="7" fill="#94A3B8">▸ git checkpoint</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#94A3B8">🔴 Gate: RED</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#94A3B8">❌ Single-cell Atlas: 未用</text>
+  </g>
+  <line x1="502" y1="250" x2="520" y2="250" stroke="#CBD5E1" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 3: x=530  Single-cell Atlas=NotUsed  Color=Gray ── -->
+  <g transform="translate(530,95)">
+    <rect width="140" height="310" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#CBD5E1"/>
+    <rect y="20" width="140" height="16" fill="#CBD5E1"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">🟢  Phase 3</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#64748B">TDD: GREEN</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#94A3B8">实现 · 测试通过</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#E2E8F0" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#94A3B8">▸ 最小实现代码</text>
+    <text x="14" y="100" font-size="7" fill="#94A3B8">▸ npm test → PASS</text>
+    <text x="14" y="118" font-size="7" fill="#94A3B8">▸ 重构 (IMPROVE)</text>
+    <text x="14" y="136" font-size="7" fill="#94A3B8">▸ git checkpoint</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#94A3B8">🟢 Gate: GREEN</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#94A3B8">❌ Single-cell Atlas: 未用</text>
+  </g>
+  <line x1="672" y1="250" x2="690" y2="250" stroke="#CBD5E1" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 4: x=700  Single-cell Atlas=Partial  Color=Muted amber ── -->
+  <g transform="translate(700,95)">
+    <rect width="140" height="310" rx="8" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#D97706"/>
+    <rect y="20" width="140" height="16" fill="#D97706"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">📝  Phase 4</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#78350F">代码审查</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#D97706">Code Review</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#FCD34D" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#475569">▸ ecc:code-reviewer</text>
+    <text x="14" y="100" font-size="7" fill="#475569">▸ 语言专用审查 agent</text>
+    <text x="14" y="118" font-size="7" fill="#475569">▸ 审查清单核对</text>
+    <text x="14" y="136" font-size="7" fill="#475569">▸ CI/CD 验证</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#FCD34D" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#FEF3C7" stroke="#F59E0B" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#92400E">✅ Gate: 无 C/H</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#FCD34D" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#D97706">⚠️ Single-cell Atlas: 部分使用</text>
+  </g>
+  <line x1="842" y1="250" x2="860" y2="250" stroke="#CBD5E1" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 5: x=870  Single-cell Atlas=Partial  Color=Pink ── -->
+  <g transform="translate(870,95)">
+    <rect width="140" height="310" rx="8" fill="#FDF2F8" stroke="#F9A8D4" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#DB2777"/>
+    <rect y="20" width="140" height="16" fill="#DB2777"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">🛡️  Phase 5</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#831843">安全审查</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#DB2777">Security Review</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#F9A8D4" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#475569">▸ ecc:security-reviewer</text>
+    <text x="14" y="100" font-size="7" fill="#475569">▸ OWASP Top 10</text>
+    <text x="14" y="118" font-size="7" fill="#475569">▸ 认证/输入/API</text>
+    <text x="14" y="136" font-size="7" fill="#475569">▸ secrets 检测</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#F9A8D4" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#FCE7F3" stroke="#EC4899" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#9D174D">✅ Gate: 无 CRITICAL</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#F9A8D4" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#D97706">⚠️ Single-cell Atlas: 部分使用</text>
+  </g>
+  <line x1="1012" y1="250" x2="1030" y2="250" stroke="#CBD5E1" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 6: x=1040  Single-cell Atlas=Used  Color=Bright indigo ── -->
+  <g transform="translate(1040,95)">
+    <rect width="140" height="310" rx="8" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#4F46E5"/>
+    <rect y="20" width="140" height="16" fill="#4F46E5"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">⚙️  Phase 6</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#312E81">构建检查</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#4F46E5">Build Check</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#A5B4FC" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#475569">▸ ecc:build-error-resolver</text>
+    <text x="14" y="100" font-size="7" fill="#475569">▸ 语言专用构建解析</text>
+    <text x="14" y="118" font-size="7" fill="#475569">▸ 增量修复验证</text>
+    <text x="14" y="136" font-size="7" fill="#475569">▸ tsc / cargo / go build</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#A5B4FC" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#E0E7FF" stroke="#6366F1" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#3730A3">✅ Gate: 构建通过</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#A5B4FC" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#F0FDF4" stroke="#86EFAC" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#16A34A">✅ Single-cell Atlas: 已用</text>
+  </g>
+  <line x1="1182" y1="250" x2="1200" y2="250" stroke="#CBD5E1" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Phase 7: x=1210  Single-cell Atlas=NotUsed  Color=Gray ── -->
+  <g transform="translate(1210,95)">
+    <rect width="140" height="310" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect width="140" height="36" rx="8" fill="#CBD5E1"/>
+    <rect y="20" width="140" height="16" fill="#CBD5E1"/>
+    <text x="70" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFF">📊  Phase 7</text>
+    <text x="70" y="44" text-anchor="middle" font-size="9" font-weight="bold" fill="#64748B">覆盖率验证</text>
+    <text x="70" y="56" text-anchor="middle" font-size="6.5" fill="#94A3B8">Coverage Check</text>
+    <line x1="8" y1="66" x2="132" y2="66" stroke="#E2E8F0" stroke-width="0.5"/>
+    <text x="14" y="82" font-size="7" fill="#94A3B8">▸ npm run test:coverage</text>
+    <text x="14" y="100" font-size="7" fill="#94A3B8">▸ ≥ 80% lines/branches</text>
+    <text x="14" y="118" font-size="7" fill="#94A3B8">▸ verify-all 端到端</text>
+    <text x="14" y="136" font-size="7" fill="#94A3B8">▸ 最终提交</text>
+    <line x1="8" y1="150" x2="132" y2="150" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="158" width="112" height="22" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="0.8"/>
+    <text x="70" y="173" text-anchor="middle" font-size="7" font-weight="bold" fill="#94A3B8">✅ Gate: ≥ 80%</text>
+    <line x1="8" y1="190" x2="132" y2="190" stroke="#E2E8F0" stroke-width="0.5"/>
+    <rect x="14" y="196" width="112" height="16" rx="4" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.6"/>
+    <text x="70" y="207" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#94A3B8">❌ Single-cell Atlas: 未用</text>
+  </g>
+
+  	  <!-- ==========================================================
+	       TESTING COMPARISON: TDD vs Single-cell Atlas Actual
+	     ========================================================== -->
+	  <g transform="translate(20,412)">
+	    <rect width="1370" height="80" rx="6" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow)"/>
+	    <text x="685" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="#475569">TDD vs Single-cell Atlas 实际测试对比</text>
+	    <text x="30" y="33" font-size="7.5" font-weight="bold" fill="#1E293B">ECC TDD 流程:</text>
+	    <rect x="150" y="23" width="44" height="16" rx="3" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.8"/>
+	    <text x="172" y="34" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#DC2626">P2 RED</text>
+	    <text x="198" y="34" font-size="6.5" fill="#64748B">  先写测试 → 预期 FAIL</text>
+	    <text x="330" y="34" font-size="6.5" fill="#94A3B8">→</text>
+	    <rect x="348" y="23" width="50" height="16" rx="3" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="0.8"/>
+	    <text x="373" y="34" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#059669">P3 GREEN</text>
+	    <text x="402" y="34" font-size="6.5" fill="#64748B">  写实现 → 测试 PASS</text>
+	    <text x="30" y="55" font-size="7.5" font-weight="bold" fill="#1E293B">Single-cell Atlas 实际:</text>
+	    <rect x="150" y="45" width="50" height="16" rx="3" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8"/>
+	    <text x="175" y="56" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#D97706">实现代码</text>
+	    <text x="204" y="56" font-size="6.5" fill="#94A3B8">→</text>
+	    <rect x="214" y="45" width="124" height="16" rx="3" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="0.8"/>
+	    <text x="276" y="56" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#4F46E5">手动验证 (Verify)</text>
+	    <text x="342" y="56" font-size="6.5" fill="#94A3B8">→</text>
+	    <rect x="352" y="45" width="40" height="16" rx="3" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="0.8"/>
+	    <text x="372" y="56" text-anchor="middle" font-size="6.5" font-weight="bold" fill="#64748B">修复?</text>
+	    <text x="396" y="56" font-size="6.5" fill="#94A3B8">→ 重新验证 → 提交</text>
+	    <text x="30" y="72" font-size="6.5" fill="#64748B">注: Single-cell Atlas 的测试 = curl 检查 API + 浏览器看页面 + 复现 bug 场景，是事后手动验证，不是 TDD 的先写测试再实现。</text>
+	  </g>
+<!-- ════════════════════════════════════════════════════════════
+       SUPPORTING INFRASTRUCTURE
+     ════════════════════════════════════════════════════════════ -->
+  <g transform="translate(20,505)">
+    <rect width="1370" height="155" rx="8" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow)"/>
+    <text x="685" y="20" text-anchor="middle" font-size="11" font-weight="bold" fill="#475569">支持基础设施  —  各阶段适用映射</text>
+
+    <g transform="translate(15,28)">
+      <rect width="320" height="112" rx="6" fill="#FFF" stroke="#CBD5E1" stroke-width="0.8"/>
+      <text x="160" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">🤖 Agent 系统</text>
+      <text x="12" y="33" font-size="6.8" fill="#64748B">▸ 20+ 专用 Agent</text>
+      <text x="12" y="49" font-size="6.8" fill="#64748B">▸ 语言专用审查</text>
+      <line x1="8" y1="58" x2="312" y2="58" stroke="#E2E8F0" stroke-width="0.5"/>
+      <text x="12" y="72" font-size="6.5" font-weight="bold" fill="#475569">适用阶段:</text>
+      <text x="12" y="87" font-size="6.5" fill="#7C3AED">P0</text><text x="30" y="87" font-size="6.5" fill="#94A3B8">  Research (Explore)</text>
+      <text x="12" y="101" font-size="6.5" fill="#2563EB">P1</text><text x="30" y="101" font-size="6.5" fill="#94A3B8">  Plan (architect/planner)</text>
+      <text x="150" y="87" font-size="6.5" fill="#D97706">P4</text><text x="168" y="87" font-size="6.5" fill="#94A3B8">  Review (code-reviewer)</text>
+      <text x="150" y="101" font-size="6.5" fill="#4F46E5">P6</text><text x="168" y="101" font-size="6.5" fill="#94A3B8">  Build (build-error-resolver)</text>
+    </g>
+    <g transform="translate(355,28)">
+      <rect width="320" height="112" rx="6" fill="#FFF" stroke="#CBD5E1" stroke-width="0.8"/>
+      <text x="160" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">🔗 Hook 系统</text>
+      <text x="12" y="33" font-size="6.8" fill="#64748B">▸ PreToolUse / PostToolUse</text>
+      <text x="12" y="49" font-size="6.8" fill="#64748B">▸ GateGuard 安全护栏</text>
+      <line x1="8" y1="58" x2="312" y2="58" stroke="#E2E8F0" stroke-width="0.5"/>
+      <text x="12" y="72" font-size="6.5" font-weight="bold" fill="#475569">适用阶段:</text>
+      <text x="12" y="88" font-size="6.5" fill="#475569">P0  P1  P2  P3  P4  P5  P6  P7</text>
+      <text x="12" y="104" font-size="6.5" fill="#94A3B8">全程生效 — 每次工具调用自动触发</text>
+    </g>
+    <g transform="translate(695,28)">
+      <rect width="320" height="112" rx="6" fill="#FFF" stroke="#CBD5E1" stroke-width="0.8"/>
+      <text x="160" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">🧠 Memory 系统</text>
+      <text x="12" y="33" font-size="6.8" fill="#64748B">▸ 知识图谱 + File-based 记忆</text>
+      <text x="12" y="49" font-size="6.8" fill="#64748B">▸ CLAUDE.md 项目指令</text>
+      <line x1="8" y1="58" x2="312" y2="58" stroke="#E2E8F0" stroke-width="0.5"/>
+      <text x="12" y="72" font-size="6.5" font-weight="bold" fill="#475569">适用阶段:</text>
+      <text x="12" y="88" font-size="6.5" fill="#475569">P0  P1  P2  P3  P4  P5  P6  P7</text>
+      <text x="12" y="104" font-size="6.5" fill="#94A3B8">全程生效 — 跨会话上下文持久化</text>
+    </g>
+    <g transform="translate(1035,28)">
+      <rect width="320" height="112" rx="6" fill="#FFF" stroke="#CBD5E1" stroke-width="0.8"/>
+      <text x="160" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">🔌 MCP 集成</text>
+      <text x="12" y="33" font-size="6.8" fill="#64748B">▸ GitHub / Playwright / Exa</text>
+      <text x="12" y="49" font-size="6.8" fill="#64748B">▸ Context7 / Seq Thinking</text>
+      <line x1="8" y1="58" x2="312" y2="58" stroke="#E2E8F0" stroke-width="0.5"/>
+      <text x="12" y="72" font-size="6.5" font-weight="bold" fill="#475569">适用阶段:</text>
+      <text x="12" y="87" font-size="6.5" fill="#7C3AED">P0</text><text x="30" y="87" font-size="6.5" fill="#94A3B8">  GitHub搜索 + Context7文档</text>
+      <text x="150" y="87" font-size="6.5" fill="#D97706">P4</text><text x="168" y="87" font-size="6.5" fill="#94A3B8">  GitHub PR + 代码审查</text>
+      <text x="12" y="101" font-size="6.5" fill="#6366F1">P6</text><text x="30" y="101" font-size="6.5" fill="#94A3B8">  GitHub CI 状态</text>
+    </g>
+  </g>
+
+</svg>

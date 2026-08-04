@@ -1,0 +1,369 @@
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { Settings2, Trash2, Send, StopCircle, BookOpen, ChevronRight, ChevronLeft, BarChart3, Dna, FlaskConical, Table2, Network } from 'lucide-react'
+import LLMConfigPanel from './LLMConfigPanel'
+import ChatPanel from './ChatPanel'
+import ToolResultsPanel from './ToolResultsPanel'
+import SkillDetailModal from './SkillDetailModal'
+import DragHandle from './DragHandle'
+import { sendChatMessageStreaming } from '../../api/analysis'
+import type { ChatMessage, LLMConfig, ToolResult, SkillDef } from '../../api/types'
+
+const DEFAULT_CONFIG: LLMConfig = {
+  model: 'Qwen3.5-397B-A17B-FP8-Thinking',
+  apiKey: 'sk-fdQEp3ZkOOxz50BVJWbhGaHzHHIiBztLPtBTDyxFwbPMLcfo',
+  baseUrl: 'http://llm-gateway.ai.dgtmeta.com/v1',
+  temperature: 0.7,
+}
+
+function loadConfig(): LLMConfig {
+  try {
+    const saved = localStorage.getItem('gensci_llm_config')
+    if (saved) return { ...DEFAULT_CONFIG, ...JSON.parse(saved) }
+  } catch { /* ignore */ }
+  return DEFAULT_CONFIG
+}
+
+export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
+  const [config, setConfig] = useState<LLMConfig>(loadConfig)
+  const [showConfig, setShowConfig] = useState(false)
+  const [input, setInput] = useState('')
+  const storageKey = `gensci_free_msgs_${realPath}`
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(storageKey)
+      if (saved) return JSON.parse(saved)
+    } catch { /* ignore */ }
+    return []
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [toolsOpen, setToolsOpen] = useState(true)
+  const [toolsW, setToolsW] = useState(280)
+  const [showSkills, setShowSkills] = useState(false)
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
+  const [skills, setSkills] = useState<SkillDef[]>([])
+  const abortRef = useRef<AbortController | null>(null)
+  const skillsRef = useRef<HTMLDivElement>(null)
+
+  // Fetch skills list — only analysis-related skills (no system tools or Light skills)
+  useEffect(() => {
+    fetch('/api/skills')
+      .then(r => r.json())
+      .then((data: SkillDef[]) => {
+        const filtered = data.filter(s =>
+          s.name.startsWith('single-cell-') ||
+          s.name.startsWith('single-') ||
+          s.name === 'statistical-analysis'
+        )
+        setSkills(filtered)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Restore messages from sessionStorage when realPath finishes loading
+  useEffect(() => {
+    if (!realPath) return
+    const key = `gensci_free_msgs_${realPath}`
+    try {
+      const saved = sessionStorage.getItem(key)
+      if (saved) {
+        const parsed = JSON.parse(saved) as ChatMessage[]
+        if (parsed.length > 0) setMessages(parsed)
+      }
+    } catch { /* ignore */ }
+  }, [realPath])
+
+  // Close skills dropdown on outside click
+  useEffect(() => {
+    if (!showSkills) return
+    const onDown = (e: MouseEvent) => {
+      if (skillsRef.current && !skillsRef.current.contains(e.target as Node)) {
+        setShowSkills(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showSkills])
+
+  const saveConfig = useCallback((c: LLMConfig) => {
+    setConfig(c)
+    try { localStorage.setItem('gensci_llm_config', JSON.stringify(c)) } catch { /* ignore */ }
+  }, [])
+
+  const handleSend = useCallback(async (text: string) => {
+    if (!realPath) { setError('Dataset path not available.'); return }
+    if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) { setError('Please configure your API key in LLM Settings.'); return }
+
+    const userMsg: ChatMessage = { role: 'user', content: text }
+    const updatedMessages = [...messages, userMsg]
+    setMessages(updatedMessages)
+    setLoading(true)
+    setError(null)
+
+    // Add placeholder assistant message for streaming
+    setMessages(prev => [...prev, { role: 'assistant', content: '', tool_results: [] }])
+
+    const toolResults: ToolResult[] = []
+    const abortController = new AbortController()
+    abortRef.current = abortController
+
+    try {
+      await sendChatMessageStreaming(updatedMessages, realPath, config, (event, data) => {
+        if (event === 'message') {
+          const d = data as { content: string }
+          if (d.content) {
+            setMessages(prev => {
+              const next = [...prev]
+              const last = next[next.length - 1]
+              if (last && last.role === 'assistant') {
+                next[next.length - 1] = { ...last, content: last.content + d.content }
+              }
+              return next
+            })
+          }
+        } else if (event === 'tool_result') {
+          const d = data as ToolResult
+          toolResults.push(d)
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last && last.role === 'assistant') {
+              next[next.length - 1] = { ...last, tool_results: [...toolResults] }
+            }
+            return next
+          })
+        } else if (event === 'error') {
+          const d = data as { error: string }
+          setError(d.error || 'An error occurred')
+        }
+      }, abortController.signal)
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name !== 'AbortError') setError(err.message)
+    } finally {
+      setLoading(false)
+      abortRef.current = null
+    }
+  }, [realPath, config, messages])
+
+  const handleStop = useCallback(() => { abortRef.current?.abort(); setLoading(false) }, [])
+
+  // Persist messages to sessionStorage on change
+  useEffect(() => {
+    if (messages.length > 0) {
+      try { sessionStorage.setItem(storageKey, JSON.stringify(messages)) } catch { /* ignore */ }
+    }
+  }, [messages, storageKey])
+
+  const handleClear = useCallback(() => {
+    setMessages([]); setError(null)
+    try { sessionStorage.removeItem(storageKey) } catch { /* ignore */ }
+  }, [storageKey])
+
+  const handleInputSend = () => {
+    const msg = input.trim()
+    if (!msg || loading) return
+    handleSend(msg)
+    setInput('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleInputSend() }
+  }
+
+  const hasChat = messages.length > 0
+
+  return (
+    <div className="h-full flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* ── Header ───────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 shrink-0">
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowConfig(!showConfig)}
+            className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded transition-colors ${
+              showConfig ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+            }`}>
+            <Settings2 className="w-3 h-3" />{showConfig ? 'Hide Config' : 'LLM Settings'}
+          </button>
+          {hasChat && (
+            <button onClick={handleClear}
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-red-500 px-2 py-1 rounded hover:bg-gray-50 transition-colors">
+              <Trash2 className="w-3 h-3" />Clear
+            </button>
+          )}
+
+          {/* Skills button with dropdown */}
+          <div className="relative" ref={skillsRef}>
+            <button onClick={() => setShowSkills(!showSkills)}
+              className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded transition-colors ${
+                showSkills ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+              }`}>
+              <BookOpen className="w-3 h-3" />Skills
+            </button>
+
+            {showSkills && (
+              <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                <div className="px-3 py-1.5 border-b border-gray-100">
+                  <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider">Available Skills</span>
+                </div>
+                {skills.map(s => (
+                  <button key={s.name} onClick={() => { setSelectedSkill(s.name); setShowSkills(false) }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border-b border-gray-50 last:border-b-0">
+                    <div className="font-medium">{s.name}</div>
+                    {s.description && <div className="text-[9px] text-gray-400 truncate">{s.description}</div>}
+                  </button>
+                ))}
+                {skills.length === 0 && (
+                  <div className="px-3 py-4 text-[10px] text-gray-400 text-center">Loading skills...</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {hasChat && (
+            <button onClick={() => setToolsOpen(!toolsOpen)}
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 px-1.5 py-1 rounded hover:bg-gray-50 transition-colors"
+              title={toolsOpen ? 'Hide tool results' : 'Show tool results'}>
+              {toolsOpen ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+            </button>
+          )}
+          <span className="text-[10px] text-gray-400 font-mono">{config.model}</span>
+        </div>
+      </div>
+
+      {/* ── Config panel ─────────────────────────────────────── */}
+      {showConfig && (
+        <div className="shrink-0 border-b border-gray-100 px-3 py-2 bg-gray-50/50">
+          <LLMConfigPanel config={config} onChange={saveConfig} />
+        </div>
+      )}
+
+      {/* ── Main content ─────────────────────────────────────── */}
+      {!realPath ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Select a dataset to begin analysis.</div>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-row">
+          {/* Left: Chat */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {hasChat ? (
+              <div className="flex-1 min-h-0">
+                <ChatPanel messages={messages} loading={loading} error={error} />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-3 py-3 space-y-3">
+                  {/* Dataset context badge */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                    <BarChart3 className="w-4 h-4 text-blue-500 shrink-0" />
+                    <span className="text-[11px] text-blue-700 font-medium truncate">Dataset: {realPath.split('/').pop()}</span>
+                  </div>
+
+                  {/* Main card */}
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center ring-1 ring-blue-200">
+                        <Dna className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-gray-800">GenSci Analysis Agent</h2>
+                        <p className="text-[9px] text-gray-400 font-mono">single-cell · statistics · visualization</p>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed mb-3">
+                      AI-powered single-cell data analysis. Ask questions about gene expression,
+                      cell types, statistical comparisons, and more. Uses specialized analysis scripts
+                      combined with LLM reasoning.
+                    </p>
+
+                    {/* Features */}
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">
+                      {[
+                        { icon: BarChart3, text: 'Gene expression viz (boxplot/barplot)' },
+                        { icon: Dna, text: 'Find marker genes per cell type' },
+                        { icon: Network, text: 'Co-expression / Venn / UpSet' },
+                        { icon: FlaskConical, text: 'Statistical tests (t-test, MWU)' },
+                        { icon: BookOpen, text: 'Pathway enrichment (GO, KEGG)' },
+                        { icon: Network, text: 'Gene regulatory network (SCENIC)' },
+                        { icon: BarChart3, text: 'Cell communication (CellPhoneDB)' },
+                        { icon: Dna, text: 'Trajectory inference & RNA velocity' },
+                        { icon: Table2, text: 'Cell type annotation & sub-clustering' },
+                        { icon: FlaskConical, text: 'Perturbation & cell fate analysis' },
+                        { icon: BookOpen, text: 'Foundation model (Geneformer, scGPT)' },
+                        { icon: Table2, text: 'Export tables, plots & summaries' },
+                      ].map((f, i) => (
+                        <div key={i} className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded bg-white/80 flex items-center justify-center shrink-0">
+                            <f.icon className="w-3 h-3 text-blue-500" />
+                          </div>
+                          <span className="text-[10px] text-gray-600">{f.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Example prompts */}
+                    <div>
+                      <div className="text-[9px] text-blue-500 font-medium mb-1.5">Try asking</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'Show ACE2 expression by CellType',
+                          'Find markers for Epithelial cells',
+                          'Co-expression of EGFR, PD1, PSMA',
+                          't-test between groups for nFeature_RNA',
+                          'Dataset summary',
+                        ].map((ex, i) => (
+                          <button key={i} onClick={() => { handleSend(ex); setInput('') }}
+                            className="text-[10px] bg-white text-gray-500 hover:text-blue-600 hover:border-blue-300 border border-gray-200 px-2 py-1 rounded-lg transition-colors">
+                            💡 {ex}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Tool Results Panel */}
+          {hasChat && toolsOpen && (
+            <DragHandle
+              orientation="vertical"
+              onDrag={(d) => setToolsW(prev => Math.max(200, Math.min(window.innerWidth * 0.4, prev + d)))}
+            />
+          )}
+          {hasChat && (
+            <div
+              className="shrink-0 overflow-hidden transition-all duration-200"
+              style={{ width: toolsOpen ? toolsW : 0 }}
+            >
+              <ToolResultsPanel messages={messages} loading={loading} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Input bar ────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-gray-200 bg-white px-3 py-2">
+        <div className="flex items-end gap-2">
+          <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+            placeholder="Ask a question about your data..." rows={1}
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 resize-none placeholder:text-gray-300 max-h-20" />
+          {loading ? (
+            <button onClick={handleStop}
+              className="flex items-center gap-1 text-[10px] bg-red-50 text-red-500 px-2.5 py-2 rounded-lg hover:bg-red-100 transition-colors shrink-0">
+              <StopCircle className="w-3.5 h-3.5" /> Stop
+            </button>
+          ) : (
+            <button onClick={handleInputSend} disabled={!input.trim()}
+              className="flex items-center gap-1 text-[10px] bg-blue-500 text-white px-2.5 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0">
+              <Send className="w-3.5 h-3.5" /> Send
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Skill Detail Modal ───────────────────────────────── */}
+      <SkillDetailModal skillName={selectedSkill} onClose={() => setSelectedSkill(null)} />
+    </div>
+  )
+}

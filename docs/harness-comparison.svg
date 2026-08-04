@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
+  <defs>
+    <filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000018"/></filter>
+    <filter id="lt"><feDropShadow dx="0" dy="0.5" stdDeviation="1" flood-color="#0000000A"/></filter>
+    <marker id="ad" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 5 10 L 10 0 z" fill="#64748B"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- TITLE -->
+  <rect x="40" y="16" width="1120" height="44" rx="8" fill="#1E293B" filter="url(#sh)"/>
+  <text x="600" y="44" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">Harness 核心循环逐步骤对比 — Claude Code vs Single-cell Atlas</text>
+
+  <!-- HEADERS -->
+  <rect x="55" y="76" width="500" height="26" rx="6" fill="#F97316" filter="url(#lt)"/>
+  <text x="305" y="94" text-anchor="middle" font-size="10" font-weight="bold" fill="#FFF">Claude Code</text>
+  <rect x="585" y="76" width="560" height="26" rx="6" fill="#2563EB" filter="url(#lt)"/>
+  <text x="865" y="94" text-anchor="middle" font-size="10" font-weight="bold" fill="#FFF">Single-cell Atlas</text>
+
+  <!-- USER QUERY -->
+  <rect x="380" y="116" width="440" height="40" rx="8" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="600" y="142" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E40AF">💬 用户提交问题</text>
+
+  <line x1="305" y1="158" x2="305" y2="176" stroke="#64748B" stroke-width="1.2" marker-end="url(#ad)"/>
+  <line x1="865" y1="158" x2="865" y2="176" stroke="#64748B" stroke-width="1.2" marker-end="url(#ad)"/>
+
+  <!-- STEP 1: ENTRY -->
+  <rect x="55" y="180" width="500" height="40" rx="6" fill="#FFF7ED" stroke="#F97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="305" y="198" text-anchor="middle" font-size="9" font-weight="bold" fill="#9A3412">① QueryEngine.submitMessage()</text>
+  <text x="305" y="212" text-anchor="middle" font-size="7" fill="#78350F">生命周期管理 · SDK 协议 · 会话状态</text>
+  <rect x="585" y="180" width="560" height="40" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="865" y="198" text-anchor="middle" font-size="9" font-weight="bold" fill="#1E3A8A">① Vite Proxy → Python :6000</text>
+  <text x="865" y="212" text-anchor="middle" font-size="7" fill="#1E3A8A">routes.py → llm_proxy.py → agent/__init__.py</text>
+  <line x1="305" y1="222" x2="305" y2="240" stroke="#64748B" stroke-width="1" marker-end="url(#ad)"/>
+  <line x1="865" y1="222" x2="865" y2="240" stroke="#64748B" stroke-width="1" marker-end="url(#ad)"/>
+
+  <!-- STEP 2: SYSTEM PROMPT -->
+  <rect x="55" y="244" width="500" height="48" rx="6" fill="#FFF7ED" stroke="#F97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="305" y="262" text-anchor="middle" font-size="9" font-weight="bold" fill="#9A3412">② 构建系统提示词</text>
+  <text x="65" y="278" font-size="7" fill="#78350F">getSystemPrompt(tools, model, mcp) — 缓存分块</text>
+  <text x="65" y="290" font-size="7" fill="#78350F">getUserContext(CLAUDE.md, date, git status)</text>
+  <rect x="585" y="244" width="560" height="48" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="865" y="262" text-anchor="middle" font-size="9" font-weight="bold" fill="#1E3A8A">② 构建系统提示词</text>
+  <text x="595" y="278" font-size="7" fill="#1E3A8A">Memory Prefetch → 自动搜索相关记忆</text>
+  <text x="595" y="290" font-size="7" fill="#1E3A8A">assemble_prompt() → 13 章节拼接（无缓存分块）</text>
+  <line x1="305" y1="294" x2="305" y2="312" stroke="#64748B" stroke-width="1" marker-end="url(#ad)"/>
+  <line x1="865" y1="294" x2="865" y2="312" stroke="#64748B" stroke-width="1" marker-end="url(#ad)"/>
+
+  <!-- LOOP HEADER -->
+  <rect x="55" y="316" width="500" height="30" rx="6" fill="#FFEDD5" stroke="#EA580C" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="305" y="336" text-anchor="middle" font-size="10" font-weight="bold" fill="#9A3412">③ queryLoop() 【while true】</text>
+  <rect x="585" y="316" width="560" height="30" rx="6" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="865" y="336" text-anchor="middle" font-size="10" font-weight="bold" fill="#1E3A8A">③ process_chat_streaming() 【for range】</text>
+
+  <!-- LOOP BODY -->
+  <rect x="40" y="354" width="530" height="310" rx="8" fill="#FFF7ED" stroke="#F97316" stroke-width="1" stroke-dasharray="5,3" filter="url(#lt)"/>
+  <rect x="570" y="354" width="590" height="310" rx="8" fill="#EFF6FF" stroke="#2563EB" stroke-width="1" stroke-dasharray="5,3" filter="url(#lt)"/>
+
+  <!-- 3a -->
+  <rect x="55" y="366" width="500" height="34" rx="5" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="305" y="382" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#78350F">a. 准备消息</text>
+  <text x="65" y="394" font-size="7" fill="#78350F">snip→microcompact→context collapse→auto compact (4 层压缩)</text>
+  <rect x="585" y="366" width="560" height="34" rx="5" fill="#FFFFFF" stroke="#93C5FD" stroke-width="0.8"/>
+  <text x="865" y="382" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#1E3A8A">a. 准备消息</text>
+  <text x="595" y="394" font-size="7" fill="#1E3A8A">无压缩（模型窗口大，对话短），直接使用 working_messages</text>
+  <line x1="305" y1="402" x2="305" y2="414" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+  <line x1="865" y1="402" x2="865" y2="414" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+
+  <!-- 3b -->
+  <rect x="55" y="418" width="500" height="34" rx="5" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="305" y="434" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#78350F">b. 调用 LLM</text>
+  <text x="65" y="446" font-size="7" fill="#78350F">callModel() → Anthropic API (streaming, 原生流式 SDK)</text>
+  <rect x="585" y="418" width="560" height="34" rx="5" fill="#FFFFFF" stroke="#93C5FD" stroke-width="0.8"/>
+  <text x="865" y="434" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#1E3A8A">b. 调用 LLM</text>
+  <text x="595" y="446" font-size="7" fill="#1E3A8A">_stream_sse() → DeepSeek API (OpenAI 格式) ⚠️ 502/503 重试</text>
+  <line x1="305" y1="454" x2="305" y2="466" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+  <line x1="865" y1="454" x2="865" y2="466" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+
+  <!-- 3c -->
+  <rect x="55" y="470" width="500" height="34" rx="5" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="305" y="486" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#78350F">c. 处理响应</text>
+  <text x="65" y="498" font-size="7" fill="#78350F">提取 content + tool_use blocks → needsFollowUp</text>
+  <rect x="585" y="470" width="560" height="34" rx="5" fill="#FFFFFF" stroke="#93C5FD" stroke-width="0.8"/>
+  <text x="865" y="486" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#1E3A8A">c. 处理响应</text>
+  <text x="595" y="498" font-size="7" fill="#1E3A8A">合并 tool_calls delta → tcl = list(collected_tc.values())</text>
+  <line x1="305" y1="506" x2="305" y2="518" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+  <line x1="865" y1="506" x2="865" y2="518" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+
+  <!-- 3d -->
+  <rect x="55" y="522" width="500" height="34" rx="5" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.8"/>
+  <text x="305" y="538" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#991B1B">d. 有 tool_use？</text>
+  <text x="65" y="550" font-size="7" fill="#991B1B">无 → return { reason: 'completed' }</text>
+  <rect x="585" y="522" width="560" height="34" rx="5" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.8"/>
+  <text x="865" y="538" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#991B1B">d. 有 tool_calls？</text>
+  <text x="595" y="550" font-size="7" fill="#991B1B">无 → yield event:done → return</text>
+  <line x1="200" y1="558" x2="200" y2="570" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+  <line x1="800" y1="558" x2="800" y2="570" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+
+  <!-- 3e -->
+  <rect x="55" y="574" width="500" height="34" rx="5" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="305" y="590" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#78350F">e. 执行工具</text>
+  <text x="65" y="602" font-size="7" fill="#78350F">无限制并行 · generateToolUseSummary · injectAttachments</text>
+  <rect x="585" y="574" width="560" height="34" rx="5" fill="#FFFFFF" stroke="#93C5FD" stroke-width="0.8"/>
+  <text x="865" y="590" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#1E3A8A">e. 执行工具</text>
+  <text x="595" y="602" font-size="7" fill="#1E3A8A">ThreadPoolExecutor(max_workers=3) + post_tool hooks</text>
+  <line x1="305" y1="610" x2="305" y2="622" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+  <line x1="865" y1="610" x2="865" y2="622" stroke="#CBD5E1" stroke-width="0.8" marker-end="url(#ad)"/>
+
+  <!-- 3f -->
+  <rect x="55" y="626" width="500" height="28" rx="5" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="305" y="642" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#78350F">f. 终止检查</text>
+  <text x="65" y="654" font-size="7" fill="#78350F">checkMaxTurns · checkTokenBudget</text>
+  <rect x="585" y="626" width="560" height="28" rx="5" fill="#FFFFFF" stroke="#93C5FD" stroke-width="0.8"/>
+  <text x="865" y="642" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#1E3A8A">f. 终止检查</text>
+  <text x="595" y="654" font-size="7" fill="#1E3A8A">near-limit nudge: iter ≥ max-3 → 注入总结指令</text>
+
+  <!-- Loop back -->
+  <path d="M 40 660 L 22 660 L 22 382 L 45 382" fill="none" stroke="#94A3B8" stroke-width="0.8" marker-end="url(#ar)"/>
+  <text x="12" y="520" font-size="6" fill="#94A3B8" transform="rotate(-90,12,520)">下一轮 while(true)</text>
+  <path d="M 1160 660 L 1178 660 L 1178 382 L 1160 382" fill="none" stroke="#94A3B8" stroke-width="0.8" marker-end="url(#ar)"/>
+  <text x="1188" y="520" font-size="6" fill="#94A3B8" transform="rotate(90,1188,520)">下一轮 for-range</text>
+
+  <!-- STEP 4: OUTPUT -->
+  <line x1="305" y1="666" x2="305" y2="684" stroke="#64748B" stroke-width="1.2" marker-end="url(#ad)"/>
+  <line x1="865" y1="666" x2="865" y2="684" stroke="#64748B" stroke-width="1.2" marker-end="url(#ad)"/>
+  <rect x="55" y="688" width="500" height="36" rx="6" fill="#FEF2F2" stroke="#F97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="305" y="706" text-anchor="middle" font-size="9" font-weight="bold" fill="#9A3412">④ 返回 { reason: 'completed' }</text>
+  <text x="305" y="719" text-anchor="middle" font-size="7" fill="#78350F">或 max_turns / diminishing_returns</text>
+  <rect x="585" y="688" width="560" height="36" rx="6" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="865" y="706" text-anchor="middle" font-size="9" font-weight="bold" fill="#1E3A8A">④ SSE 流式返回前端</text>
+  <text x="865" y="719" text-anchor="middle" font-size="7" fill="#1E3A8A">event: done (或 max_iterations warning)</text>
+
+  <!-- LEGEND -->
+  <g transform="translate(40,760)">
+    <rect width="1120" height="24" rx="4" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8"/>
+    <rect x="15" y="6" width="12" height="12" rx="3" fill="#FFF7ED" stroke="#F97316" stroke-width="0.5"/>
+    <text x="32" y="16" font-size="6.5" fill="#64748B">Claude Code</text>
+    <rect x="110" y="6" width="12" height="12" rx="3" fill="#EFF6FF" stroke="#2563EB" stroke-width="0.5"/>
+    <text x="127" y="16" font-size="6.5" fill="#64748B">Single-cell Atlas</text>
+    <rect x="230" y="6" width="12" height="12" rx="3" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.5"/>
+    <text x="247" y="16" font-size="6.5" fill="#64748B">决策点</text>
+    <line x1="310" y1="12" x2="340" y2="12" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="347" y="16" font-size="6.5" fill="#64748B">循环边界</text>
+  </g>
+</svg>

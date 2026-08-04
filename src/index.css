@@ -1,0 +1,13 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-brand: #3B44AC;
+  --color-brand-dark: #323A62;
+  --color-brand-light: #8093DC;
+  --color-brand-gold: #FFB548;
+  --color-brand-bg: #f8f9fc;
+  --color-brand-border: #e8eaf0;
+  --font-family-sans: 'Montserrat', system-ui, sans-serif;
+}

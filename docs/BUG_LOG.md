@@ -1,0 +1,440 @@
+# 缺陷日志 (Bug Log)
+
+> 活文档 — 记录 GenSci 开发过程中发现和修复的所有缺陷。
+> 每条记录包含：日期、现象、根因、修复方案、涉及文件。
+> **新增缺陷请按序号追加，不要删除历史记录。**
+
+---
+
+## B1. Vite HMR WebSocket 断线触发页面刷新 (2026-07-14 ~ 2026-07-15)
+
+### 现象
+页面加载后约 30 秒自动执行 `location.reload()` 全量刷新。即使没有 LLM 请求也会发生。FreeAnalysis 中已输入的内容全部丢失。
+
+### 根因
+Vite HMR WebSocket 在连接后约 **28.8 秒自动断开**，客户端立即重连，但 Vite 在 WebSocket 重连后发送 `full-reload` 指令，浏览器执行 `location.reload()`。
+
+```
+T+367ms  [vite] connected.              ← WebSocket 连接成功
+T+28782ms [vite] connecting...           ← WebSocket 断开（ws 库默认 ping timeout）
+T+28793ms [vite] connected.              ← 重连成功
+T+29000ms LOAD #2 (location.reload())    ← Vite 发送 full-reload 指令
+```
+
+**深层原因**：
+- `ws` 库有默认的 ping/pong 超时机制，约 30 秒未收到 pong 即断开连接
+- Vite 在 WebSocket 重新连接后自动发送 `full-reload` 以同步客户端状态
+- `hmr.host: '10.243.163.51'` 使 WebSocket 通过 IP 连接，在某些网络环境下 ping/pong 不稳定
+
+### 修复
+1. `server/routes.py`: `Connection: keep-alive` → **`close`**（SSE 结束后正确关闭连接）
+2. 添加 `X-Accel-Buffering: no` 头（nginx 兼容）
+3. 添加**心跳线程**（每 15s 发 `: heartbeat\n\n`，tool 执行阶段保持 proxy 连接活跃）
+4. `finally` 块中显式 `handler.connection.shutdown(SHUT_WR)` / `close()`
+5. `vite.config.ts`: `hmr.timeout: 30000` → **`120000`**
+
+### 涉及文件
+- `server/routes.py` — SSE 响应头 + 心跳线程
+- `vite.config.ts` — HMR timeout
+
+### 验证方法
+- SSE 响应头返回 `Connection: close`
+- 需要用户在实际浏览器中验证页面 60 秒内无刷新
+
+### 已知未解决问题
+- `hmr.host` 设为 `'localhost'` 时 Playwright 无法正确加载页面
+- `hmr.host` 设为 `'10.243.163.51'` 时 WebSocket 在约 29 秒断开
+- **正式环境（production build）不存在此问题**，仅 Vite dev server 有 HMR 机制
+
+---
+
+## B2. FreeAnalysisTab 刷新后消息丢失 (2026-07-14)
+
+### 现象
+页面刷新后，FreeAnalysis 中的聊天记录不恢复（白板状态）。
+
+### 根因
+`FreeAnalysisTab.tsx` 用 `useState` 从 sessionStorage 恢复消息初始值，但 `storageKey` 依赖 `realPath` prop。
+
+`realPath` 是异步加载的（`findDataset()` → `setRealPath()`），组件挂载时 `realPath` 为 `''`，所以 `useState` 的初始值读取的 key 是 `gensci_free_msgs_`（错误 key），永远拿不到之前保存的消息。
+
+### 修复
+添加 `useEffect` 监听 `realPath` 变化，加载完成后重新从 sessionStorage 恢复消息：
+
+```typescript
+useEffect(() => {
+  if (!realPath) return
+  const key = `gensci_free_msgs_${realPath}`
+  const saved = sessionStorage.getItem(key)
+  if (saved) setMessages(JSON.parse(saved))
+}, [realPath])
+```
+
+### 涉及文件
+- `src/components/analysis/FreeAnalysisTab.tsx`
+
+---
+
+## B3. FreeAnalysisTab Tab 切换消息丢失 (2026-07-13)
+
+### 现象
+切换到其他 Tab 再切回 Free Analysis，之前的聊天记录消失。
+
+### 根因
+组件无持久化机制，一旦组件 remount（如路由变化），状态丢失。
+
+### 修复
+添加 sessionStorage 持久化 `useEffect`，`messages` 变化时自动保存。
+
+### 涉及文件
+- `src/components/analysis/FreeAnalysisTab.tsx`
+
+---
+
+## B4. AnalysisPage activeTab 刷新后重置为 0 (2026-07-13)
+
+### 现象
+页面刷新后，AnalysisPage 的 activeTab 从当前 Tab 跳回 Study Info (Tab 0)。
+
+### 根因
+`activeTab` 状态无持久化，每次刷新回到默认值 0。
+
+### 修复
+`useState` 初始值从 sessionStorage 读取，`useEffect` 实时持久化。
+
+### 涉及文件
+- `src/pages/AnalysisPage.tsx`
+
+---
+
+## B5. Scanner Cache Key 不匹配导致启动缓慢 (2026-07-14)
+
+### 现象
+服务器启动需要 30-60 秒才能加载完所有数据集（正常应 <5 秒）。
+
+### 根因
+`.scanner_cache.json` 的 cache key 格式不一致：
+- 旧文件：resolved path（`/data/yuanwuzhou/08.GEO/...`）
+- 新代码：symlink path（`Data/Human/Kidney/...`）
+
+导致每次读取缓存全部 miss，必须重新扫描所有 60+ 个 h5ad 文件。
+
+### 修复
+1. 删除旧的 `.scanner_cache.json`
+2. 首次扫描用正确的 symlink-path key 重建缓存
+3. 之后重启只需 mtime 比对，无需打开 h5ad
+
+### 涉及文件
+- `server/scanner.py` — cache key 从 `str(real)` 改为 `str(path)`
+
+---
+
+## B6. Scanner 数据重复 (2026-07-13)
+
+### 现象
+同一数据集在 `/api/datasets` 中出现两次。
+
+### 根因
+cache key 使用 resolved path，多个 symlink 指向同一文件时产生重复条目。
+
+### 修复
+cache key 改为 symlink path，每个 symlink 只记录一次。
+
+### 涉及文件
+- `server/scanner.py`
+
+---
+
+## B7. MCP Tools 未注册 (2026-07-13)
+
+### 现象
+LLM Agent 找不到 MCP 工具，只能使用 native 函数。
+
+### 根因
+`_init_mcp_tools()` 在 streaming 路径中未被调用。
+
+### 修复
+在 `process_chat_streaming()` 开始时调用 `_init_mcp_tools()`。
+
+### 涉及文件
+- `server/agent/__init__.py`
+
+---
+
+## B8. Literature Agent 迭代次数过少 (2026-07-13)
+
+### 现象
+Literature Agent 在完成搜索后无法输出总结，报 "Max iterations reached"。
+
+### 根因
+Literature 有独立的 `MAX_LITERATURE_ITERATIONS = 6`，执行搜索+分析+总结需要更多轮数。
+
+### 修复
+删除 `MAX_LITERATURE_ITERATIONS`，统一使用 `max_iterations=50`。
+
+### 涉及文件
+- `server/llm_proxy.py`
+
+---
+
+## B9. FreeAnalysisTab Stop 按钮无效 (2026-07-13)
+
+### 现象
+点击 Stop 按钮无法停止 LLM 响应流。
+
+### 根因
+`sendChatMessageStreaming()` 未接收 AbortSignal，`fetch()` 无法被取消。
+
+### 修复
+- `sendChatMessageStreaming()` 新增 `signal?: AbortSignal` 参数
+- `fetch()` 调用传入 `signal`
+- `handleStop` 调用 `abortRef.current?.abort()`
+
+### 涉及文件
+- `src/api/analysis.ts`
+- `src/components/analysis/FreeAnalysisTab.tsx`
+
+---
+
+## B10. ALL_TOOLS 线程不安全 (2026-07-13)
+
+### 现象
+多线程同时注册 Tool 时可能导致 `ALL_TOOLS` 数据竞争。
+
+### 根因
+`ALL_TOOLS` 是共享的 `list[Tool]`，无锁保护。
+
+### 修复
+添加 `_all_tools_lock`，通过 `add_tool()` 以 context manager 方式安全写入。
+
+### 涉及文件
+- `server/core/tool.py`
+
+---
+
+## B11. 后端端口混乱 (2026-07-14)
+
+### 现象
+Vite proxy 将 `/api` 请求代理到 `127.0.0.1:6000`，但后端实际在 7070 端口运行，导致 API 全部返回空。
+
+### 根因
+服务器被从 6000 移到 7070 但 proxy target 未同步更新。同时存在多个 Python 服务实例。
+
+### 修复
+杀掉所有 Python 服务进程，在 6000 端口重新启动。
+
+### 涉及文件
+- `server/main.py`（端口参数）
+- `vite.config.ts`（确认 proxy target 对齐）
+
+---
+
+## B12. Literature Agent 近限 nudge 不足 (2026-07-13)
+
+### 现象
+Literature Agent 在迭代接近上限时无法及时总结。
+
+### 根因
+旧版本注入 "留 1 轮给总结" 策略不足。改为 50 轮后需要更强的近限提示。
+
+### 修复
+在迭代 >= `max_iterations - 3` 时添加 "请立即总结" 的 nudge。
+
+### 涉及文件
+- `server/agent/__init__.py`
+- `server/llm_proxy.py`
+
+---
+
+## B13. `window.location.reload` 只读属性导致页面白屏 (2026-07-15)
+
+### 现象
+页面白屏，React 无法挂载，`#root` 元素为空。控制台报 TypeError。
+
+### 根因
+ES modules 运行在严格模式下，`window.location.reload` 是只读属性（`configurable: false, writable: false`），直接赋值抛出：
+```
+TypeError: Cannot assign to read only property 'reload' of object '[object Location]'
+```
+
+### 修复
+改用 `window.addEventListener('beforeunload', ...)` —— SSE 活跃时拦截页面卸载事件，静默取消不弹框。
+
+### 涉及文件
+- `src/api/analysis.ts`
+
+---
+
+## B14. Vite oxc 解析器括号对齐错误 (2026-07-15)
+
+### 现象
+Vite 返回 500，页面白屏。`tsc --noEmit` 通过但 Vite 的 oxc 解析器报 PARSE_ERROR。
+
+### 根因
+Vite 8 使用 oxc（Rust TS 解析器），对嵌套 `try {} finally {}` 的括号缩进比 `tsc` 更严格。
+
+### 修复
+确保 `try` / `catch` / `finally` 的闭合括号与打开语句**缩进层级一致**。
+
+### 涉及文件
+- `src/api/analysis.ts`
+
+---
+
+## B15. 重启后首次加载首页空白 (2026-07-20)
+
+### 现象
+后端重启后，第一次打开网页（`:6000` 直连静态前端）首页空白几秒，数据组件不渲染。
+
+### 根因
+`main.py` 中用 `Thread(target=scan_datasets, daemon=True)` 异步启动初始扫描，HTTP server 不等待扫描完成就启动。用户直接访问 `:6000` 时，浏览器立即加载静态前端并发送 API 请求，但 scanner 尚未执行完，`datasets` 列表仍为空，前端收到空数据后渲染为空。
+
+**次要问题**：`scanner_loop()` 在初始扫描后立即又执行一次完全相同的扫描，造成 30 秒内的冗余扫描和 `datasets` 列表的短暂清空窗口。
+
+### 修复
+1. `server/main.py`: 初始扫描改为**同步执行**（去掉 `Thread`），阻塞 HTTP server 启动直到 `datasets` 就绪
+2. `server/main.py`: 添加扫描耗时日志（`Initial scan complete (X.Xs, N datasets)`）
+3. `server/scanner.py`: `scanner_loop()` 开头加 `time.sleep(SCAN_INTERVAL)`，避免与同步扫描重叠产生冗余遍历
+
+### 涉及文件
+- `server/main.py` — 初始扫描同步化 + 耗时日志
+- `server/scanner.py` — `scanner_loop()` 首轮延迟
+
+### 验证方法
+1. 重启后端，立即 curl `/api/tissues` 应立刻返回非空数据
+2. 日志显示初始扫描耗时
+3. 浏览器访问 `:6000` 首页直接展示数据，无空白期
+
+---
+
+## 附录：修复清单总览
+
+| ID | 缺陷 | 类型 | 严重度 | 日期 | 涉及文件数 |
+|----|------|------|--------|------|-----------|
+| B1 | Vite HMR 页面刷新 | 性能/架构 | CRITICAL | 07-14~15 | 2 |
+| B2 | FreeAnalysis 刷新消息丢失 | 功能 | HIGH | 07-14 | 1 |
+| B3 | FreeAnalysis Tab 切换消息丢失 | 功能 | HIGH | 07-13 | 1 |
+| B4 | activeTab 刷新重置 | 功能 | MEDIUM | 07-13 | 1 |
+| B5 | Scanner 缓存 key 不匹配 | 性能 | HIGH | 07-14 | 1 |
+| B6 | Scanner 数据重复 | 功能 | HIGH | 07-13 | 1 |
+| B7 | MCP 工具未注册 | 功能 | CRITICAL | 07-13 | 1 |
+| B8 | Literature 迭代次数过少 | 功能 | HIGH | 07-13 | 1 |
+| B9 | Stop 按钮无效 | 功能 | MEDIUM | 07-13 | 2 |
+| B10 | ALL_TOOLS 线程不安全 | 架构 | MEDIUM | 07-13 | 1 |
+| B11 | 后端端口混乱 | 运维 | HIGH | 07-14 | 2 |
+| B12 | Literature nudge 不足 | 功能 | MEDIUM | 07-13 | 2 |
+| B13 | `window.location.reload` 只读属性 | 运行时 | CRITICAL | 07-15 | 1 |
+| B14 | oxc 解析器括号对齐 | 构建 | CRITICAL | 07-15 | 1 |
+| B15 | 重启后首次加载首页空白 | 架构/性能 | HIGH | 07-20 | 2 |
+| B16 | Tissue Workspace 返回聊天丢失 | 功能 | HIGH | 07-24 | 1 |
+| B17 | @tailwindcss/vite 扫描 dist/ 无限循环 | 性能/构建 | CRITICAL | 07-28 | 1 |
+| B18 | TypeScript 严格模式 60+ 构建错误 | 构建 | HIGH | 07-28 | 14 |
+
+---
+
+## B16. Tissue Workspace 返回后聊天记录丢失 (2026-07-24)
+
+### 现象
+在 Tissue Workspace 发起 LLM 对话后，点击 PMID 进入分析页面，再通过浏览器返回按钮回到 TissuePage，聊天内容全部清空。
+
+### 根因
+`LiteratureTab.tsx` 用 `useState` 初始化器从 sessionStorage 恢复消息，但 storage key 依赖于 `context` prop：
+
+```tsx
+// TissuePage.tsx — context 依赖异步加载的 rows
+<LiteratureTab context={`${tissueName} — ${[...new Set(rows.map(r => r.disease))].join(', ')}`} />
+```
+
+初始 `rows=[]` → `context = "Lung — "`，数据加载后才变成 `"Lung — COPD, IPF"`。
+
+`useState` 初始化器**仅在挂载时执行一次**，而此时 context 仅为 `"Lung — "`（rows 为空），sessionStorage key 为 `gensci_lit_msgs_Lung — `（错误 key），永远匹配不到之前以 `gensci_lit_msgs_Lung — COPD, IPF` 保存的数据。
+
+### 修复
+添加 `useEffect` 监听 `context` 变化，重新从 sessionStorage 加载消息：
+
+```typescript
+useEffect(() => {
+  const saved = loadMessages(context)
+  if (saved.length > 0) setMessages(saved)
+}, [context])
+```
+
+同时将 `useState` 初始值从 `() => loadMessages(context)` 改为直接 `[]`，避免首次挂载时加载不完整的 context key。
+
+### 涉及文件
+- `src/components/analysis/LiteratureTab.tsx`
+
+### 验证方法
+1. 在 Tissue Workspace 中发起对话，确认消息正常保存
+2. 点击任意 PMID 跳转到分析页面
+3. 浏览器返回 Tissue Workspace
+4. 验证之前的聊天记录完整恢复，无内容丢失
+
+---
+
+## B17. @tailwindcss/vite Oxide 扫描器无限循环 → 白屏 (2026-07-28)
+
+### 现象
+Vite 启动后 5~30 秒内 CPU 飙升至 3810%，页面返回 `ERR_EMPTY_RESPONSE`。修改任意文件（包括不影响服务的 `docs/*.md`）都会触发重新扫描，再次白屏。
+
+### 根因
+`@tailwindcss/vite` 插件的 Oxide 扫描器（独立于 Vite chokidar）默认 `**/*` 递归扫描整个项目目录查找 Tailwind 工具类。`dist/` 中的 1.7MB 压缩 JS bundle 被扫描时触发反馈循环：
+
+```
+请求 → generate() → Oxide 扫描所有文件 → 扫到 dist/ 1.7MB JS
+→ addWatchFile → CSS 失效 → generate() 再次调用 → 循环
+→ 并发扫描线程堆积，CPU 爆炸
+```
+
+**关键误区：** `vite.config.ts` 的 `watch.ignored: ['**/dist/**']` 只控制 Vite 自身的 chokidar，管不了 Oxide 扫描器。改 `docs/*.md` 也触发白屏是因为 Oxide 监听所有文件变化。
+
+### 修复（三重保障）
+
+**1. `src/index.css` 用 `@source` 限制扫描范围（核心修复）：**
+```css
+@import "tailwindcss" source(none);   /* 关闭全局扫描 */
+@source "../src";                     /* 仅扫描 src/ 目录 */
+```
+这从根源上阻止 Oxide 进入 `dist/`、`docs/`、`Data/`、`node_modules/`。
+
+**2. 删除 `dist/`（开发模式不需要）：**
+```bash
+rm -rf dist
+```
+
+**3. `vite.config.ts` watch.ignored 增加 `**/dist/**`（防止 chidokar 触发）：**
+```typescript
+watch: { ignored: ['**/dist/**', ...] }
+```
+
+### 涉及文件
+- `src/index.css` — `source(none)` + `@source "../src"`（核心）
+- `vite.config.ts` — watch.ignored 新增 `'**/dist/**'`（辅助）
+
+---
+
+## B18. TypeScript 严格模式导致 60+ 构建错误 (2026-07-28)
+
+### 现象
+`tsc -b` 报 60+ 错误，涉及 TissuePage、SearchPage 等 12 个文件。`tsc --noEmit` 无错误（宽松模式）。
+
+### 根因
+1. **`DatasetInfo` 的 `[key: string]: unknown`** 索引签名覆盖了所有字段类型为 `unknown`
+2. **`tsconfig.app.json`** 启用了 `noUncheckedIndexedAccess: true`
+3. **`SkillCards.test.tsx`** 引用已删除的组件
+
+### 修复
+核心改动：删除 `DatasetInfo` 的索引签名 → 修复 `useTableFilter` 类型链条 → 关闭不必要的严格选项 → 清理死代码 → 零星类型修复（共 14 个文件）
+
+### 涉及文件
+`src/api/types.ts`、`src/hooks/useTableFilter.ts`、`tsconfig.app.json`、`src/pages/TissuePage.tsx`、`SearchPage.tsx`、`src/components/analysis/` 下 5 个文件、`src/data/mockData.ts`
+
+### 验证
+```bash
+tsc -b        # 0 错误
+tsc --noEmit  # 0 错误
+```
+
+---
+
+*文档创建于 2026-07-15，后续发现新缺陷请按 B19、B20... 追加。*

@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" style="background:#FFFFFF;font-family:'Segoe UI',Arial,sans-serif">
+  <defs>
+    <filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000015"/></filter>
+  </defs>
+  <rect x="30" y="16" width="1040" height="44" rx="8" fill="#1E293B" filter="url(#sh)"/>
+  <text x="550" y="44" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">Claude Code vs Single-cell Atlas — Harness 对齐矩阵</text>
+
+  <rect x="30" y="76" width="140" height="32" rx="4" fill="#334155"/>
+  <text x="100" y="96" text-anchor="middle" font-size="9" font-weight="bold" fill="#FFF">维度</text>
+  <rect x="175" y="76" width="260" height="32" rx="4" fill="#F97316"/>
+  <text x="305" y="96" text-anchor="middle" font-size="9" font-weight="bold" fill="#FFF">Claude Code</text>
+  <rect x="440" y="76" width="320" height="32" rx="4" fill="#2563EB"/>
+  <text x="600" y="96" text-anchor="middle" font-size="9" font-weight="bold" fill="#FFF">Single-cell Atlas</text>
+  <rect x="765" y="76" width="100" height="32" rx="4" fill="#475569"/>
+  <text x="815" y="96" text-anchor="middle" font-size="9" font-weight="bold" fill="#FFF">对齐度</text>
+
+  <!-- LOOP section -->
+  <rect x="30" y="112" width="835" height="26" rx="4" fill="#F1F5F9"/>
+  <text x="45" y="130" font-size="9" font-weight="bold" fill="#475569">🔄 核心循环 (Harness Loop)</text>
+
+  <rect x="30" y="142" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="160" font-size="8" fill="#334155">循环结构</text>
+  <rect x="175" y="142" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="160" font-size="8" fill="#78350F">queryLoop() / while(true)</text>
+  <text x="185" y="178" font-size="7" fill="#9A3412">无限循环，无固定上限</text>
+  <rect x="440" y="142" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="160" font-size="8" fill="#1E3A8A">process_chat_streaming() / for-range</text>
+  <text x="450" y="178" font-size="7" fill="#1E3A8A">固定 max_iterations=50 硬上限</text>
+  <rect x="765" y="142" width="100" height="52" rx="2" fill="#FEF2C0"/>
+  <text x="815" y="164" text-anchor="middle" font-size="9" font-weight="bold" fill="#854D0E">⚡ 不同</text>
+
+  <rect x="30" y="198" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="216" font-size="8" fill="#334155">消息管理</text>
+  <rect x="175" y="198" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="216" font-size="8" fill="#78350F">消息压缩 4 层链</text>
+  <text x="185" y="234" font-size="7" fill="#9A3412">snip→microcompact→collapse→autocompact</text>
+  <rect x="440" y="198" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="216" font-size="8" fill="#1E3A8A">无消息压缩</text>
+  <text x="450" y="234" font-size="7" fill="#1E3A8A">模型窗口大(128K+)，对话短</text>
+  <rect x="765" y="198" width="100" height="52" rx="2" fill="#FEF2C0"/>
+  <text x="815" y="220" text-anchor="middle" font-size="9" font-weight="bold" fill="#854D0E">❌ 缺失</text>
+
+  <rect x="30" y="254" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="272" font-size="8" fill="#334155">工具并行</text>
+  <rect x="175" y="254" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="272" font-size="8" fill="#78350F">无限制并行</text>
+  <text x="185" y="290" font-size="7" fill="#9A3412">模型决定并行度 + generateToolUseSummary</text>
+  <rect x="440" y="254" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="272" font-size="8" fill="#1E3A8A">固定 3 线程池</text>
+  <text x="450" y="290" font-size="7" fill="#1E3A8A">ThreadPoolExecutor(3) + post_tool hooks</text>
+  <rect x="765" y="254" width="100" height="52" rx="2" fill="#BBF7D0"/>
+  <text x="815" y="276" text-anchor="middle" font-size="9" font-weight="bold" fill="#166534">✅ 功能对齐</text>
+
+  <rect x="30" y="310" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="328" font-size="8" fill="#334155">终止策略</text>
+  <rect x="175" y="310" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="328" font-size="8" fill="#78350F">maxTurns + tokenBudget</text>
+  <text x="185" y="346" font-size="7" fill="#9A3412">子 agent 200 轮 · diminishing_returns 检测</text>
+  <rect x="440" y="310" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="328" font-size="8" fill="#1E3A8A">max_iterations + nudge</text>
+  <text x="450" y="346" font-size="7" fill="#1E3A8A">50 轮上限 · near-limit 注入总结指令</text>
+  <rect x="765" y="310" width="100" height="52" rx="2" fill="#BBF7D0"/>
+  <text x="815" y="332" text-anchor="middle" font-size="9" font-weight="bold" fill="#166534">✅ 功能对齐</text>
+
+  <!-- SUPPORTING SYSTEMS -->
+  <rect x="30" y="370" width="835" height="26" rx="4" fill="#F1F5F9"/>
+  <text x="45" y="388" font-size="9" font-weight="bold" fill="#475569">🔧 支撑系统 (Supporting Infrastructure)</text>
+
+  <rect x="30" y="400" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="418" font-size="8" fill="#334155">MCP 工具</text>
+  <rect x="175" y="400" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="418" font-size="8" fill="#78350F">Deferred 机制</text>
+  <text x="185" y="436" font-size="7" fill="#9A3412">首轮仅名称，tool_reference 按需注入</text>
+  <rect x="440" y="400" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="418" font-size="8" fill="#1E3A8A">全量 schema</text>
+  <text x="450" y="436" font-size="7" fill="#1E3A8A">52 工具全部在 function calling 中</text>
+  <rect x="765" y="400" width="100" height="52" rx="2" fill="#FEF2C0"/>
+  <text x="815" y="422" text-anchor="middle" font-size="9" font-weight="bold" fill="#854D0E">⚡ 协议差异</text>
+
+  <rect x="30" y="456" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="474" font-size="8" fill="#334155">记忆系统</text>
+  <rect x="175" y="456" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="474" font-size="8" fill="#78350F">memdir 文件系统</text>
+  <text x="185" y="492" font-size="7" fill="#9A3412">预取 + 自动注入 system prompt</text>
+  <rect x="440" y="456" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="474" font-size="8" fill="#1E3A8A">memdir 文件系统</text>
+  <text x="450" y="492" font-size="7" fill="#1E3A8A">预取(2026-07-21) · 需 LLM 调用 memory_read</text>
+  <rect x="765" y="456" width="100" height="52" rx="2" fill="#BBF7D0"/>
+  <text x="815" y="478" text-anchor="middle" font-size="9" font-weight="bold" fill="#166534">✅ 已对齐</text>
+
+  <rect x="30" y="512" width="140" height="52" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="530" font-size="8" fill="#334155">钩子系统</text>
+  <rect x="175" y="512" width="260" height="52" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="530" font-size="8" fill="#78350F">26 事件</text>
+  <text x="185" y="548" font-size="7" fill="#9A3412">PreToolUse/PostToolUse/Stop/SessionStart...</text>
+  <rect x="440" y="512" width="320" height="52" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="530" font-size="8" fill="#1E3A8A">3 个 post-tool 钩子</text>
+  <text x="450" y="548" font-size="7" fill="#1E3A8A">image_return · error_recovery · (pre_tool 空)</text>
+  <rect x="765" y="512" width="100" height="52" rx="2" fill="#FEF2C0"/>
+  <text x="815" y="534" text-anchor="middle" font-size="9" font-weight="bold" fill="#854D0E">❌ 缺失</text>
+
+  <rect x="30" y="568" width="140" height="40" rx="2" fill="#F8FAFC"/>
+  <text x="40" y="586" font-size="8" fill="#334155">文件工具</text>
+  <rect x="175" y="568" width="260" height="40" rx="2" fill="#FFF7ED"/>
+  <text x="185" y="586" font-size="8" fill="#78350F">Read / Write / Edit / Glob / Grep</text>
+  <rect x="440" y="568" width="320" height="40" rx="2" fill="#EFF6FF"/>
+  <text x="450" y="586" font-size="8" fill="#1E3A8A">无原生文件工具，依赖 shell 替代</text>
+  <rect x="765" y="568" width="100" height="40" rx="2" fill="#FEF2C0"/>
+  <text x="815" y="590" text-anchor="middle" font-size="9" font-weight="bold" fill="#854D0E">❌ 缺失</text>
+
+  <g transform="translate(30,620)">
+    <rect width="835" height="26" rx="4" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8"/>
+    <rect x="15" y="7" width="12" height="12" rx="3" fill="#BBF7D0" stroke="#22C55E" stroke-width="0.5"/>
+    <text x="32" y="17" font-size="7" fill="#64748B">✅ 已对齐</text>
+    <rect x="95" y="7" width="12" height="12" rx="3" fill="#FEF2C0" stroke="#EAB308" stroke-width="0.5"/>
+    <text x="112" y="17" font-size="7" fill="#64748B">⚡/❌ 部分对齐/缺失</text>
+    <rect x="230" y="7" width="12" height="12" rx="3" fill="#FFF7ED" stroke="#F97316" stroke-width="0.5"/>
+    <text x="247" y="17" font-size="7" fill="#64748B">Claude Code</text>
+    <rect x="320" y="7" width="12" height="12" rx="3" fill="#EFF6FF" stroke="#2563EB" stroke-width="0.5"/>
+    <text x="337" y="17" font-size="7" fill="#64748B">Single-cell Atlas</text>
+  </g>
+</svg>
