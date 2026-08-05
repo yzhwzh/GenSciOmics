@@ -54,7 +54,7 @@ export default function TissuePage() {
   const omicsRows = activeTab === 'single-cell' ? rows : []
 
   const downloadCSV = () => {
-    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', 'CellTypes', 'Group']
+    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', 'CellTypes', 'Group', 'Annotation Source']
     const csvRows = [headers.join(',')]
     for (const r of omicsRows) {
       csvRows.push([
@@ -62,6 +62,7 @@ export default function TissuePage() {
         r.size_mb && r.size_mb > 1000 ? `${(r.size_mb / 1024).toFixed(1)} GB` : `${r.size_mb} MB`,
         r.status, r.patient_count ?? '-', r.sample_count ?? '-',
         r.celltype_count ?? '-', `"${r.group_dist || '-'}"`,
+        r.annotation_source || 'Paper',
       ].join(','))
     }
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
@@ -122,13 +123,11 @@ export default function TissuePage() {
         </div>
       </div>
 
-      {/* Content: omics table or literature tab */}
-      {activeTab === 'literature' ? (
-        <div className="flex-1 min-h-0 max-w-7xl mx-auto px-6 w-full">
-          <LiteratureTab context={`${tissueName} — ${[...new Set(rows.map(r => r.disease))].join(', ')}`} />
-        </div>
-      ) : (
-      <div className="flex-1 min-h-0 overflow-y-auto max-w-7xl mx-auto px-6 py-4 w-full">
+      {/* Content: omics table + literature tab (display:none to preserve chat state) */}
+      <div className={`flex-1 min-h-0 max-w-7xl mx-auto px-6 w-full ${activeTab === 'literature' ? '' : 'hidden'}`}>
+        <LiteratureTab context={`${tissueName} — ${[...new Set(rows.map(r => r.disease))].join(', ')}`} />
+      </div>
+      <div className={`flex-1 min-h-0 overflow-y-auto max-w-7xl mx-auto px-6 py-4 w-full ${activeTab === 'literature' ? 'hidden' : ''}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-[15px] font-semibold text-text-primary">Available Datasets</h2>
@@ -191,6 +190,7 @@ export default function TissuePage() {
                       selectedValues={filters['tissue_obs']} onToggle={(v) => toggleFilter('tissue_obs', v)}
                       onClear={() => clearFilter('tissue_obs')} isActive={isFilterActive('tissue_obs')} portal />
                   </th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Annotation Source</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-light">
@@ -227,6 +227,7 @@ export default function TissuePage() {
                     <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.celltype_count ?? '-'}</td>
                     <td className="py-2.5 px-4 text-xs text-text-secondary leading-snug break-words" title={row.group_dist}>{row.group_dist || '-'}</td>
                     <td className="py-3 px-4 text-sm text-text-secondary">{row.tissue_obs || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-text-secondary">{row.annotation_source || 'Paper'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -243,7 +244,6 @@ export default function TissuePage() {
           )}
         </div>
       </div>
-      )}
     </div>
   )
 }

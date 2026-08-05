@@ -12,6 +12,7 @@ export interface DatasetInfo {
   celltype_count?: number
   group_dist?: string
   tissue_obs?: string
+  annotation_source?: string
 }
 
 export interface TissueStat {

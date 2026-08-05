@@ -48,6 +48,28 @@ def _save_cache(cache: dict):
         print(f'[GenSci] Failed to save scanner cache: {e}', file=sys.stderr)
 
 
+# ─── Annotation sources (hot-reload from JSON) ─────────────────
+
+_annotation_sources_cache: tuple[float, dict] | None = None
+_ANNOTATION_SOURCES_FILE = PROJECT_ROOT / 'server' / 'annotation_sources.json'
+
+
+def _load_annotation_sources() -> dict:
+    """Load annotation sources from JSON, re-read only if mtime changed."""
+    global _annotation_sources_cache
+    try:
+        mtime = _ANNOTATION_SOURCES_FILE.stat().st_mtime
+        if _annotation_sources_cache is not None and _annotation_sources_cache[0] == mtime:
+            return _annotation_sources_cache[1]
+        data = json.loads(_ANNOTATION_SOURCES_FILE.read_text())
+        _annotation_sources_cache = (mtime, data)
+        return data
+    except Exception:
+        if _annotation_sources_cache is not None:
+            return _annotation_sources_cache[1]
+        return {}  # file missing on first load → empty, all default to 'Paper'
+
+
 def _read_obs_stats(real_path: Path, mtime: float) -> dict:
     """Read and cache obs column statistics from an .h5ad file."""
     key = (str(real_path), mtime)
@@ -83,6 +105,10 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
                 stats['celltype_names'] = [str(v) for v in unique]
             else:
                 stats[f'{col.lower()}_dist'] = ''
+        # Static metadata for analysis-info (no h5ad read needed)
+        stats['sample_names'] = [str(s) for s in adata.obs['Sample'].unique()] if 'Sample' in adata.obs.columns else []
+        stats['group_names'] = [str(g) for g in adata.obs['Group'].unique()] if 'Group' in adata.obs.columns else []
+        stats['obs_columns'] = list(adata.obs.columns)
         adata.file.close()
         _obs_cache.set(key, stats)
         return stats
@@ -145,6 +171,10 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'n_vars': cached.get('n_vars', 0),
                 'group_dist': cached.get('group_dist', ''),
                 'tissue_obs': cached.get('tissue_obs', ''),
+                'annotation_source': _load_annotation_sources().get(cached.get('pmid', ''), 'Paper'),
+                'sample_names': cached.get('sample_names', []),
+                'group_names': cached.get('group_names', []),
+                'obs_columns': cached.get('obs_columns', []),
             }
 
     # Extract info from path structure: Data/<Species>/<Tissue>/<Disease>/<pmid>.<disease>.h5ad
@@ -192,6 +222,7 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         'real_path': str(path),  # symlink path inside Data/ (not resolved target)
         'size_mb': round(size_mb, 1),
         'status': status,
+        'annotation_source': _load_annotation_sources().get(pmid, 'Paper'),
         **obs_stats,
     }
     if cache is not None:
@@ -213,6 +244,10 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'n_vars': obs_stats.get('n_vars', 0),
                 'group_dist': obs_stats.get('group_dist', ''),
                 'tissue_obs': obs_stats.get('tissue_obs', ''),
+                'annotation_source': _load_annotation_sources().get(pmid, 'Paper'),
+                'sample_names': obs_stats.get('sample_names', []),
+                'group_names': obs_stats.get('group_names', []),
+                'obs_columns': obs_stats.get('obs_columns', []),
             }
     return result
 

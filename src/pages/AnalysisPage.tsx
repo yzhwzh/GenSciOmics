@@ -57,8 +57,13 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     if (!realPath || !pmid) return
+    let cancelled = false
     setInfoLoading(true)
-    fetchAnalysisInfo(pmid, realPath).then(setInfo).catch(() => setError('Failed to load info')).finally(() => setInfoLoading(false))
+    fetchAnalysisInfo(pmid, realPath)
+      .then((data) => { if (!cancelled) setInfo(data) })
+      .catch(() => { if (!cancelled) setError('Failed to load info') })
+      .finally(() => { if (!cancelled) setInfoLoading(false) })
+    return () => { cancelled = true }
   }, [realPath, pmid])
 
   const fetchUmap = useCallback(() => {
@@ -68,7 +73,12 @@ export default function AnalysisPage() {
       .then((d) => setUmapData(d as UmapData)).catch(() => setUmapData(null)).finally(() => setUmapLoading(false))
   }, [realPath, colorBy, geneName, geneName2, umapPalette])
 
-  useEffect(() => { if (realPath) fetchUmap() }, [fetchUmap])
+  useEffect(() => {
+    if (!realPath || activeTab !== 1) return
+    let cancelled = false
+    fetchUmap()
+    return () => { cancelled = true }
+  }, [fetchUmap, activeTab])
 
   if (error) {
     return (
@@ -114,28 +124,37 @@ export default function AnalysisPage() {
         ))}
       </div>
 
-      {/* Content — all tabs rendered via display:none to preserve state */}
+      {/* Content — only active Tab mounted to avoid I/O storm */}
       <div className="flex-1 min-h-0">
-        <div style={{ display: activeTab === 0 ? 'flex' : 'none' }} className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden">
-          <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Study Info</div>
-          <div className="flex-1 min-h-0"><InfoPanel info={info} loading={infoLoading} /></div>
-        </div>
-        <div style={{ display: activeTab === 1 ? 'block' : 'none' }} className="h-full p-3">
-          <UmapTabContent realPath={realPath} umapData={umapData} umapLoading={umapLoading} colorBy={colorBy} onColorByChange={setColorBy} geneName={geneName} onGeneNameChange={setGeneName} geneName2={geneName2} onGeneName2Change={setGeneName2} palette={umapPalette} onPaletteChange={setUmapPalette} />
-        </div>
-        <div style={{ display: activeTab === 2 ? 'flex' : 'none' }} className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden">
-          <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression per Sample × Cell Type</div>
-          <div className="flex-1 min-h-0">
-            {realPath ? <BoxPlotContainer realPath={realPath} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
+        {activeTab === 0 && (
+          <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
+            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Study Info</div>
+            <div className="flex-1 min-h-0"><InfoPanel info={info} loading={infoLoading} /></div>
           </div>
-        </div>
-        <div style={{ display: activeTab === 3 ? 'flex' : 'none' }} className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden">
-          <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression by Cell Type (Aggregate)</div>
-          <div className="flex-1 min-h-0">
-            {realPath ? <ExpressionChartContainer realPath={realPath} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
+        )}
+        {activeTab === 1 && (
+          <div className="h-full p-3">
+            <UmapTabContent realPath={realPath} umapData={umapData} umapLoading={umapLoading} colorBy={colorBy} onColorByChange={setColorBy} geneName={geneName} onGeneNameChange={setGeneName} geneName2={geneName2} onGeneName2Change={setGeneName2} palette={umapPalette} onPaletteChange={setUmapPalette} />
           </div>
-        </div>
-        <div style={{ display: activeTab === 4 ? 'block' : 'none' }} className="h-full p-3">
+        )}
+        {activeTab === 2 && (
+          <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
+            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression per Sample × Cell Type</div>
+            <div className="flex-1 min-h-0">
+              {realPath ? <BoxPlotContainer realPath={realPath} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
+            </div>
+          </div>
+        )}
+        {activeTab === 3 && (
+          <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
+            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression by Cell Type (Aggregate)</div>
+            <div className="flex-1 min-h-0">
+              {realPath ? <ExpressionChartContainer realPath={realPath} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
+            </div>
+          </div>
+        )}
+        {/* Free Analysis — display:none to keep chat state alive across tab switches */}
+        <div className="h-full p-3" style={{ display: activeTab === 4 ? 'block' : 'none' }}>
           <FreeAnalysisTab realPath={realPath} />
         </div>
       </div>

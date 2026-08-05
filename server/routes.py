@@ -18,6 +18,8 @@ from caches import LRUCache
 # Caches for expensive .h5ad reads
 _analysis_info_cache = LRUCache(max_size=500)
 _umap_cache = LRUCache(max_size=200)
+_plot_cache = LRUCache(max_size=500)
+_table_cache = LRUCache(max_size=500)
 from events import log_event, event_log, event_log_lock, MILESTONES, milestones_lock, MILESTONE_FILE
 from search import _search_datasets
 from pubmed import _fetch_abstract
@@ -197,6 +199,9 @@ def handle_analysis_info(handler, q):
                             'sample_count': v.get('sample_count', 0),
                             'celltype_count': v.get('celltype_count', 0),
                             'cell_type_names': v.get('celltype_names', []),
+                            'sample_names': v.get('sample_names', []),
+                            'group_names': v.get('group_names', []),
+                            'obs_columns': v.get('obs_columns', []),
                         }
                         break
     except Exception:
@@ -292,7 +297,14 @@ def handle_per_sample_table(handler, q):
     if not genes_str:
         handler._send_error('genes parameter required')
         return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'pstable:{real_path_str}:{mtime}:{genes_str}:{group_col}:{celltype_col}'
+    cached = _table_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
     result = _get_per_sample_table(str(real_path), genes_str, group_col, celltype_col)
+    _table_cache.set(cache_key, result)
     handler._json(result)
 
 
@@ -309,7 +321,14 @@ def handle_per_sample_mutest(handler, q):
     if not genes_str:
         handler._send_error('genes parameter required')
         return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'mutest:{real_path_str}:{mtime}:{genes_str}:{group_col}:{celltype_col}:{min_cells}'
+    cached = _table_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
     result = _get_per_sample_mutest(str(real_path), genes_str, group_col, celltype_col, min_cells)
+    _table_cache.set(cache_key, result)
     handler._json(result)
 
 
@@ -325,10 +344,16 @@ def handle_aggregate_table(handler, q):
     if not genes_str:
         handler._send_error('genes parameter required')
         return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    eff_group = group_col if group_col and group_col != 'None' else ''
+    cache_key = f'aggtbl:{real_path_str}:{mtime}:{genes_str}:{eff_group}:{celltype_col}'
+    cached = _table_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
     # When condition is None/empty, pass empty group_col to backend
-    result = _get_aggregate_table(str(real_path), genes_str,
-                                  group_col if group_col and group_col != 'None' else '',
-                                  celltype_col)
+    result = _get_aggregate_table(str(real_path), genes_str, eff_group, celltype_col)
+    _table_cache.set(cache_key, result)
     handler._json(result)
 
 
@@ -347,7 +372,14 @@ def handle_plot(handler, q):
     if not gene:
         handler._send_error('gene parameter required')
         return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'plot:{real_path_str}:{mtime}:{gene}:{condition_col}:{metric}:{plot_type}:{palette}:{min_cells}'
+    cached = _plot_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
     result = _generate_plot(str(real_path), gene, condition_col, metric, plot_type, min_cells, palette)
+    _plot_cache.set(cache_key, result)
     handler._json(result)
 
 
@@ -372,7 +404,14 @@ def handle_composition_plot(handler, q):
     gene = q.get('gene', '')
     gene2 = q.get('gene2', '')
     palette = get_palette_name(q)
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'comp:{real_path_str}:{mtime}:{gene}:{gene2}:{palette}'
+    cached = _plot_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
     result = _generate_celltype_composition(str(real_path), gene, palette, gene2)
+    _plot_cache.set(cache_key, result)
     handler._json(result)
 
 
