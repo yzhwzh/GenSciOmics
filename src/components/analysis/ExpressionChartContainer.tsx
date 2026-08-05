@@ -8,7 +8,7 @@ import ZoomableImage from './ZoomableImage'
 
 export default function ExpressionChartContainer({ realPath }: { realPath: string }) {
   const geneSearchRef = useRef<HTMLDivElement>(null)
-  const [metric, setMetric] = useState<'mean_expression' | 'expression_pct'>('mean_expression')
+  const [metric, setMetric] = useState<'mean_expression' | 'expression_pct'>('expression_pct')
   const [selectedGene, setSelectedGene] = useState(() => {
     try { return sessionStorage.getItem('gensci_agg_gene') ?? 'FAP' } catch { return 'FAP' }
   })
@@ -19,6 +19,7 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   const [palette, setPalette] = useState('default')
   const [tableTab, setTableTab] = useState<'aggregate' | 'fisher'>('aggregate')
   const [compositionImg, setCompositionImg] = useState('')
+  const [compLoading, setCompLoading] = useState(false)
   const [selectedGene2, setSelectedGene2] = useState('')
   const [gene2Input, setGene2Input] = useState('')
   const [gene2Suggestions, setGene2Suggestions] = useState<string[]>([])
@@ -30,9 +31,12 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   // Fetch cell type composition plot when metric is pct
   useEffect(() => {
     if (!realPath || metric !== 'expression_pct' || !selectedGene) { setCompositionImg(''); return }
+    let cancelled = false
+    setCompLoading(true)
     fetchCompositionPlot(realPath, selectedGene, palette, selectedGene2)
-      .then(d => setCompositionImg(d.image ?? ''))
-      .catch(() => setCompositionImg(''))
+      .then(d => { if (!cancelled) { setCompositionImg(d.image ?? ''); setCompLoading(false) } })
+      .catch(() => { if (!cancelled) { setCompositionImg(''); setCompLoading(false) } })
+    return () => { cancelled = true }
   }, [realPath, metric, selectedGene, selectedGene2, palette])
 
   // Gene2 search
@@ -154,10 +158,14 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
           <div className="flex-1 bg-surface rounded-md shadow-card overflow-hidden min-w-0">
             <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="barplot" palette={palette} />
           </div>
-          {compositionImg && (
+          {(compositionImg || compLoading) && (
             <div className="w-[45%] bg-surface rounded-md shadow-card overflow-hidden shrink-0 flex items-center justify-center">
-              <ZoomableImage src={compositionImg} alt="Cell type composition"
-                className="w-full h-full object-contain" />
+              {compLoading ? (
+                <span className="text-xs text-text-muted">Loading composition...</span>
+              ) : (
+                <ZoomableImage src={compositionImg} alt="Cell type composition"
+                  className="w-full h-full object-contain" />
+              )}
             </div>
           )}
         </div>

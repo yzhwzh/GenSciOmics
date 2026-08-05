@@ -437,4 +437,55 @@ tsc --noEmit  # 0 错误
 
 ---
 
-*文档创建于 2026-07-15，后续发现新缺陷请按 B19、B20... 追加。*
+---
+
+## B19. 删除 .scanner_cache.json 后服务长时间不可用 (2026-08-05)
+
+### 现象
+删除 `.scanner_cache.json` 后重启后端，HTTP 服务在扫描完成前完全不接受连接。
+
+### 根因
+Scanner 逐一读取 h5ad 文件获取 obs stats，大文件（5.5GB）单个耗时 10-30s，86 个文件累计数分钟。扫描在 HTTP 服务启动前同步执行。
+
+### 修复
+不要随意删除 `.scanner_cache.json`。它记录每个文件的 mtime + obs stats，命中缓存无需重读 h5ad。
+
+### 涉及文件
+`server/scanner.py`, `server/main.py`
+
+
+## B20. DATA_DIRS 变更导致数据全消失 (2026-08-05)
+
+### 现象
+Data/ 从 symlink 改为本地目录后只剩 2 个新数据集，原有 86 个全消失。
+
+### 根因
+symlink 指向 06.GenSci/Data（86 个文件），改本地目录后数据源断开。
+
+### 修复
+config.py 中新增 LEGACY_DATA 指向 06.GenSci/Data，DATA_DIRS 支持多个数据源。Scanner 对 legacy 路径默认 omics_type='scRNA'。
+
+### 涉及文件
+`server/config.py`, `server/scanner.py`
+
+---
+
+---
+
+## B21. 同步初始扫描阻塞 HTTP 启动 → 前端超时 (2026-08-05)
+
+### 现象
+后端重启后前端 API 请求全部返回 "signal is aborted without reason"，持续数分钟。
+
+### 根因
+`main()` 中 `scan_datasets()` 同步执行，86 个 h5ad 逐一读取 obs stats，耗时 4-5 分钟。HTTP 端口未监听，请求全部超时。
+
+### 修复
+将初始扫描移到后台线程，HTTP 服务立即可用。扫描期间 datasets 逐步填充。
+
+### 涉及文件
+`server/main.py`
+
+---
+
+*后续新缺陷按 B22、B23... 追加。*

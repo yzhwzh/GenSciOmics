@@ -57,7 +57,7 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
 
     try:
         adata = anndata.read_h5ad(str(real_path), backed='r')
-        stats = {}
+        stats = {'n_obs': adata.n_obs, 'n_vars': adata.n_vars}
         for col in OBS_COLUMNS:
             if col not in adata.obs.columns:
                 stats[f'{col.lower()}_count'] = 0
@@ -131,6 +131,7 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'tissue': cached['tissue'],
                 'disease': cached['disease'],
                 'pmid': cached['pmid'],
+                'omics_type': cached.get('omics_type', 'scRNA'),
                 'filename': cached['filename'],
                 'path': str(path),
                 'real_path': str(path),
@@ -140,6 +141,8 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'sample_count': cached.get('sample_count', 0),
                 'celltype_count': cached.get('celltype_count', 0),
                 'celltype_names': cached.get('celltype_names', []),
+                'n_obs': cached.get('n_obs', 0),
+                'n_vars': cached.get('n_vars', 0),
                 'group_dist': cached.get('group_dist', ''),
                 'tissue_obs': cached.get('tissue_obs', ''),
             }
@@ -166,6 +169,10 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
 
     tissue = parts[idx] if len(parts) > idx else 'unknown'
     disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
+    omics_type = 'scRNA'  # default for legacy single-cell data
+    OMICS_TYPES = {'scRNA', 'BulkRNA', 'Protein', 'Metabolism', 'spatial'}
+    if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
+        omics_type = parts[idx + 2]
 
     fname = path.stem  # e.g. '39121212.COPD' or '39121212_IPF'
     pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]
@@ -179,6 +186,7 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         'tissue': tissue,
         'disease': disease,
         'pmid': pmid,
+        'omics_type': omics_type,
         'filename': path.name,
         'path': str(path),
         'real_path': str(path),  # symlink path inside Data/ (not resolved target)
@@ -195,11 +203,14 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'tissue': tissue,
                 'disease': disease,
                 'pmid': pmid,
+                'omics_type': omics_type,
                 'size_mb': round(size_mb, 1),
                 'patient_count': obs_stats.get('patient_count', 0),
                 'sample_count': obs_stats.get('sample_count', 0),
                 'celltype_count': obs_stats.get('celltype_count', 0),
                 'celltype_names': obs_stats.get('celltype_names', []),
+                'n_obs': obs_stats.get('n_obs', 0),
+                'n_vars': obs_stats.get('n_vars', 0),
                 'group_dist': obs_stats.get('group_dist', ''),
                 'tissue_obs': obs_stats.get('tissue_obs', ''),
             }

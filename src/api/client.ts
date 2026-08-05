@@ -1,7 +1,7 @@
 const apiCache = new Map<string, { data: unknown; timestamp: number }>()
 const CACHE_TTL = 5 * 60 * 1000
 
-export async function apiFetch<T>(url: string, options?: RequestInit, timeoutMs = 30_000): Promise<T> {
+export async function apiFetch<T>(url: string, options?: RequestInit, timeoutMs = 60_000): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const res = await fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer))

@@ -181,29 +181,46 @@ def handle_analysis_info(handler, q):
         handler._json(cached)
         return
     abstract_info = _fetch_abstract(pmid)
+    # Try scanner cache first (fast, no h5ad read)
+    stats = None
     try:
-        import anndata
-        adata = anndata.read_h5ad(str(real_path), backed='r')
-        n_cells = adata.n_obs
-        n_genes = adata.n_vars
-        stats = {
-            'cells': n_cells,
-            'genes': n_genes,
-        }
-        for col in ['Patient', 'Sample', 'CellType']:
-            if col in adata.obs.columns:
-                stats[f'{col.lower()}_count'] = int(adata.obs[col].nunique())
+        from config import SCANNER_CACHE_FILE
+        if SCANNER_CACHE_FILE.exists():
+            sc = json.loads(SCANNER_CACHE_FILE.read_text())
+            for k, v in sc.items():
+                if str(real_path) in k or k.endswith(str(real_path).name):
+                    if v.get('pmid') == pmid:
+                        stats = {
+                            'cells': v.get('n_obs') or 0,
+                            'genes': v.get('n_vars') or 0,
+                            'patient_count': v.get('patient_count', 0),
+                            'sample_count': v.get('sample_count', 0),
+                            'celltype_count': v.get('celltype_count', 0),
+                            'cell_type_names': v.get('celltype_names', []),
+                        }
+                        break
+    except Exception:
+        pass
+    # Fallback: read h5ad directly (slow, for cold cache)
+    if stats is None:
+        try:
+            import anndata
+            adata = anndata.read_h5ad(str(real_path), backed='r')
+            stats = {'cells': adata.n_obs, 'genes': adata.n_vars}
+            for col in ['Patient', 'Sample', 'CellType']:
+                if col in adata.obs.columns:
+                    stats[f'{col.lower()}_count'] = int(adata.obs[col].nunique())
+                else:
+                    stats[f'{col.lower()}_count'] = 0
+            if 'CellType' in adata.obs.columns:
+                stats['cell_type_names'] = [str(x) for x in adata.obs['CellType'].cat.categories] \
+                    if hasattr(adata.obs['CellType'], 'cat') else [str(x) for x in adata.obs['CellType'].unique()]
             else:
-                stats[f'{col.lower()}_count'] = 0
-        if 'CellType' in adata.obs.columns:
-            stats['cell_type_names'] = [str(x) for x in adata.obs['CellType'].cat.categories] \
-                if hasattr(adata.obs['CellType'], 'cat') else [str(x) for x in adata.obs['CellType'].unique()]
-        else:
-            stats['cell_type_names'] = []
-        adata.file.close()
-    except Exception as e:
-        stats = {'cells': 0, 'genes': 0, 'patient_count': 0, 'sample_count': 0,
-                 'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
+                stats['cell_type_names'] = []
+            adata.file.close()
+        except Exception as e:
+            stats = {'cells': 0, 'genes': 0, 'patient_count': 0, 'sample_count': 0,
+                     'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
     result = {'pmid': pmid, 'abstract': abstract_info, 'stats': stats}
     _analysis_info_cache.set(cache_key, result)
     handler._json(result)

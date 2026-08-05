@@ -6,9 +6,8 @@ import sys
 from pathlib import Path
 
 # ─── Project paths ────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 06.GenSci/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 10.GenSciOmics/
 DATA_DIRS = [PROJECT_ROOT / 'Data']
-# Add Mouse/, Monkey/ if they exist
 for d in ['Mouse', 'Monkey']:
     p = PROJECT_ROOT / 'Data' / d
     if p.is_dir():

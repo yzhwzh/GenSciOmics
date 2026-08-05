@@ -5,13 +5,13 @@ import TissueAtlas from '../components/TissueAtlas'
 import UpdateLog from '../components/UpdateLog'
 import OnlineUsers from '../components/OnlineUsers'
 import StatsTable from '../components/StatsTable'
-import { fetchDatasets } from '../api/datasets'
+import { apiFetch } from '../api/client'
 
 export default function HomePage() {
   const [stats, setStats] = useState({ organs: 0, diseases: 0, datasets: 0 })
 
   useEffect(() => {
-    fetchDatasets().then((data) => {
+    apiFetch<any[]>('/api/datasets').then((data) => {
       if (!Array.isArray(data)) return
       const tissues = new Set(data.map((d: any) => d.tissue?.toLowerCase()))
       const diseases = new Set(data.map((d: any) => d.disease))

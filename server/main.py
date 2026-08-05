@@ -37,14 +37,16 @@ def get_host_ip() -> str:
 
 
 def main():
-    # Synchronous initial scan — blocks HTTP server until datasets are ready
-    print(f'[GenSci] Scanning datasets...')
-    t0 = _time.time()
-    scan_datasets()
-    elapsed = _time.time() - t0
-    print(f'[GenSci] Initial scan complete ({elapsed:.1f}s, {len(datasets)} datasets)')
+    # Start initial scan in background — HTTP server starts immediately
+    print(f'[GenSci] Starting background scan...')
+    def _initial_scan():
+        t0 = _time.time()
+        scan_datasets()
+        elapsed = _time.time() - t0
+        print(f'[GenSci] Initial scan complete ({elapsed:.1f}s, {len(datasets)} datasets)')
+    Thread(target=_initial_scan, daemon=True).start()
 
-    # Start background scanner loop (periodic refresh every {SCAN_INTERVAL}s)
+    # Start periodic scanner loop
     Thread(target=scanner_loop, daemon=True).start()
 
     # Inject CORS allowed origins into handler
