@@ -7,6 +7,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import anndata
+from core.adata_cache import get_adata
 from scipy.stats import mannwhitneyu, fisher_exact
 from config import OBS_COLUMNS
 
@@ -23,13 +24,11 @@ def _get_per_sample_table(real_path: str, genes_str: str,
     GeneExpressionPct, GeneExpressionNumber, Group}.
     """
     try:
-        adata = anndata.read_h5ad(real_path, backed='r')
+        adata = get_adata(real_path)
 
         if 'Sample' not in adata.obs.columns:
-            adata.file.close()
             return {'error': 'Sample column not found'}
         if celltype_col not in adata.obs.columns:
-            adata.file.close()
             return {'error': f'{celltype_col} not found in obs'}
 
         # Resolve group column (skip grouping when 'None')
@@ -104,8 +103,6 @@ def _get_per_sample_table(real_path: str, genes_str: str,
                         'GeneExpressionNumber': expr_n,
                         'Group': condition,
                     })
-
-        adata.file.close()
         return {'rows': rows, 'n_rows': len(rows)}
     except Exception as e:
         print(f'[GenSci] Per-sample table error: {e}', file=sys.stderr)
@@ -129,13 +126,11 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
       'pairs': ['A_vs_B', ...]
     """
     try:
-        adata = anndata.read_h5ad(real_path, backed='r')
+        adata = get_adata(real_path)
 
         if 'Sample' not in adata.obs.columns:
-            adata.file.close()
             return {'error': 'Sample column not found'}
         if celltype_col not in adata.obs.columns:
-            adata.file.close()
             return {'error': f'{celltype_col} not found'}
 
         # Resolve group column (skip grouping when 'None')
@@ -156,7 +151,6 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
             if gene_idx >= 0:
                 break
         if gene_idx < 0:
-            adata.file.close()
             return {'error': f'Gene "{genes[0]}" not found'}
 
         sample_vals = adata.obs['Sample'].values.astype(str)
@@ -177,8 +171,6 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
         X = adata.X
         col = X[:, gene_idx]
         gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
-        adata.file.close()
-
         # Per-sample, per-cell-type aggregates
         agg_store: dict[tuple[str, str], dict] = {}
         for us in unique_samples:
@@ -272,10 +264,9 @@ def _get_aggregate_table(real_path: str, genes_str: str,
       'fisher': {'pairs': [...], 'cell_types': [...], 'matrix': [[pval,...],...]}
     """
     try:
-        adata = anndata.read_h5ad(real_path, backed='r')
+        adata = get_adata(real_path)
 
         if celltype_col not in adata.obs.columns:
-            adata.file.close()
             return {'error': f'{celltype_col} not found in obs'}
 
         # Resolve genes
@@ -325,7 +316,6 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                         'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
                         'GeneExpressionNumber': expr_n,
                     })
-            adata.file.close()
             return {'rows': rows, 'groups': [], 'fisher': None}
 
         # ── Grouped mode (original) ──
@@ -364,9 +354,6 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                         'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
                         'GeneExpressionNumber': expr_n,
                     })
-
-        adata.file.close()
-
         # Fisher exact test for each group pair x cell type
         group_pairs = list(itertools.combinations(unique_groups, 2))
         pair_labels = [f'{a}_vs_{b}' for a, b in group_pairs]
@@ -440,14 +427,13 @@ def _get_raw_expression(real_path: str, genes_str: str,
     req_ct = {c.strip() for c in cell_types_str.split(',') if c.strip()}
 
     try:
-        adata = anndata.read_h5ad(real_path, backed='r')
+        adata = get_adata(real_path)
     except Exception as e:
         return f'error\tFailed to read h5ad: {e}'
 
     resolved = resolve_gene_indices(adata.var_names, genes)
     valid = [(idx, name) for idx, name in resolved if idx >= 0]
     if not valid:
-        adata.file.close()
         return 'error\tNo valid genes found'
 
     seen_idx = set()
@@ -460,7 +446,6 @@ def _get_raw_expression(real_path: str, genes_str: str,
     obs_cols = [c for c in OBS_COLUMNS if c in adata.obs.columns]
     ct_col = 'CellType' if 'CellType' in adata.obs.columns else (obs_cols[0] if obs_cols else '')
     if not ct_col:
-        adata.file.close()
         return 'error\tNo CellType-like column found in obs'
 
     ct_vals = adata.obs[ct_col].values.astype(str)
@@ -470,7 +455,6 @@ def _get_raw_expression(real_path: str, genes_str: str,
         matching = set(ct_vals[valid_mask])
         if not matching:
             available = sorted(set(ct_vals))
-            adata.file.close()
             return f'error\tNone of the specified cell types found\nAvailable: {", ".join(available[:20])}'
     else:
         valid_mask = np.ones(adata.n_obs, dtype=bool)
@@ -505,9 +489,6 @@ def _get_raw_expression(real_path: str, genes_str: str,
         for _, g_name in deduped:
             row_vals.append(f'{expr_data[g_name][ri]:.6f}')
         csv_lines.append(','.join(row_vals))
-
-    adata.file.close()
-
     if truncated:
         last_col = header_cols[-1]
         csv_lines.append(f'# TRUNCATED: {total} rows matched, showing first {MAX_ROWS}')

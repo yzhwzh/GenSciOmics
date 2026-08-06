@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import anndata
+from core.adata_cache import get_adata
 
 def _get_umap_data(real_path: Path, color_by: str = 'CellType',
                    max_points: int = 50000, gene: str = '',
@@ -17,11 +18,10 @@ def _get_umap_data(real_path: Path, color_by: str = 'CellType',
     as well as dual-gene RGB overlay when both gene and gene2 are provided.
     """
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
         n_cells = adata.n_obs
 
         if 'X_umap' not in adata.obsm:
-            adata.file.close()
             return {'error': 'No X_umap in obsm'}
 
         umap = adata.obsm['X_umap']
@@ -165,8 +165,6 @@ def _get_umap_data(real_path: Path, color_by: str = 'CellType',
 
             sampled_vals = [str(vals[i]) for i in indices]
             colors_hex = [label_to_color.get(v, '#999999') for v in sampled_vals]
-
-        adata.file.close()
         return {
             'points': points,
             'colors': colors_hex,

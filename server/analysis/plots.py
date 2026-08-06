@@ -13,6 +13,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import anndata
+from core.adata_cache import get_adata
 import seaborn as sns
 from matplotlib.ticker import AutoMinorLocator
 
@@ -32,11 +33,10 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
     """Generate a seaborn/matplotlib plot and return as base64 PNG."""
     try:
         # Read data
-        adata = anndata.read_h5ad(real_path, backed='r')
+        adata = get_adata(real_path)
 
         # Validate columns
         if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            adata.file.close()
             return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
 
         # Resolve gene index
@@ -55,7 +55,6 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
                 gene_idx = list(var_names).index(partial[0])
                 actual_gene = str(var_names[gene_idx])
             else:
-                adata.file.close()
                 return {'error': f'Gene "{gene}" not found'}
 
         # Extract expression values
@@ -70,8 +69,6 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
 
         unique_ct = sorted(set(str(x) for x in ct_vals))
         unique_samples = sorted(set(str(x) for x in sample_vals))
-        adata.file.close()
-
         # Build DataFrame for plotting
         rows = []
         for s in unique_samples:
@@ -200,7 +197,7 @@ def _generate_celltype_composition(real_path: str, gene: str,
     """Generate stacked bar chart: among gene-positive cells, cell type proportions.
     If gene2 is provided, show co-expression breakdown: gene1+, gene1+gene2+, gene2+."""
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
 
         def find_gene_idx(g):
             idx_series = pd.Series(adata.var.index.astype(str))
@@ -216,7 +213,6 @@ def _generate_celltype_composition(real_path: str, gene: str,
 
         g1_idx = find_gene_idx(gene)
         if g1_idx is None:
-            adata.file.close()
             return {'error': f'Gene "{gene}" not found'}
 
         ct_vals = adata.obs['CellType'].values
@@ -231,8 +227,6 @@ def _generate_celltype_composition(real_path: str, gene: str,
             if g2_idx is not None:
                 g2_expr = adata[:, g2_idx].X
                 g2_expr = np.asarray(g2_expr.toarray() if hasattr(g2_expr, 'toarray') else g2_expr).flatten()
-        adata.file.close()
-
         unique_ct = sorted(set(ct_vals))
         cat_colors, _ = get_palette(palette_name)
         palette = cat_colors[:len(unique_ct)] if len(cat_colors) >= len(unique_ct) else \
@@ -314,10 +308,9 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
     """Generate cell type ratio plots: stacked bar per sample + hypothesis test boxplot.
     Returns base64 PNGs for both plots."""
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
 
         if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            adata.file.close()
             return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
 
         # Condition column
@@ -335,8 +328,6 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
         sample_vals = adata.obs['Sample'].values
         ct_vals = adata.obs['CellType'].values
         cond_vals = adata.obs[cond_col].values if cond_col else None
-        adata.file.close()
-
         # Compute cell type ratio per sample
         df = pd.DataFrame({
             'Sample': sample_vals, 'CellType': ct_vals,
@@ -536,10 +527,9 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
     """Generate all ratio plots for the UMAP tab: heatmap, cell count bar,
     group boxplot, and stats table. Returns base64 PNGs + JSON stats."""
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
 
         if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            adata.file.close()
             return {'error': 'Required columns "Sample" and "CellType" not found'}
 
         # Determine group variable
@@ -573,8 +563,6 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
 
         unique_ct = sorted(set(str(x) for x in ct_vals))
         unique_samples = sorted(set(str(x) for x in sample_vals))
-        adata.file.close()
-
         # Pivot: CellType x Sample -> count
         df = pd.DataFrame({'Sample': sample_vals, 'CellType': ct_vals})
         pivot = df.pivot_table(index='CellType', columns='Sample', aggfunc='size', fill_value=0, observed=False)

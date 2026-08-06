@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import anndata
+from core.adata_cache import get_adata
 
 from caches import LRUCache
 
@@ -32,7 +33,7 @@ def _get_expression_stats(real_path: Path, genes_str: str,
         return cached
 
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
 
         # Resolve gene indices
         gene_indices = []
@@ -56,7 +57,6 @@ def _get_expression_stats(real_path: Path, genes_str: str,
 
         # Validate required columns
         if group_by not in adata.obs.columns:
-            adata.file.close()
             return {'error': f'Column {group_by} not in obs'}
         # Condition column (for grouping in box plots)
         cond_col = None
@@ -155,9 +155,6 @@ def _get_expression_stats(real_path: Path, genes_str: str,
                             'n_cells': n_cells,
                             'n_expressing': int((sub_expr > 0).sum()),
                         })
-
-        adata.file.close()
-
         output = {
             'genes': valid_genes,
             'conditions': unique_conditions,

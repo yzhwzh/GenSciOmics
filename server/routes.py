@@ -14,6 +14,7 @@ from config import DATA_DIRS
 RESULTS_DIR = Path('/tmp/gensci_results')
 from scanner import datasets, datasets_lock
 from caches import LRUCache
+from core.adata_cache import get_adata
 
 # Caches for expensive .h5ad reads
 _analysis_info_cache = LRUCache(max_size=500)
@@ -210,7 +211,8 @@ def handle_analysis_info(handler, q):
     if stats is None:
         try:
             import anndata
-            adata = anndata.read_h5ad(str(real_path), backed='r')
+            from core.adata_cache import get_adata
+            adata = get_adata(str(real_path))
             stats = {'cells': adata.n_obs, 'genes': adata.n_vars}
             for col in ['Patient', 'Sample', 'CellType']:
                 if col in adata.obs.columns:
@@ -222,7 +224,6 @@ def handle_analysis_info(handler, q):
                     if hasattr(adata.obs['CellType'], 'cat') else [str(x) for x in adata.obs['CellType'].unique()]
             else:
                 stats['cell_type_names'] = []
-            adata.file.close()
         except Exception as e:
             stats = {'cells': 0, 'genes': 0, 'patient_count': 0, 'sample_count': 0,
                      'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
@@ -743,13 +744,12 @@ def handle_cell_types(handler, q):
         return
     try:
         import anndata
-        adata = anndata.read_h5ad(str(real_path), backed='r')
+        adata = get_adata(str(real_path))
         ct_col = 'CellType' if 'CellType' in adata.obs.columns else (list(adata.obs.columns)[0] if len(adata.obs.columns) else '')
         if ct_col:
             types = sorted(set(str(v) for v in adata.obs[ct_col].values))
         else:
             types = []
-        adata.file.close()
         handler._json({'cell_types': types})
     except Exception as e:
         handler._send_error(str(e))
