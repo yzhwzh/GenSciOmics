@@ -51,7 +51,7 @@ MCP_SERVERS = {
     'exa': {
         'type': 'http',
         'url': 'https://mcp.exa.ai/mcp',
-        'api_key': os.environ.get('EXA_API_KEY', '1212329f-9681-4d72-80ca-a6f7a41113af'),
+        'api_key': os.environ.get('EXA_API_KEY', ''),  # 个人 key 已耗尽 → 默认匿名访问 mcp.exa.ai；将来有 key 再设环境变量 EXA_API_KEY
         'enabled': True,
     },
     'context7': {
