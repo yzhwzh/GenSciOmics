@@ -198,11 +198,16 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         idx = 1
 
     tissue = parts[idx] if len(parts) > idx else 'unknown'
-    disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
-    omics_type = 'scRNA'  # default for legacy single-cell data
+    FLAT_TISSUES = {'Multi-organ'}  # tissues without disease subdirectory
     OMICS_TYPES = {'scRNA', 'BulkRNA', 'Protein', 'Metabolism', 'spatial'}
-    if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
-        omics_type = parts[idx + 2]
+    if tissue in FLAT_TISSUES:
+        disease = tissue
+        omics_type = parts[idx + 1] if len(parts) > idx + 1 and parts[idx + 1] in OMICS_TYPES else 'scRNA'
+    else:
+        disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
+        omics_type = 'scRNA'
+        if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
+            omics_type = parts[idx + 2]
 
     fname = path.stem  # e.g. '39121212.COPD' or '39121212_IPF'
     pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]

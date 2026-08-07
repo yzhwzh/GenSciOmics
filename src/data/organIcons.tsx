@@ -196,4 +196,12 @@ export const ORGAN_SVG: Record<string, IconData> = {
       <path d="M24 14L18 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.4"/>
       <circle cx="24" cy="24" r="3" fill="currentColor"/></>,
   },
+  "multi-organ": {
+    viewBox: "0 0 48 48",
+    children: <><rect x="8" y="8" width="14" height="14" rx="3" fill="currentColor" opacity="0.3"/>
+      <rect x="17" y="14" width="14" height="14" rx="3" fill="currentColor" opacity="0.55"/>
+      <rect x="26" y="20" width="14" height="14" rx="3" fill="currentColor" opacity="0.8"/>
+      <rect x="15" y="24" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+      <rect x="24" y="18" width="4" height="4" rx="1" fill="white" opacity="0.6"/></>,
+  },
 }

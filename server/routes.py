@@ -116,7 +116,7 @@ def handle_tissues(handler, q):
 
 def handle_stats(handler, q):
     with datasets_lock:
-        all_ds = [d for d in datasets if d['tissue'] != 'Health']
+        all_ds = [d for d in datasets if d['tissue'] not in ('Health', 'Multi-organ')]
     species_set = sorted(set(d['species'] for d in all_ds))
     tissue_set = sorted(set(d['tissue'] for d in all_ds))
     rows = {}
