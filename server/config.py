@@ -88,4 +88,10 @@ MCP_SERVERS = {
         'args': ['-y', '@playwright/mcp@0.0.69', '--extension'],
         'enabled': True,
     },
+    'tooluniverse': {
+        'type': 'stdio',
+        'command': str(Path.home() / '.local/bin/tooluniverse'),
+        'args': ['--global'],  # 读 ~/.tooluniverse 的 API key；默认 workspace 是当前目录 .tooluniverse
+        'enabled': True,
+    },
 }

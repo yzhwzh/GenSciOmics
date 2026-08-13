@@ -143,6 +143,23 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
         return {f'{c.lower()}_count': 0 for c in OBS_COLUMNS} | {'group_dist': '', 'tissue_obs': ''}
 
 
+def _extract_data_type(fname: str) -> str:
+    """Extract bulk-table data type (count/TPM/Intensity) from a filename stem.
+
+    fname is the stem without extension (e.g. '29625048.TCGA.TPM').
+    Convention: <PMID>.<source>.<type> — type is the 3rd dot-separated segment.
+    """
+    for tok in fname.split('.')[2:]:
+        t = tok.lower()
+        if 'intensity' in t or 'signal' in t:
+            return 'Intensity'
+        if 'count' in t:
+            return 'count'
+        if 'tpm' in t or 'fpkm' in t or 'rpkm' in t:
+            return 'TPM'
+    return ''
+
+
 def _extract_path_fields(path: Path) -> dict:
     """Extract species/tissue/disease/omics_type/pmid from a Data/ path."""
     rel = None
@@ -182,6 +199,7 @@ def _extract_path_fields(path: Path) -> dict:
         'disease': disease,
         'omics_type': omics_type,
         'pmid': pmid,
+        'data_type': _extract_data_type(fname),
     }
 
 
@@ -241,6 +259,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
             'disease': meta['disease'],
             'pmid': pmid,
             'omics_type': meta['omics_type'],
+            'data_type': meta['data_type'],
             'filename': path.name,
             'path': str(path),
             'real_path': str(dst),
@@ -270,6 +289,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
         'disease': meta['disease'],
         'pmid': pmid,
         'omics_type': meta['omics_type'],
+        'data_type': meta['data_type'],
         'filename': path.name,
         'path': str(path),
         'real_path': str(dst),
@@ -289,6 +309,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
                 'disease': meta['disease'],
                 'pmid': pmid,
                 'omics_type': meta['omics_type'],
+                'data_type': meta['data_type'],
                 'size_mb': size_mb,
                 'patient_count': obs_stats.get('patient_count', 0),
                 'sample_count': obs_stats.get('sample_count', 0),

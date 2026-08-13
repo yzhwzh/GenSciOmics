@@ -16,6 +16,7 @@ export interface DatasetInfo {
   disease_count?: number
   group_dist?: string
   tissue_obs?: string
+  data_type?: string
   annotation_source?: string
   marker_major?: Record<string, string[]> | null
 }

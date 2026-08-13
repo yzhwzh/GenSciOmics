@@ -194,9 +194,9 @@ export default function TissuePage() {
                   <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">{isBulkTab ? 'Genes' : 'Cells'}</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Group</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">
-                    <FilterDropdown label="Sample Type" values={getUniqueValues('tissue_obs')}
-                      selectedValues={filters['tissue_obs']} onToggle={(v) => toggleFilter('tissue_obs', v)}
-                      onClear={() => clearFilter('tissue_obs')} isActive={isFilterActive('tissue_obs')} portal />
+                    <FilterDropdown label={isBulkTab ? 'Data Type' : 'Sample Type'} values={getUniqueValues(isBulkTab ? 'data_type' : 'tissue_obs')}
+                      selectedValues={filters[isBulkTab ? 'data_type' : 'tissue_obs']} onToggle={(v) => toggleFilter(isBulkTab ? 'data_type' : 'tissue_obs', v)}
+                      onClear={() => clearFilter(isBulkTab ? 'data_type' : 'tissue_obs')} isActive={isFilterActive(isBulkTab ? 'data_type' : 'tissue_obs')} portal />
                   </th>
                   {!isBulkTab && (
                     <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Annotation Source</th>
@@ -236,7 +236,7 @@ export default function TissuePage() {
                     <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.sample_count ?? '-'}</td>
                     <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{isBulkTab ? (row.n_vars ?? '-') : (row.celltype_count ?? '-')}</td>
                     <td className="py-2.5 px-4 text-xs text-text-secondary leading-snug break-words" title={row.group_dist}>{row.group_dist || '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-secondary">{row.tissue_obs || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-text-secondary">{isBulkTab ? (row.data_type || '-') : (row.tissue_obs || '-')}</td>
                     {!isBulkTab && (
                       <td className="py-3 px-4 text-sm text-text-secondary">{row.annotation_source || 'Paper'}</td>
                     )}

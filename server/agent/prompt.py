@@ -239,6 +239,21 @@ FINAL_INSTRUCTION = (
 )
 
 
+def _data_type_from_path(real_path: str) -> str:
+    """Extract data type (count/TPM/Intensity) from a dataset real_path filename."""
+    from pathlib import Path
+    stem = Path(real_path).stem  # e.g. '29625048.TCGA.TPM' (drops .h5ad)
+    for tok in stem.split('.')[2:]:
+        t = tok.lower()
+        if 'intensity' in t or 'signal' in t:
+            return 'Intensity'
+        if 'count' in t:
+            return 'count'
+        if 'tpm' in t or 'fpkm' in t or 'rpkm' in t:
+            return 'TPM'
+    return ''
+
+
 def assemble_prompt(
     query: str,
     tool_results: list[dict] | None = None,
@@ -256,9 +271,17 @@ def assemble_prompt(
         '',
     ]
 
-    # Dataset path
+    # Dataset path + data type (drives DE method choice)
     if real_path:
         parts.append(f"Current dataset path: {real_path}")
+        dt = _data_type_from_path(real_path)
+        if dt:
+            parts.append(
+                f"Dataset data type: {dt}. "
+                "DE method by data type — count → DESeq2/edgeR/limma-voom; "
+                "TPM/FPKM → limma-trend or non-parametric (Welch/Mann-Whitney); "
+                "Intensity → limma + eBayes."
+            )
     parts.append(DATA_ACCESS)
 
     # Memory

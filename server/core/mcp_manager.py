@@ -69,6 +69,11 @@ class MCPServerConnection:
                 print(f'[mcp] ERROR: {self.name} exited: {stderr_out[:200]}',
                       file=sys.stderr)
                 return False
+            # MCP handshake — some servers (e.g. ToolUniverse) reject tools/list
+            # outright without a prior initialize/initialized dance.
+            if not self._initialize():
+                print(f'[mcp] ERROR: {self.name}: MCP initialize failed', file=sys.stderr)
+                return False
             return True
         except FileNotFoundError as e:
             print(f'[mcp] ERROR: {self.name}: command not found: {command} ({e})',
@@ -87,6 +92,40 @@ class MCPServerConnection:
             except Exception:
                 self._process.kill()
             self._process = None
+
+    # ── MCP handshake ─────────────────────────────────────────────
+
+    def _initialize(self) -> bool:
+        """Perform the MCP initialize handshake.
+
+        The MCP spec requires clients to send `initialize` and then
+        `notifications/initialized` before any other request. Some servers
+        (e.g. ToolUniverse) reject `tools/list` outright without it.
+        """
+        result = self._send_request('initialize', {
+            'protocolVersion': '2024-11-05',
+            'capabilities': {},
+            'clientInfo': {'name': 'GenSci', 'version': '1.0'},
+        })
+        if result is None:
+            return False
+        self._send_notification('notifications/initialized')
+        return True
+
+    def _send_notification(self, method: str, params: dict | None = None) -> None:
+        """Send a JSON-RPC notification (no id, no response expected)."""
+        if self.server_type == 'http':
+            return  # HTTP servers are not initialized via the stdio handshake
+        if not self._process or not self._process.stdin:
+            return
+        payload = {'jsonrpc': '2.0', 'method': method}
+        if params:
+            payload['params'] = params
+        try:
+            self._process.stdin.write(json.dumps(payload) + '\n')
+            self._process.stdin.flush()
+        except Exception as e:
+            print(f'[mcp] notify error from {self.name}: {e}', file=sys.stderr)
 
     # ── JSON-RPC communication ───────────────────────────────────
 
