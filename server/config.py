@@ -41,6 +41,16 @@ os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1,10.0.0.0/8,.ai.dgtmeta.co
 # ─── Obs columns convention ──────────────────────────────────
 OBS_COLUMNS = ['Patient', 'Sample', 'Group', 'CellType', 'Tissue']
 
+# ─── Bulk RNA import convention ──────────────────────────────
+# Header columns matching these names are treated as sample metadata (obs);
+# everything else (plus the first column = sample name) is the gene matrix (var).
+BULK_META_COLUMNS = {
+    'Disease', 'Group', 'Patient', 'Sample', 'Label', 'Tumor',
+    'CellType', 'Tissue', 'Condition',
+}
+# Cached .h5ad lives at <source_dir>/.bulk_cache/<stem>.h5ad
+BULK_CACHE_DIR_NAME = '.bulk_cache'
+
 # ─── Event log ────────────────────────────────────────────────
 EVENT_LOG_MAX = 100
 LOG_FILE = PROJECT_ROOT / 'GenSci.log'

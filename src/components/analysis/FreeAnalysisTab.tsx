@@ -30,7 +30,7 @@ function isCompanyConfig(c: LLMConfig): boolean {
   return c.model === COMPANY_MODEL && c.baseUrl === COMPANY_BASE
 }
 
-export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
+export default function FreeAnalysisTab({ realPath, omicsType = 'scRNA' }: { realPath: string; omicsType?: string }) {
   const [config, setConfig] = useState<LLMConfig>(loadConfig)
   const [showConfig, setShowConfig] = useState(false)
   const [input, setInput] = useState('')
@@ -53,19 +53,20 @@ export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
   const skillsRef = useRef<HTMLDivElement>(null)
 
   // Fetch skills list — only analysis-related skills (no system tools or Light skills)
+  const isBulk = omicsType === 'BulkRNA'
   useEffect(() => {
     fetch('/api/skills')
       .then(r => r.json())
       .then((data: SkillDef[]) => {
         const filtered = data.filter(s =>
-          s.name.startsWith('single-cell-') ||
-          s.name.startsWith('single-') ||
-          s.name === 'statistical-analysis'
+          isBulk
+            ? s.name.startsWith('bulk-') || s.name === 'statistical-analysis'
+            : s.name.startsWith('single-') || s.name === 'statistical-analysis'
         )
         setSkills(filtered)
       })
       .catch(() => {})
-  }, [])
+  }, [isBulk])
 
   // Restore messages from sessionStorage when realPath finishes loading
   useEffect(() => {
@@ -143,14 +144,14 @@ export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
           const d = data as { error: string }
           setError(d.error || 'An error occurred')
         }
-      }, abortController.signal)
+      }, abortController.signal, omicsType)
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') setError(err.message)
     } finally {
       setLoading(false)
       abortRef.current = null
     }
-  }, [realPath, config, messages])
+  }, [realPath, config, messages, omicsType])
 
   const handleStop = useCallback(() => { abortRef.current?.abort(); setLoading(false) }, [])
 
@@ -178,6 +179,47 @@ export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
   }
 
   const hasChat = messages.length > 0
+
+  const agentSubtitle = isBulk ? 'bulk RNA · transcriptomics · statistics' : 'single-cell · statistics · visualization'
+  const agentDescription = isBulk
+    ? 'AI-powered bulk RNA (transcriptomics) analysis. Ask about differential expression, pathway enrichment, co-expression networks, and more.'
+    : 'AI-powered single-cell data analysis. Ask questions about gene expression, cell types, statistical comparisons, and more. Uses specialized analysis scripts combined with LLM reasoning.'
+  const FEATURES = isBulk ? [
+    { icon: BarChart3, text: 'Differential expression + volcano plot' },
+    { icon: BookOpen, text: 'Pathway enrichment (GSEA, GO, KEGG)' },
+    { icon: Network, text: 'Co-expression network (WGCNA)' },
+    { icon: FlaskConical, text: 'Statistical tests (t-test, MWU)' },
+    { icon: Table2, text: 'Deconvolution & cell composition' },
+    { icon: BarChart3, text: 'Survival & clinical association' },
+    { icon: Dna, text: 'PCA / t-SNE / UMAP embedding' },
+    { icon: Table2, text: 'Export tables, plots & summaries' },
+  ] : [
+    { icon: BarChart3, text: 'Gene expression viz (boxplot/barplot)' },
+    { icon: Dna, text: 'Find marker genes per cell type' },
+    { icon: Network, text: 'Co-expression / Venn / UpSet' },
+    { icon: FlaskConical, text: 'Statistical tests (t-test, MWU)' },
+    { icon: BookOpen, text: 'Pathway enrichment (GO, KEGG)' },
+    { icon: Network, text: 'Gene regulatory network (SCENIC)' },
+    { icon: BarChart3, text: 'Cell communication (CellPhoneDB)' },
+    { icon: Dna, text: 'Trajectory inference & RNA velocity' },
+    { icon: Table2, text: 'Cell type annotation & sub-clustering' },
+    { icon: FlaskConical, text: 'Perturbation & cell fate analysis' },
+    { icon: BookOpen, text: 'Foundation model (Geneformer, scGPT)' },
+    { icon: Table2, text: 'Export tables, plots & summaries' },
+  ]
+  const EXAMPLE_PROMPTS = isBulk ? [
+    'Show TP53 differential expression',
+    'Volcano plot for TCGA-BRCA',
+    'GSEA on upregulated genes',
+    'Co-expression of EGFR and ERBB2',
+    'Dataset summary',
+  ] : [
+    'Show ACE2 expression by CellType',
+    'Find markers for Epithelial cells',
+    'Co-expression of EGFR, PD1, PSMA',
+    't-test between groups for nFeature_RNA',
+    'Dataset summary',
+  ]
 
   return (
     <div className="h-full flex flex-col bg-surface rounded-xl border border-border-light shadow-card overflow-hidden">
@@ -281,31 +323,16 @@ export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
                       </div>
                       <div>
                         <h2 className="text-sm font-bold text-text-primary">GenSci Analysis Agent</h2>
-                        <p className="text-[9px] text-text-muted font-mono">single-cell · statistics · visualization</p>
+                        <p className="text-[9px] text-text-muted font-mono">{agentSubtitle}</p>
                       </div>
                     </div>
                     <p className="text-[11px] text-text-secondary leading-relaxed mb-3">
-                      AI-powered single-cell data analysis. Ask questions about gene expression,
-                      cell types, statistical comparisons, and more. Uses specialized analysis scripts
-                      combined with LLM reasoning.
+                      {agentDescription}
                     </p>
 
                     {/* Features */}
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">
-                      {[
-                        { icon: BarChart3, text: 'Gene expression viz (boxplot/barplot)' },
-                        { icon: Dna, text: 'Find marker genes per cell type' },
-                        { icon: Network, text: 'Co-expression / Venn / UpSet' },
-                        { icon: FlaskConical, text: 'Statistical tests (t-test, MWU)' },
-                        { icon: BookOpen, text: 'Pathway enrichment (GO, KEGG)' },
-                        { icon: Network, text: 'Gene regulatory network (SCENIC)' },
-                        { icon: BarChart3, text: 'Cell communication (CellPhoneDB)' },
-                        { icon: Dna, text: 'Trajectory inference & RNA velocity' },
-                        { icon: Table2, text: 'Cell type annotation & sub-clustering' },
-                        { icon: FlaskConical, text: 'Perturbation & cell fate analysis' },
-                        { icon: BookOpen, text: 'Foundation model (Geneformer, scGPT)' },
-                        { icon: Table2, text: 'Export tables, plots & summaries' },
-                      ].map((f, i) => (
+                      {FEATURES.map((f, i) => (
                         <div key={i} className="flex items-center gap-1.5">
                           <div className="w-5 h-5 rounded bg-surface/80 flex items-center justify-center shrink-0">
                             <f.icon className="w-3 h-3 text-brand" />
@@ -319,13 +346,7 @@ export default function FreeAnalysisTab({ realPath }: { realPath: string }) {
                     <div>
                       <div className="text-[9px] text-brand font-medium mb-1.5">Try asking</div>
                       <div className="flex flex-wrap gap-1.5">
-                        {[
-                          'Show ACE2 expression by CellType',
-                          'Find markers for Epithelial cells',
-                          'Co-expression of EGFR, PD1, PSMA',
-                          't-test between groups for nFeature_RNA',
-                          'Dataset summary',
-                        ].map((ex, i) => (
+                        {EXAMPLE_PROMPTS.map((ex, i) => (
                           <button key={i} onClick={() => { handleSend(ex); setInput('') }}
                             className="text-[10px] bg-surface text-text-muted hover:text-brand hover:border-blue-300 border border-border-light px-2 py-1 rounded-lg transition-colors">
                             💡 {ex}

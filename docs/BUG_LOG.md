@@ -489,3 +489,107 @@ config.py 中新增 LEGACY_DATA 指向 06.GenSci/Data，DATA_DIRS 支持多个�
 ---
 
 *后续新缺陷按 B22、B23... 追加。*
+
+---
+
+## B22. scanpy 1.11 DotPlot API 变化 (2026-08-07)
+
+### 现象
+`sc.pl.dotplot(return_fig=True, show=False)` 返回的对象 `.fig` 和 `.ax_dict` 均为 None，`plt.close(result)` 报 `close() argument must be a Figure... not DotPlot`。
+
+### 根因
+scanpy ≥1.10 的 `return_fig=True` 返回 `DotPlot` 对象（非 matplotlib Figure）。必须先调用 `.make_figure()` 才能访问 `.fig` 和 `.get_axes()`。
+
+### 修复
+```python
+result = sc.pl.dotplot(adata, plot_dict, groupby='CellType',
+    standard_scale='var', dot_max=1, return_fig=True, show=False)
+
+if hasattr(result, 'make_figure'):
+    result.make_figure()
+    fig = result.fig
+```
+`get_axes()` 返回的 dict 包含 `['mainplot_ax', 'gene_group_ax', 'size_legend_ax', 'color_legend_ax']`。
+
+### 涉及文件
+`server/analysis/plots.py`
+
+---
+
+## B23. HDF5 backed-mode AnnData 并发冲突 (2026-08-11)
+
+### 现象
+`ThreadingHTTPServer` 并发请求（如快速切换 Group filter）时报错：
+```
+RuntimeError: Can't synchronously determine if attribute exists by name
+(invalid identifier type to function)
+```
+
+### 根因
+`get_adata()` (`server/core/adata_cache.py`) 返回共享的 `anndata.read_h5ad(path, backed='r')` 对象，HDF5 文件句柄不是线程安全的。多个线程同时访问同一 .h5ad → h5py 的 `h5a.exists()` 同步失败。
+
+### 修复
+在 `_generate_marker_dotplot()` 中不用共享 backed AnnData，改用内存版缓存（注意：此修复后被 B24 推翻，全内存 load 引入了双句柄冲突）
+```python
+from caches import LRUCache
+_adata_mem_cache = LRUCache(max_size=3)
+
+adata = _adata_mem_cache.get(str(real_path))
+if adata is None:
+    adata = anndata.read_h5ad(str(real_path))  # 全内存，无 backed
+    _adata_mem_cache.set(str(real_path), adata)
+
+# subset 直接用 .copy()
+if group_filter:
+    mask = adata.obs['Group'].astype(str) == group_filter
+    adata = adata[mask].copy()
+```
+- 首次加载慢（28s for 188K cells），后续命中缓存快（~5s）
+- `LRUCache` 线程安全（内部 `threading.Lock`）
+
+### 涉及文件
+`server/analysis/plots.py`
+
+---
+
+## B24. Dotplot 双 HDF5 句柄冲突导致持续加载/刷新 (2026-08-11)
+
+### 现象
+- Dotplot 一直处于刷新状态（loading spinner 不消失）
+- 当 Dotplot 出现时，其他图（UMAP、Boxplot）也开始刷新
+- 出现 "signal is aborted without reason" 报错
+- 后端收到大量重复请求（12+ 次 markder-dotplot 请求）
+
+### 根因
+**B23 的修复引入了更严重的问题。** B23 让 dotplot 使用 `anndata.read_h5ad()`（全内存，独立 h5py File 句柄），而其他端点（UMAP、expression、stats）使用 `get_adata()`（backed='r'，共享 h5py File 句柄）。两个 h5py `File` 句柄同时打开同一文件 → 冲突/数据损坏。
+
+**前端加剧因素：** React StrictMode 双重 effect、缺少 AbortController cleanup，导致 4 个并发请求同时打到后端。
+
+### 修复
+
+**后端（主修复）：** 统一所有端点使用 backed AnnData + 文件级锁
+
+1. `server/core/adata_cache.py` — 新增 `locked_backed_adata()` context manager：
+   - 每文件一个 `threading.Lock`，串行化对共享 backed AnnData 的访问
+   - 调用方在锁内提取数据、`.to_memory()` 物化，释放锁后做重计算
+
+2. `server/analysis/plots.py` — `_generate_marker_dotplot()` 改用统一 backed 访问：
+   - 移除 `_adata_mem_cache` LRU 缓存（全内存 load 的独立句柄）
+   - 移除 `import anndata`
+   - 用 `with locked_backed_adata(path) as adata:` 代替 `anndata.read_h5ad()`
+   - 仅物化需要的基因列：`adata[:, needed_genes].to_memory()`（大幅减少锁持有时间）
+   - Group filter：`adata[mask, needed_genes].to_memory()` 而非 `.copy()`
+
+**前端（辅助修复）：** `UmapTabContent.tsx`
+- useEffect 内联 fetch 逻辑，添加 `cancelled` 标志清理
+- StrictMode 重渲染时旧请求的 setState 被忽略，减少服务端压力
+
+### 涉及文件
+`server/core/adata_cache.py`, `server/analysis/plots.py`, `src/components/analysis/UmapTabContent.tsx`
+
+### 关键教训
+**全内存 read_h5ad() 作为 HDF5 并发冲突的"修复"是反模式。** 它新建一个独立的 h5py File 句柄，与 backed 模式的共享句柄冲突，因为 `HDF5_USE_FILE_LOCKING=FALSE` 禁用了 HDF5 内部的文件级锁。正确方案是统一使用 backed 模式 + Python 层 per-file 锁。
+
+---
+
+*后续新缺陷按 B25、B26... 追加。*

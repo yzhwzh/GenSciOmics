@@ -16,6 +16,10 @@ DEFAULT_MODEL = 'Qwen3.5-397B-A17B-FP8-Thinking'
 DEFAULT_TEMPERATURE = 0.7
 MAX_TOOL_ITERATIONS = 50
 
+# Skill filter per omics type (used by Free Analysis tab)
+OMICS_SKILL_FILTERS = {'BulkRNA': ['bulk-*', 'statistical-analysis']}
+DEFAULT_SKILL_FILTER = ['single-*', 'statistical-analysis']
+
 # LITERATURE_SYSTEM_PROMPT removed — agent pipeline handles prompt generation via assemble_prompt()
 
 
@@ -212,15 +216,17 @@ def process_chat(messages, real_path, api_key, model=DEFAULT_MODEL,
 
 
 def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
-                            base_url=DEFAULT_BASE_URL, temperature=DEFAULT_TEMPERATURE):
+                            base_url=DEFAULT_BASE_URL, temperature=DEFAULT_TEMPERATURE,
+                            omics_type=''):
     """Streaming chat — delegates to agent.process_chat_streaming()."""
     from agent import process_chat_streaming as _stream
+    skills_filter = OMICS_SKILL_FILTERS.get(omics_type, DEFAULT_SKILL_FILTER)
     # Cast to strings for json serialization
     for event in _stream(
         messages=messages, real_path=real_path, api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
         max_iterations=MAX_TOOL_ITERATIONS,
-        skills_filter=['single-*', 'statistical-analysis'],
+        skills_filter=skills_filter,
     ):
         yield {'event': event['event'], 'data': json.dumps(event['data'], ensure_ascii=False, default=str)}
 

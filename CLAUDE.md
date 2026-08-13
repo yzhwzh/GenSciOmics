@@ -115,11 +115,11 @@ Target: **≥ 80%** coverage (lines, branches, functions, statements).
 
 ```bash
 # Start both backend + frontend together
-npm run start                  # python3 server/main.py & vite on :5173
+npm run start                  # python3 server/main.py & vite on :5180
 
 # Or separately:
-npm run dev                    # Vite frontend only on :5173
-npm run server                 # Python API only on :6000
+npm run dev                    # Vite frontend only on :5180
+npm run server                 # Python API only on :6001
 
 # Build & type-check
 npm run build                  # tsc -b && vite build
@@ -157,7 +157,7 @@ npm run test:coverage         # vitest with coverage report
 ```
 GenSci/
 ├── server/
-│   ├── main.py          # Entry: ThreadingHTTPServer on :6000
+│   ├── main.py          # Entry: ThreadingHTTPServer on :6001
 │   ├── config.py        # All constants (paths, ports, proxy, cache limits)
 │   ├── handler.py       # HTTP handler (CORS, JSON routing)
 │   ├── routes.py        # Route table — dict-based dispatch
@@ -232,7 +232,7 @@ GenSci/
 ### Data Layout
 
 ```
-06.GenSci/                 # PROJECT_ROOT (server/config.py)
+10.GenSciOmics/            # PROJECT_ROOT (server/config.py)
 ├── Data/                  # All dataset symlinks organized by species
 │   ├── Human/
 │   │   ├── Lung/COPD/*.h5ad       # Symlinks to /data/yuanwuzhou/08.GEO/...
@@ -277,7 +277,7 @@ GenSci/
 7. **Bounded scanner interval** — 30s (was 5s) — adequate for symlink-based data directories.
 8. **HDF5 file locking disabled** — `os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'` at the top of `main.py` prevents thread hangs when multiple requests read the same `.h5ad` file concurrently (read-only access, no corruption risk).
 9. **Palette system** — 5 named palettes (`default`/`pastel`/`bold`/`nature`/`tab10`) in `server/analysis/utils.py`. `PALETTE_OPTIONS` shared constant in `src/api/types.ts`. Backend validates palette name via `get_palette_name(q)` in `routes.py`; invalid names silently fall back to `'default'`.
-10. **Vite proxy** — `vite.config.ts` proxies `/api` requests to `http://127.0.0.1:6000`, so frontend dev server on :5173 can reach the Python backend without CORS issues.
+10. **Vite proxy** — `vite.config.ts` proxies `/api` requests to `http://127.0.0.1:6001`, so frontend dev server on :5180 can reach the Python backend without CORS issues.
 
 ### Analysis Page Data Flow
 
@@ -364,6 +364,7 @@ Skills are auto-discovered from `server/skills/` subdirectories. Categories incl
 - **Core tools** (6): shell, skill, tool_search, memory_read, memory_write, memory_delete
 - **Light skills** (~29): light-figure-drawing, light-literature-search, light-paper-drafting, light-result-analysis, light-slides, light-citation, etc.
 - **Single-cell skills** (~11): single-cell-annotation, single-cell-differential-expression, single-cell-foundation-model, single-cell-rna-velocity, single-cell-scenic, single-cell-trajectory-inference, statistical-analysis, etc.
+- **Bulk transcriptomics skills** (`bulk-*`): transcriptomics skills use the `bulk-*` prefix. Free Analysis on a BulkRNA dataset advertises only `bulk-*` + `statistical-analysis` (mapping in `server/llm_proxy.py` `OMICS_SKILL_FILTERS`).
 
 See `/api/skills` for the live list of available skills.
 

@@ -27,8 +27,9 @@ from pubmed import _fetch_abstract
 from analysis.umap import _get_umap_data
 from analysis.expression import _get_expression_stats
 from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_aggregate_table, _get_raw_expression
-from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition
+from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition, _generate_marker_dotplot
 from analysis.utils import CATEGORICAL_PALETTE_MAP
+from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_volcano
 from search import _get_genes
 from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
 from skills import list_skills, get_skill_content
@@ -203,6 +204,8 @@ def handle_analysis_info(handler, q):
                             'sample_names': v.get('sample_names', []),
                             'group_names': v.get('group_names', []),
                             'obs_columns': v.get('obs_columns', []),
+                            'disease_count': v.get('disease_count', 0),
+                            'group_dist': v.get('group_dist', ''),
                         }
                         break
     except Exception:
@@ -224,6 +227,14 @@ def handle_analysis_info(handler, q):
                     if hasattr(adata.obs['CellType'], 'cat') else [str(x) for x in adata.obs['CellType'].unique()]
             else:
                 stats['cell_type_names'] = []
+            stats['disease_count'] = int(adata.obs['Disease'].nunique()) if 'Disease' in adata.obs.columns else 0
+            stats['sample_names'] = [str(s) for s in adata.obs['Sample'].unique()] if 'Sample' in adata.obs.columns else []
+            stats['group_names'] = [str(g) for g in adata.obs['Group'].unique()] if 'Group' in adata.obs.columns else []
+            if 'Group' in adata.obs.columns:
+                counts = adata.obs['Group'].value_counts()
+                stats['group_dist'] = ', '.join(f'{g} {int(c)}' for g, c in counts.items())
+            else:
+                stats['group_dist'] = ''
         except Exception as e:
             stats = {'cells': 0, 'genes': 0, 'patient_count': 0, 'sample_count': 0,
                      'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
@@ -396,6 +407,26 @@ def handle_cell_ratio_plot(handler, q):
     handler._json(result)
 
 
+def handle_marker_dotplot(handler, q):
+    real_path_str = q.get('real_path', '')
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    palette = get_palette_name(q)
+    group_filter = q.get('group_filter', '')
+    genes = q.get('genes', '')
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'mkrdot:{real_path_str}:{mtime}:{palette}:{group_filter}:{genes}'
+    cached = _plot_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
+    result = _generate_marker_dotplot(str(real_path), palette, group_filter, genes)
+    _plot_cache.set(cache_key, result)
+    handler._json(result)
+
+
 def handle_composition_plot(handler, q):
     real_path_str = q.get('real_path', '')
     real_path = validate_real_path(real_path_str)
@@ -426,6 +457,82 @@ def handle_umap_ratio_plots(handler, q):
     palette = get_palette_name(q)
     result = _generate_umap_ratio_plots(str(real_path), group_var, palette)
     handler._json(result)
+
+
+def handle_bulk_boxplot(handler, q):
+    real_path_str = q.get('real_path', '')
+    gene = q.get('gene', '')
+    disease = q.get('disease', '') or None
+    palette = get_palette_name(q)
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    if not gene:
+        handler._send_error('gene parameter required')
+        return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}'
+    cached = _plot_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
+    result = bulk_boxplot(str(real_path), gene, disease, palette)
+    _plot_cache.set(cache_key, result)
+    handler._json(result)
+
+
+def handle_bulk_de(handler, q):
+    real_path_str = q.get('real_path', '')
+    disease = q.get('disease', '') or None
+    top_n = int(q.get('top_n', 100))
+    if top_n > 500:
+        top_n = 500
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'bulkde:{real_path_str}:{mtime}:{disease}:{top_n}'
+    # top_n <= 0 requests the full gene table (CSV download) — too large to cache
+    if top_n > 0:
+        cached = _table_cache.get(cache_key)
+        if cached:
+            handler._json(cached)
+            return
+    result = bulk_de(str(real_path), disease, top_n)
+    if top_n > 0:
+        _table_cache.set(cache_key, result)
+    handler._json(result)
+
+
+def handle_bulk_volcano(handler, q):
+    real_path_str = q.get('real_path', '')
+    disease = q.get('disease', '') or None
+    fc_thresh = float(q.get('fc', 1.0))
+    alpha = float(q.get('alpha', 0.05))
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    mtime = real_path.stat().st_mtime if real_path.exists() else 0
+    cache_key = f'bulkvol:{real_path_str}:{mtime}:{disease}:{fc_thresh}:{alpha}'
+    cached = _plot_cache.get(cache_key)
+    if cached:
+        handler._json(cached)
+        return
+    result = bulk_volcano(str(real_path), disease, fc_thresh, alpha)
+    _plot_cache.set(cache_key, result)
+    handler._json(result)
+
+
+def handle_bulk_diseases(handler, q):
+    real_path_str = q.get('real_path', '')
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    handler._json(bulk_diseases(str(real_path)))
 
 
 
@@ -507,6 +614,7 @@ def handle_llm_chat_stream(handler, data):
     model = data.get('model', 'deepseek-chat')
     base_url = data.get('base_url', 'https://api.deepseek.com')
     temperature = float(data.get('temperature', 0.7))
+    omics_type = data.get('omics_type', '')
 
     if not messages:
         handler._send_error('messages required')
@@ -547,7 +655,7 @@ def handle_llm_chat_stream(handler, data):
     _hb_thread.start()
 
     try:
-        for event in process_chat_streaming(messages, real_path, api_key, model, base_url, temperature):
+        for event in process_chat_streaming(messages, real_path, api_key, model, base_url, temperature, omics_type):
             # Check if client disconnected
             if _hb_stop.is_set():
                 break
@@ -805,6 +913,7 @@ ROUTES = {
     ('GET', '/api/composition-plot'): handle_composition_plot,
     ('GET', '/api/cell-ratio-plot'): handle_cell_ratio_plot,
     ('GET', '/api/umap-ratio-plots'): handle_umap_ratio_plots,
+    ('GET', '/api/marker-dotplot'): handle_marker_dotplot,
     ('GET', '/api/skills'): handle_skills_list,
     ('GET', '/api/skills/content'): handle_skill_content,
     ('POST', '/api/llm/chat'): handle_llm_chat,
@@ -816,4 +925,8 @@ ROUTES = {
     ('GET', '/api/results'): handle_results_list,
     ('POST', '/api/raw-expression'): handle_raw_expression,
     ('GET', '/api/cell-types'): handle_cell_types,
+    ('GET', '/api/bulk-boxplot'): handle_bulk_boxplot,
+    ('GET', '/api/bulk-de'): handle_bulk_de,
+    ('GET', '/api/bulk-diseases'): handle_bulk_diseases,
+    ('GET', '/api/bulk-volcano'): handle_bulk_volcano,
 }

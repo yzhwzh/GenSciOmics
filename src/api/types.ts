@@ -7,12 +7,17 @@ export interface DatasetInfo {
   filename?: string
   size_mb?: number
   status?: string
+  omics_type?: string
   patient_count?: number
   sample_count?: number
   celltype_count?: number
+  n_obs?: number
+  n_vars?: number
+  disease_count?: number
   group_dist?: string
   tissue_obs?: string
   annotation_source?: string
+  marker_major?: Record<string, string[]> | null
 }
 
 export interface TissueStat {
@@ -47,12 +52,48 @@ export interface AnalysisStats {
   sample_count: number
   celltype_count: number
   cell_type_names: string[]
+  disease_count?: number
+  group_names?: string[]
+  group_dist?: string
 }
 
 export interface AnalysisInfo {
   pmid: string
   abstract: AbstractInfo
   stats: AnalysisStats
+}
+
+export interface BulkDeRow {
+  gene: string
+  mean_tumor: number | null
+  mean_normal: number | null
+  log2fc: number | null
+  pvalue: number | null
+  padj: number | null
+}
+
+export interface BulkDeResult {
+  genes?: BulkDeRow[]
+  n_total?: number
+  n_tumor?: number
+  n_normal?: number
+  disease?: string
+  error?: string
+}
+
+export interface BulkDiseasesResult {
+  diseases: string[]
+  error?: string
+}
+
+export interface BulkVolcanoResult {
+  image?: string
+  error?: string
+  width?: number
+  height?: number
+  n_up?: number
+  n_down?: number
+  n_ns?: number
 }
 
 export interface UmapLegendItem {
@@ -150,6 +191,14 @@ export interface PlotResult {
   error?: string
   width?: number
   height?: number
+}
+
+export interface MarkerDotplotResult {
+  image?: string
+  error?: string
+  width?: number
+  height?: number
+  groups?: string[]
 }
 
 export interface CellRatioPlot {

@@ -10,9 +10,23 @@ from pathlib import Path
 
 import anndata
 
-from config import DATA_DIRS, SCAN_INTERVAL, OBS_COLUMNS, PROJECT_ROOT, SCANNER_CACHE_FILE
+from config import (
+    DATA_DIRS, SCAN_INTERVAL, OBS_COLUMNS, PROJECT_ROOT, SCANNER_CACHE_FILE,
+    BULK_CACHE_DIR_NAME,
+)
+from bulk_import import import_bulk_table
 from caches import LRUCache
 from events import log_event
+
+
+# ─── Path convention constants ────────────────────────────────
+FLAT_TISSUES = {'Multi-organ'}  # tissues without a disease subdirectory
+OMICS_TYPES = {'scRNA', 'BulkRNA', 'Protein', 'Metabolism', 'spatial'}
+BULK_EXTENSIONS = {'.txt', '.tsv', '.csv', '.xlsx'}
+
+# Raw bulk tables currently being imported (key = cache h5ad path string).
+_importing: set[str] = set()
+_importing_lock = threading.Lock()
 
 
 # ─── Global state ────────────────────────────────────────────
@@ -55,7 +69,8 @@ _ANNOTATION_SOURCES_FILE = PROJECT_ROOT / 'server' / 'annotation_sources.json'
 
 
 def _load_annotation_sources() -> dict:
-    """Load annotation sources from JSON, re-read only if mtime changed."""
+    """Load annotation sources from JSON, re-read only if mtime changed.
+    Returns {PMID: {Source, Major?}} dict (v2 format with marker genes)."""
     global _annotation_sources_cache
     try:
         mtime = _ANNOTATION_SOURCES_FILE.stat().st_mtime
@@ -68,6 +83,15 @@ def _load_annotation_sources() -> dict:
         if _annotation_sources_cache is not None:
             return _annotation_sources_cache[1]
         return {}  # file missing on first load → empty, all default to 'Paper'
+
+
+def _get_annotation_info(pmid: str) -> tuple[str, dict | None]:
+    """Return (source_label, marker_major_dict_or_None) for a given PMID.
+    Handles both v1 (string values) and v2 (dict values) JSON formats."""
+    entry = _load_annotation_sources().get(pmid, 'Paper')
+    if isinstance(entry, str):
+        return (entry, None)  # v1 legacy format
+    return (entry.get('Source', 'Paper'), entry.get('Major'))
 
 
 def _read_obs_stats(real_path: Path, mtime: float) -> dict:
@@ -105,6 +129,8 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
                 stats['celltype_names'] = [str(v) for v in unique]
             else:
                 stats[f'{col.lower()}_dist'] = ''
+        # Disease count (bulk RNA uses Disease as the cancer-type column)
+        stats['disease_count'] = int(adata.obs['Disease'].nunique()) if 'Disease' in adata.obs.columns else 0
         # Static metadata for analysis-info (no h5ad read needed)
         stats['sample_names'] = [str(s) for s in adata.obs['Sample'].unique()] if 'Sample' in adata.obs.columns else []
         stats['group_names'] = [str(g) for g in adata.obs['Group'].unique()] if 'Group' in adata.obs.columns else []
@@ -115,6 +141,169 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
     except Exception as e:
         print(f'[GenSci] Error reading obs stats from {real_path}: {e}', file=sys.stderr)
         return {f'{c.lower()}_count': 0 for c in OBS_COLUMNS} | {'group_dist': '', 'tissue_obs': ''}
+
+
+def _extract_path_fields(path: Path) -> dict:
+    """Extract species/tissue/disease/omics_type/pmid from a Data/ path."""
+    rel = None
+    for dd in DATA_DIRS:
+        try:
+            rel = path.relative_to(dd)
+            break
+        except ValueError:
+            continue
+    if rel is None:
+        rel = path.relative_to(PROJECT_ROOT)
+    parts = rel.parts  # e.g. ('Human', 'Lung', 'COPD', '39121212.COPD.h5ad')
+
+    species_keywords = {'human', 'mouse', 'monkey', 'rat'}
+    species = 'Human'
+    idx = 0
+    if parts and parts[0].lower() in species_keywords:
+        species = parts[0]
+        idx = 1
+
+    tissue = parts[idx] if len(parts) > idx else 'unknown'
+    if tissue in FLAT_TISSUES:
+        disease = tissue
+        omics_type = parts[idx + 1] if len(parts) > idx + 1 and parts[idx + 1] in OMICS_TYPES else 'scRNA'
+    else:
+        disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
+        omics_type = 'scRNA'
+        if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
+            omics_type = parts[idx + 2]
+
+    fname = path.stem
+    pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]
+
+    return {
+        'species': species,
+        'tissue': tissue,
+        'disease': disease,
+        'omics_type': omics_type,
+        'pmid': pmid,
+    }
+
+
+def _bulk_cache_path(path: Path) -> Path:
+    """Return the cache .h5ad path for a raw bulk table."""
+    return path.parent / BULK_CACHE_DIR_NAME / f'{path.stem}.h5ad'
+
+
+def _start_import(src: Path, dst: Path) -> None:
+    """Kick off a background import thread (idempotent per cache target)."""
+    key = str(dst)
+    with _importing_lock:
+        if key in _importing:
+            return
+        _importing.add(key)
+
+    def _worker() -> None:
+        try:
+            import_bulk_table(src, dst)
+            log_event('bulk_imported', f'Imported bulk table {src.name}',
+                      f'{src.name} → {dst.name}',
+                      ui_message=f'Bulk RNA imported: {src.name}')
+        except Exception as e:
+            print(f'[GenSci] bulk import failed for {src}: {e}', file=sys.stderr)
+        finally:
+            with _importing_lock:
+                _importing.discard(key)
+
+    threading.Thread(target=_worker, daemon=True, name=f'bulk-import-{src.stem}').start()
+
+
+def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
+    """Resolve a raw bulk table (txt/csv/tsv/xlsx) into a dataset entry.
+
+    If the .h5ad cache is fresh, returns a full entry pointing real_path at the
+    cache; otherwise starts a background import and returns status='importing'.
+    """
+    if not path.exists():
+        return None
+    real = path.resolve()
+    if not real.is_file():
+        return None
+    stat = real.stat()
+    if stat.st_size == 0:
+        return None
+
+    dst = _bulk_cache_path(path)
+    meta = _extract_path_fields(path)
+    pmid = meta['pmid']
+    size_mb = round(stat.st_size / (1024 * 1024), 1)
+
+    if not (dst.exists() and dst.stat().st_mtime >= stat.st_mtime):
+        _start_import(path, dst)
+        return {
+            'species': meta['species'],
+            'tissue': meta['tissue'],
+            'disease': meta['disease'],
+            'pmid': pmid,
+            'omics_type': meta['omics_type'],
+            'filename': path.name,
+            'path': str(path),
+            'real_path': str(dst),
+            'size_mb': size_mb,
+            'status': 'importing',
+            'patient_count': 0,
+            'sample_count': 0,
+            'celltype_count': 0,
+            'celltype_names': [],
+            'n_obs': 0,
+            'n_vars': 0,
+            'disease_count': 0,
+            'group_dist': '',
+            'tissue_obs': '',
+            'annotation_source': _get_annotation_info(pmid)[0],
+            'marker_major': _get_annotation_info(pmid)[1],
+            'sample_names': [],
+            'group_names': [],
+            'obs_columns': [],
+        }
+
+    # Cache fresh — read stats from cache h5ad, point real_path at it.
+    obs_stats = _read_obs_stats(dst, dst.stat().st_mtime)
+    result = {
+        'species': meta['species'],
+        'tissue': meta['tissue'],
+        'disease': meta['disease'],
+        'pmid': pmid,
+        'omics_type': meta['omics_type'],
+        'filename': path.name,
+        'path': str(path),
+        'real_path': str(dst),
+        'size_mb': size_mb,
+        'status': 'ready',
+        'annotation_source': _get_annotation_info(pmid)[0],
+        'marker_major': _get_annotation_info(pmid)[1],
+        **obs_stats,
+    }
+    if cache is not None:
+        with _cache_lock:
+            cache[str(path)] = {
+                'mtime': stat.st_mtime,
+                'filename': path.name,
+                'species': meta['species'],
+                'tissue': meta['tissue'],
+                'disease': meta['disease'],
+                'pmid': pmid,
+                'omics_type': meta['omics_type'],
+                'size_mb': size_mb,
+                'patient_count': obs_stats.get('patient_count', 0),
+                'sample_count': obs_stats.get('sample_count', 0),
+                'celltype_count': obs_stats.get('celltype_count', 0),
+                'celltype_names': obs_stats.get('celltype_names', []),
+                'n_obs': obs_stats.get('n_obs', 0),
+                'n_vars': obs_stats.get('n_vars', 0),
+                'disease_count': obs_stats.get('disease_count', 0),
+                'group_dist': obs_stats.get('group_dist', ''),
+                'tissue_obs': obs_stats.get('tissue_obs', ''),
+                'sample_names': obs_stats.get('sample_names', []),
+                'group_names': obs_stats.get('group_names', []),
+                'obs_columns': obs_stats.get('obs_columns', []),
+            }
+    return result
 
 
 def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
@@ -169,48 +358,23 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'celltype_names': cached.get('celltype_names', []),
                 'n_obs': cached.get('n_obs', 0),
                 'n_vars': cached.get('n_vars', 0),
+                'disease_count': cached.get('disease_count', 0),
                 'group_dist': cached.get('group_dist', ''),
                 'tissue_obs': cached.get('tissue_obs', ''),
-                'annotation_source': _load_annotation_sources().get(cached.get('pmid', ''), 'Paper'),
+                'annotation_source': _get_annotation_info(cached.get('pmid', ''))[0],
+                'marker_major': _get_annotation_info(cached.get('pmid', ''))[1],
                 'sample_names': cached.get('sample_names', []),
                 'group_names': cached.get('group_names', []),
                 'obs_columns': cached.get('obs_columns', []),
             }
 
     # Extract info from path structure: Data/<Species>/<Tissue>/<Disease>/<pmid>.<disease>.h5ad
-    # Make path relative to DATA_DIR so parts start with species name
-    rel = None
-    for dd in DATA_DIRS:
-        try:
-            rel = path.relative_to(dd)
-            break
-        except ValueError:
-            continue
-    if rel is None:
-        rel = path.relative_to(PROJECT_ROOT)
-    parts = rel.parts  # e.g. ('Human', 'Lung', 'COPD', '39121212.COPD.h5ad')
-
-    species_keywords = {'human', 'mouse', 'monkey', 'rat'}
-    species = 'Human'
-    idx = 0
-    if parts and parts[0].lower() in species_keywords:
-        species = parts[0]
-        idx = 1
-
-    tissue = parts[idx] if len(parts) > idx else 'unknown'
-    FLAT_TISSUES = {'Multi-organ'}  # tissues without disease subdirectory
-    OMICS_TYPES = {'scRNA', 'BulkRNA', 'Protein', 'Metabolism', 'spatial'}
-    if tissue in FLAT_TISSUES:
-        disease = tissue
-        omics_type = parts[idx + 1] if len(parts) > idx + 1 and parts[idx + 1] in OMICS_TYPES else 'scRNA'
-    else:
-        disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
-        omics_type = 'scRNA'
-        if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
-            omics_type = parts[idx + 2]
-
-    fname = path.stem  # e.g. '39121212.COPD' or '39121212_IPF'
-    pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]
+    meta = _extract_path_fields(path)
+    species = meta['species']
+    tissue = meta['tissue']
+    disease = meta['disease']
+    pmid = meta['pmid']
+    omics_type = meta['omics_type']
 
     # Read obs stats from the .h5ad file (cached by mtime for performance)
     obs_stats = _read_obs_stats(real, stat.st_mtime)
@@ -227,7 +391,8 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         'real_path': str(path),  # symlink path inside Data/ (not resolved target)
         'size_mb': round(size_mb, 1),
         'status': status,
-        'annotation_source': _load_annotation_sources().get(pmid, 'Paper'),
+        'annotation_source': _get_annotation_info(pmid)[0],
+        'marker_major': _get_annotation_info(pmid)[1],
         **obs_stats,
     }
     if cache is not None:
@@ -247,9 +412,11 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
                 'celltype_names': obs_stats.get('celltype_names', []),
                 'n_obs': obs_stats.get('n_obs', 0),
                 'n_vars': obs_stats.get('n_vars', 0),
+                'disease_count': obs_stats.get('disease_count', 0),
                 'group_dist': obs_stats.get('group_dist', ''),
                 'tissue_obs': obs_stats.get('tissue_obs', ''),
-                'annotation_source': _load_annotation_sources().get(pmid, 'Paper'),
+                'annotation_source': _get_annotation_info(pmid)[0],
+                'marker_major': _get_annotation_info(pmid)[1],
                 'sample_names': obs_stats.get('sample_names', []),
                 'group_names': obs_stats.get('group_names', []),
                 'obs_columns': obs_stats.get('obs_columns', []),
@@ -258,9 +425,12 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
 
 
 def scan_datasets():
-    """Scan DATA_DIRS for .h5ad files and build dataset list.
+    """Scan DATA_DIRS for .h5ad and raw bulk tables, build the dataset list.
 
-    Uses persistent JSON cache to avoid re-reading unchanged files.
+    Uses persistent JSON cache to avoid re-reading unchanged files. Raw bulk
+    tables (txt/csv/tsv/xlsx) are converted to a .h5ad cache by resolve_bulk_table
+    (which imports asynchronously on first sight); the generated cache files live
+    under a .bulk_cache dir and are skipped by this loop.
     """
     global datasets
     cache = _load_cache()
@@ -268,8 +438,19 @@ def scan_datasets():
     for data_dir in DATA_DIRS:
         if not data_dir.is_dir():
             continue
-        for f in data_dir.rglob('*.h5ad'):
-            info = resolve_h5ad(f, cache)
+        for f in data_dir.rglob('*'):
+            if not f.is_file():
+                continue
+            # Import cache holds generated .h5ad handled via resolve_bulk_table
+            if BULK_CACHE_DIR_NAME in f.parts:
+                continue
+            suffix = f.suffix.lower()
+            if suffix == '.h5ad':
+                info = resolve_h5ad(f, cache)
+            elif suffix in BULK_EXTENSIONS:
+                info = resolve_bulk_table(f, cache)
+            else:
+                continue
             if info:
                 found.append(info)
     _save_cache(cache)

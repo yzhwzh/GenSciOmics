@@ -50,20 +50,28 @@ export default function TissuePage() {
     return () => clearInterval(interval)
   }, [slug, loading, rows])
 
-  // All current data is single-cell; other omics tabs show placeholder
-  const omicsRows = activeTab === 'single-cell' ? rows : []
+  // single-cell = scRNA datasets; bulk-rna = BulkRNA datasets; others stay placeholder
+  const omicsRows =
+    activeTab === 'single-cell'
+      ? rows.filter((r) => r.omics_type !== 'BulkRNA')
+      : activeTab === 'bulk-rna'
+        ? rows.filter((r) => r.omics_type === 'BulkRNA')
+        : []
+  const isBulkTab = activeTab === 'bulk-rna'
 
   const downloadCSV = () => {
-    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', 'CellTypes', 'Group', 'Annotation Source']
+    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', isBulkTab ? 'Genes' : 'CellTypes', 'Group']
+    if (!isBulkTab) headers.push('Annotation Source')
     const csvRows = [headers.join(',')]
     for (const r of omicsRows) {
-      csvRows.push([
+      const row = [
         r.species ?? 'Human', `"${r.disease}"`, r.pmid,
         r.size_mb && r.size_mb > 1000 ? `${(r.size_mb / 1024).toFixed(1)} GB` : `${r.size_mb} MB`,
         r.status, r.patient_count ?? '-', r.sample_count ?? '-',
-        r.celltype_count ?? '-', `"${r.group_dist || '-'}"`,
-        r.annotation_source || 'Paper',
-      ].join(','))
+        isBulkTab ? (r.n_vars ?? '-') : (r.celltype_count ?? '-'), `"${r.group_dist || '-'}"`,
+      ]
+      if (!isBulkTab) row.push(r.annotation_source || 'Paper')
+      csvRows.push(row.join(','))
     }
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -183,14 +191,16 @@ export default function TissuePage() {
                   <th className="text-center py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Status</th>
                   <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Patient</th>
                   <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Sample</th>
-                  <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Cells</th>
+                  <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">{isBulkTab ? 'Genes' : 'Cells'}</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Group</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">
                     <FilterDropdown label="Sample Type" values={getUniqueValues('tissue_obs')}
                       selectedValues={filters['tissue_obs']} onToggle={(v) => toggleFilter('tissue_obs', v)}
                       onClear={() => clearFilter('tissue_obs')} isActive={isFilterActive('tissue_obs')} portal />
                   </th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Annotation Source</th>
+                  {!isBulkTab && (
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Annotation Source</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-light">
@@ -224,10 +234,12 @@ export default function TissuePage() {
                     </td>
                     <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.patient_count ?? '-'}</td>
                     <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.sample_count ?? '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.celltype_count ?? '-'}</td>
+                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{isBulkTab ? (row.n_vars ?? '-') : (row.celltype_count ?? '-')}</td>
                     <td className="py-2.5 px-4 text-xs text-text-secondary leading-snug break-words" title={row.group_dist}>{row.group_dist || '-'}</td>
                     <td className="py-3 px-4 text-sm text-text-secondary">{row.tissue_obs || '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-secondary">{row.annotation_source || 'Paper'}</td>
+                    {!isBulkTab && (
+                      <td className="py-3 px-4 text-sm text-text-secondary">{row.annotation_source || 'Paper'}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

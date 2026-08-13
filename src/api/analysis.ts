@@ -7,7 +7,11 @@ import type {
   MutestResult,
   AggregateTable,
   PlotResult,
+  MarkerDotplotResult,
   UmapRatioPlots,
+  BulkDeResult,
+  BulkDiseasesResult,
+  BulkVolcanoResult,
   SkillDef,
   ChatMessage,
   LLMConfig,
@@ -173,6 +177,7 @@ export async function sendChatMessageStreaming(
   config: LLMConfig,
   onEvent: (event: string, data: unknown) => void,
   signal?: AbortSignal,
+  omicsType?: string,
 ): Promise<void> {
   _enterSSE()
   try {
@@ -187,6 +192,7 @@ export async function sendChatMessageStreaming(
         model: config.model,
         base_url: config.baseUrl,
         temperature: config.temperature,
+        omics_type: omicsType,
       }),
     })
 
@@ -323,5 +329,62 @@ export async function fetchRawExpression(
     throw new Error(body.error || `HTTP ${response.status}`)
   }
   return response.blob()
+}
+
+export async function fetchMarkerDotplot(
+  realPath: string,
+  palette = 'default',
+  groupFilter = '',
+  genes = '',
+): Promise<MarkerDotplotResult> {
+  const params = new URLSearchParams({
+    real_path: realPath,
+    palette,
+  })
+  if (groupFilter) params.set('group_filter', groupFilter)
+  if (genes) params.set('genes', genes)
+  return apiFetch<MarkerDotplotResult>(`/api/marker-dotplot?${params}`)
+}
+
+// ─── Bulk RNA analysis ────────────────────────────────────────
+
+export async function fetchBulkBoxplot(
+  realPath: string,
+  gene: string,
+  disease?: string,
+  palette = 'default'
+): Promise<PlotResult> {
+  const params = new URLSearchParams({ real_path: realPath, gene, palette })
+  if (disease) params.set('disease', disease)
+  return cachedFetch<PlotResult>(`/api/bulk-boxplot?${params}`)
+}
+
+export async function fetchBulkDe(
+  realPath: string,
+  disease?: string,
+  topN = 100
+): Promise<BulkDeResult> {
+  const params = new URLSearchParams({ real_path: realPath, top_n: String(topN) })
+  if (disease) params.set('disease', disease)
+  return apiFetch<BulkDeResult>(`/api/bulk-de?${params}`)
+}
+
+export async function fetchBulkDiseases(realPath: string): Promise<string[]> {
+  const data = await apiFetch<BulkDiseasesResult>(
+    `/api/bulk-diseases?real_path=${encodeURIComponent(realPath)}`
+  )
+  return Array.isArray(data.diseases) ? data.diseases : []
+}
+
+export async function fetchBulkVolcano(
+  realPath: string,
+  disease?: string,
+  fcThresh = 1.0,
+  alpha = 0.05
+): Promise<BulkVolcanoResult> {
+  const params = new URLSearchParams({ real_path: realPath, fc: String(fcThresh), alpha: String(alpha) })
+  if (disease) params.set('disease', disease)
+  // server caches the image; longer timeout for the cold full-matrix t-test
+  return apiFetch<BulkVolcanoResult>(`/api/bulk-volcano?${params}`, undefined, 120_000)
 }
 

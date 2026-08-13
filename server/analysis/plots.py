@@ -12,13 +12,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
-import anndata
 from core.adata_cache import get_adata
 import seaborn as sns
 from matplotlib.ticker import AutoMinorLocator
 
 from analysis.utils import build_cond_palette, cond_sort_key, get_palette
 from scipy.stats import mannwhitneyu
+import scanpy as sc
+from core.adata_cache import locked_backed_adata
 
 
 # Matplotlib global config
@@ -164,6 +165,7 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
         ax.set_xticklabels(ax.get_xticklabels(), fontsize=fs_lbl,
                            rotation=45 if n_ct > 8 else 0, ha='right' if n_ct > 8 else 'center')
         ax.set_ylabel(ylabel, fontsize=max(11, int(12 * fs)), weight='bold')
+        ax.set_title(gene, fontsize=max(11, int(12 * fs)), weight='bold')
         ax.set_xlabel(None)
         ax.grid(False)
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
@@ -847,3 +849,147 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
         return {'error': str(e) + '\n' + traceback.format_exc()}
 
 
+def _generate_marker_dotplot(real_path: str, palette_name: str = 'default',
+                              group_filter: str = '', genes: str = '') -> dict:
+    """Generate scanpy dotplot for marker genes.
+
+    - Manual datasets: Major marker dict + Target genes merged
+    - Non-Manual datasets: Target genes only
+    - Target genes: genes param > annotation['Target'] > TARGET_DEFAULT
+
+    Args:
+        real_path: symlink path to the .h5ad file
+        palette_name: palette name for the plot
+        group_filter: Group value to subset (empty = all cells)
+        genes: comma-separated Target genes (overrides annotation Target)
+
+    Returns:
+        {image, width, height, groups, error?}
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    TARGET_DEFAULT = ['IL1A', 'MUC5AC', 'PDCD1', 'CD274', 'IGF1', 'IL1RAP', 'ANGPTL3']
+
+    def _load_sources() -> dict:
+        """Load annotation_sources.json (inline, no scanner dependency)."""
+        sources_file = _Path(__file__).resolve().parent.parent / 'annotation_sources.json'
+        try:
+            return _json.loads(sources_file.read_text())
+        except Exception:
+            return {}
+
+    try:
+        # Use unified backed access with per-file lock to prevent dual-handle HDF5
+        # conflicts. All lookups and subsetting happen inside the lock; the
+        # materialised AnnData is then safe for heavy computation outside.
+        with locked_backed_adata(str(real_path)) as adata:
+            # Extract PMID from path to look up annotation entry
+            path = _Path(real_path)
+            fname = path.stem
+            pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]
+
+            sources = _load_sources()
+            entry = sources.get(pmid, {})
+            if isinstance(entry, str):
+                entry = {}
+            marker_major = entry.get('Major')
+
+            # Determine Target genes: user input > annotation Target > default
+            if genes.strip():
+                target_genes = [g.strip() for g in genes.split(',') if g.strip()]
+            else:
+                target_genes = entry.get('Target', TARGET_DEFAULT)
+
+            if not marker_major and not target_genes:
+                return {'error': 'No marker genes or Target genes available for this dataset'}
+
+            # Get available groups BEFORE subsetting (for frontend dropdown)
+            groups = []
+            if 'Group' in adata.obs.columns:
+                groups = sorted(set(str(g) for g in adata.obs['Group'].unique()))
+
+            # Build plot_dict from var_names (in memory even with backed mode)
+            var_names = set(str(n).upper() for n in adata.var_names)
+            plot_dict = {}
+
+            if marker_major:
+                for ct, ct_genes in marker_major.items():
+                    present = [g for g in ct_genes if g.upper() in var_names]
+                    if present:
+                        plot_dict[ct] = present
+
+            target_present = [g for g in target_genes if g.upper() in var_names]
+            if target_present:
+                plot_dict['Target'] = target_present
+
+            if not plot_dict:
+                return {'error': 'None of the marker/Target genes found in this dataset'}
+
+            if 'CellType' not in adata.obs.columns:
+                return {'error': 'CellType column not found in obs'}
+
+            # Materialise only needed gene columns (not full X) to minimise lock time
+            needed_genes = list(set(g for genes in plot_dict.values() for g in genes))
+
+            if group_filter and 'Group' in adata.obs.columns:
+                mask = adata.obs['Group'].astype(str) == group_filter
+                if mask.sum() == 0:
+                    return {'error': f'No cells found for Group="{group_filter}"'}
+                adata = adata[mask, needed_genes].to_memory()
+            else:
+                adata = adata[:, needed_genes].to_memory()
+        # Lock released — adata is now an in-memory AnnData, no HDF5 access below
+
+        # Generate dotplot — scanpy ≥1.10 returns Axes dict with return_fig=True
+        sc.settings.figdir = '/tmp'
+        result = sc.pl.dotplot(
+            adata, plot_dict, groupby='CellType',
+            standard_scale='var', dot_max=1, return_fig=True,
+            show=False, use_raw=False,
+        )
+
+        # scanpy ≥1.10 returns DotPlot object (fig is None until make_figure())
+        if hasattr(result, 'make_figure'):
+            result.make_figure()
+            fig = result.fig
+
+            # Annotate Y-axis with cell counts and proportions
+            CellNumber = pd.DataFrame(adata.obs['CellType'].value_counts())
+            CellNumber.columns = ['CellType']
+            CellNumber['Total'] = CellNumber['CellType'].sum()
+            CellNumber['Ratio'] = CellNumber['CellType'] / CellNumber['Total'] * 100
+            result.get_axes()['mainplot_ax'].set_yticklabels([
+                i.get_text() + ' (%d/%d %.2f%%) ' % (CellNumber.loc[i.get_text(), 'CellType'],
+                                                     CellNumber.loc[i.get_text(), 'Total'],
+                                                     CellNumber.loc[i.get_text(), 'Ratio'])
+                for i in result.get_axes()['mainplot_ax'].get_yticklabels()
+            ], fontsize=12, weight='bold')
+        elif hasattr(result, 'fig') and result.fig is not None:
+            fig = result.fig
+        elif hasattr(result, 'figure'):
+            fig = result.figure
+        elif isinstance(result, dict):
+            first_ax = next(iter(result.values()))
+            fig = first_ax.figure if hasattr(first_ax, 'figure') else first_ax
+        elif hasattr(result, 'savefig'):
+            fig = result
+        else:
+            fig = plt.gcf()
+
+        # Encode to PNG base64
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.5, dpi=120,
+                    facecolor='white', edgecolor='none')
+        plt.close(fig)
+        img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+        fig_w, fig_h = fig.get_size_inches()
+        return {'image': img_b64, 'width': round(fig_w, 1), 'height': round(fig_h, 1),
+                'groups': groups}
+
+    except Exception as e:
+        print(f'[GenSci] Marker dotplot error: {e}', file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e) + '\n' + traceback.format_exc()}

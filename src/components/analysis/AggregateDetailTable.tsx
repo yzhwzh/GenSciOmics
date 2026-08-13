@@ -29,6 +29,7 @@ export default function AggregateDetailTable({
   realPath: string
   gene: string
   conditionCol?: string
+  palette?: string
 }) {
   const [data, setData] = useState<AggregateTableData | null>(null)
   const [loading, setLoading] = useState(false)

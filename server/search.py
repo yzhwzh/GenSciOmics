@@ -4,7 +4,7 @@
 import sys
 from pathlib import Path
 
-import anndata
+from core.adata_cache import get_adata
 
 from scanner import datasets, datasets_lock
 from caches import LRUCache
@@ -19,15 +19,18 @@ _search_result_cache = LRUCache(max_size=200)
 
 
 def _get_genes(real_path: Path, mtime: float) -> set:
-    """Read and cache gene names (var_names) from an .h5ad file."""
+    """Read and cache gene names (var_names) from an .h5ad file.
+
+    Uses the shared backed AnnData from adata_cache (same handle as UMAP,
+    dotplot, expression) to avoid opening a second h5py File on the same .h5ad.
+    """
     key = (str(real_path), mtime)
     cached = _gene_cache.get(key)
     if cached is not None:
         return cached
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
-        genes = set(adata.var_names)
-        adata.file.close()
+        adata = get_adata(str(real_path))
+        genes = set(str(g) for g in adata.var_names)
         _gene_cache.set(key, genes)
         return genes
     except Exception as e:

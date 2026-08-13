@@ -1,20 +1,977 @@
 {
-  "33420488": "Manual",
-  "38990554": "SCSA (CellMarker)",
-  "37615858": "Manual",
-  "31474370": "SCSA (Panglaodb)",
-  "32344053": "Celltypist",
-  "33483337": "Celltypist",
-  "PKU": "SCSA (Panglaodb)",
-  "38036783": "Celltypist",
-  "40494845": "Celltypist",
-  "BALF": "Manual",
-  "40993192": "Manual",
-  "39662091": "Manual",
-  "37271319": "Manual",
-  "40513622": "Manual",
-  "34912121": "Manual",
-  "33514849": "Manual",
-  "33936064": "Manual",
-  "38051587": "Manual"
+  "38990554": {
+    "Source": "SCSA (CellMarker)",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "31474370": {
+    "Source": "SCSA (Panglaodb)",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "32344053": {
+    "Source": "Celltypist",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "33483337": {
+    "Source": "Celltypist",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "PKU": {
+    "Source": "SCSA (Panglaodb)",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "38036783": {
+    "Source": "Celltypist",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "40494845": {
+    "Source": "Celltypist",
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "33420488": {
+    "Source": "Manual",
+    "Major": {
+      "T": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2",
+        "CD7",
+        "DPP4",
+        "SLAMF1",
+        "CD27",
+        "CD28",
+        "CCR7",
+        "IL7R",
+        "IL2RA",
+        "BTLA",
+        "CD4",
+        "PTPRC",
+        "SELL",
+        "CD8A",
+        "CTLA4",
+        "PDCD1"
+      ],
+      "Monocytic": [
+        "HAVCR2",
+        "UCHL1",
+        "CD14",
+        "CD163",
+        "CD68",
+        "CSF1R",
+        "FCGR3A",
+        "LYZ"
+      ],
+      "Basal/intermediate": [
+        "KRT5",
+        "KRT14",
+        "TP63",
+        "KRT8",
+        "KRT18",
+        "KRT19"
+      ],
+      "Luminal": [
+        "AR"
+      ],
+      "Mast": [
+        "TPSB2",
+        "TPSAB1",
+        "MS4A2",
+        "CMA1"
+      ],
+      "Endothelial": [
+        "ENG",
+        "VWF",
+        "PECAM1"
+      ],
+      "Fibroblast": [
+        "ACTA2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "37615858": {
+    "Source": "Manual",
+    "Major": {
+      "CD4+ T": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD4"
+      ],
+      "CD8+ T": [
+        "CD8A",
+        "GZMK"
+      ],
+      "Proliferation T": [
+        "MKI67",
+        "PCNA"
+      ],
+      "NK": [
+        "KLRD1",
+        "KLRF1",
+        "NCAM1"
+      ],
+      "B cell": [
+        "CD79A",
+        "MS4A1",
+        "BANK1",
+        "CD19"
+      ],
+      "Plasma": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "CD14+ Monocytes": [
+        "CD14",
+        "LYZ",
+        "FCN1",
+        "C5AR1"
+      ],
+      "CD16 Monocytes": [
+        "FCGR3A"
+      ],
+      "Monocytes-DCs": [
+        "FCER1A",
+        "CLEC10A",
+        "CD1C"
+      ],
+      "pDC": [
+        "IRF8",
+        "LILRA4",
+        "CLEC4C",
+        "PTPRS"
+      ],
+      "Megakaryocyte": [
+        "PPBP",
+        "PF4",
+        "GP9"
+      ],
+      "HSC_Prog": [
+        "CD34",
+        "MSI2",
+        "EGFL7",
+        "NRIP1",
+        "PROM1",
+        "CYTL1",
+        "MEIS1",
+        "GATA2"
+      ],
+      "GMP": [
+        "MPO",
+        "ELANE",
+        "CTSG",
+        "AZU1"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "BALF": {
+    "Source": "Manual",
+    "Major": {
+      "T_NKs": [
+        "CD3D",
+        "CD3E",
+        "NKG7"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "ITGB2",
+        "ITGAM",
+        "LYZ"
+      ],
+      "Macrophages": [
+        "CD68",
+        "CD163",
+        "AIF1",
+        "MRC1",
+        "TNF"
+      ],
+      "DCs": [
+        "CD83",
+        "HLA-DRA",
+        "CD1C"
+      ],
+      "Monocytes": [
+        "CD14",
+        "FCGR3A",
+        "LST1",
+        "LILRB2"
+      ],
+      "Neutrophils": [
+        "S100A8",
+        "S100A9",
+        "CSF3R"
+      ],
+      "Epithelials": [
+        "EPCAM",
+        "KRT19",
+        "CLDN7"
+      ],
+      "Mast_cells": [
+        "KIT",
+        "TPSAB1",
+        "TPSB2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "40993192": {
+    "Source": "Manual",
+    "Major": {
+      "T_NKs": [
+        "CD3D",
+        "CD3E",
+        "NKG7"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "ITGB2",
+        "ITGAM",
+        "LYZ"
+      ],
+      "Macrophages": [
+        "CD68",
+        "CD163",
+        "AIF1",
+        "MRC1",
+        "TNF"
+      ],
+      "DCs": [
+        "CD83",
+        "HLA-DRA",
+        "CD1C"
+      ],
+      "Monocytes": [
+        "CD14",
+        "FCGR3A",
+        "LST1",
+        "LILRB2"
+      ],
+      "Neutrophils": [
+        "S100A8",
+        "S100A9",
+        "CSF3R"
+      ],
+      "Epithelials": [
+        "EPCAM",
+        "KRT19",
+        "CLDN7"
+      ],
+      "Mast_cells": [
+        "KIT",
+        "TPSAB1",
+        "TPSB2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "39662091": {
+    "Source": "Manual",
+    "Major": {
+      "T_NKs": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2",
+        "NKG7",
+        "GNLY",
+        "GZMK"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "CD19",
+        "CD22",
+        "BLK"
+      ],
+      "Plasmas": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "LYZ",
+        "CD14",
+        "CD68",
+        "FCGR3A",
+        "CD163"
+      ],
+      "Endothelials": [
+        "PECAM1",
+        "VWF",
+        "ENG",
+        "CDH5"
+      ],
+      "Fibroblasts": [
+        "DCN",
+        "COL1A2",
+        "COL3A1",
+        "COL14A1"
+      ],
+      "Pericytes": [
+        "PDGFRB",
+        "NOTCH3"
+      ],
+      "Smooth_muscles": [
+        "ACTA2",
+        "ACTG2"
+      ],
+      "Keratinocyte": [
+        "KRT1",
+        "KRT10",
+        "KRT14",
+        "DMKN",
+        "KRTDAP"
+      ],
+      "Melanocyte": [
+        "DCT",
+        "TYRP1",
+        "PMEL",
+        "MLANA",
+        "QPCT"
+      ],
+      "Eccrine_Gland": [
+        "DCD",
+        "MUCL1",
+        "PIP",
+        "SCGB1DC",
+        "SCGB2A2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "37271319": {
+    "Source": "Manual",
+    "Major": {
+      "T_NKs": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2",
+        "NKG7",
+        "GNLY",
+        "GZMK"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "CD19",
+        "CD22",
+        "BLK"
+      ],
+      "Plasmas": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "LYZ",
+        "CD14",
+        "CD68",
+        "FCGR3A",
+        "CD163"
+      ],
+      "DCs": [
+        "ITGAX",
+        "HLA-DRA",
+        "CD86",
+        "CLEC9A",
+        "CD1C"
+      ],
+      "Mast_cells": [
+        "KIT",
+        "TPSAB1",
+        "TPSB2",
+        "MS4A2"
+      ],
+      "Endothelials": [
+        "PECAM1",
+        "VWF",
+        "ENG",
+        "CDH5"
+      ],
+      "Fibroblasts": [
+        "DCN",
+        "COL1A2",
+        "COL3A1",
+        "COL14A1"
+      ],
+      "Pericytes": [
+        "PDGFRB",
+        "NOTCH3"
+      ],
+      "Smooth_muscles": [
+        "ACTA2",
+        "ACTG2"
+      ],
+      "Keratinocyte": [
+        "KRT1",
+        "KRT10",
+        "KRT14",
+        "DMKN",
+        "KRTDAP"
+      ],
+      "Melanocyte": [
+        "DCT",
+        "TYRP1",
+        "PMEL",
+        "MLANA",
+        "QPCT"
+      ],
+      "Eccrine_Gland": [
+        "DCD",
+        "MUCL1",
+        "PIP",
+        "SCGB1DC",
+        "SCGB2A2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "40513622": {
+    "Source": "Manual",
+    "Major": {
+      "T_Cells": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2"
+      ],
+      "NKs": [
+        "NKG7",
+        "GNLY",
+        "GZMK"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "CD19",
+        "CD22",
+        "BLK"
+      ],
+      "Proliferative_cell": [
+        "MKI67"
+      ],
+      "Plasmas": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "LYZ",
+        "CD14",
+        "CD68",
+        "FCGR3A",
+        "CD163"
+      ],
+      "Endothelials": [
+        "PECAM1",
+        "VWF",
+        "ENG",
+        "CDH5"
+      ],
+      "Fibroblasts": [
+        "DCN",
+        "COL1A2",
+        "COL3A1",
+        "COL14A1"
+      ],
+      "Melanocyte": [
+        "DCT",
+        "TYRP1",
+        "PMEL",
+        "MLANA",
+        "QPCT"
+      ],
+      "Keratinocyte": [
+        "KRT1",
+        "KRT10",
+        "KRT14",
+        "DMKN",
+        "KRTDAP",
+        "SPRR2G",
+        "FABP5",
+        "KRT2"
+      ],
+      "Epithelials": [
+        "EPCAM",
+        "KRT19",
+        "CLDN7",
+        "CDH1"
+      ],
+      "Pericytes": [
+        "PDGFRB",
+        "NOTCH3"
+      ],
+      "Smooth_muscle_cells": [
+        "ACTA2",
+        "ACTG2"
+      ],
+      "Platelets": [
+        "PPBP",
+        "PF4",
+        "SPARC"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "34912121": {
+    "Source": "Manual",
+    "Major": {
+      "T_Cells": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2"
+      ],
+      "NKs": [
+        "NKG7",
+        "GNLY",
+        "GZMK"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "CD19",
+        "CD22",
+        "BLK"
+      ],
+      "Proliferative_cell": [
+        "MKI67"
+      ],
+      "Plasmas": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "LYZ",
+        "CD14",
+        "CD68",
+        "FCGR3A",
+        "CD163"
+      ],
+      "Endothelials": [
+        "PECAM1",
+        "VWF",
+        "ENG",
+        "CDH5"
+      ],
+      "Fibroblasts": [
+        "DCN",
+        "COL1A2",
+        "COL3A1",
+        "COL14A1"
+      ],
+      "Melanocyte": [
+        "DCT",
+        "TYRP1",
+        "PMEL",
+        "MLANA",
+        "QPCT"
+      ],
+      "Keratinocyte": [
+        "KRT1",
+        "KRT10",
+        "KRT14",
+        "DMKN",
+        "KRTDAP",
+        "SPRR2G",
+        "FABP5",
+        "KRT2"
+      ],
+      "Epithelials": [
+        "EPCAM",
+        "KRT19",
+        "CLDN7",
+        "CDH1"
+      ],
+      "Pericytes": [
+        "PDGFRB",
+        "NOTCH3"
+      ],
+      "Smooth_muscle_cells": [
+        "ACTA2",
+        "ACTG2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "33514849": {
+    "Source": "Manual",
+    "Major": {
+      "T": [
+        "CD3D",
+        "CD3E"
+      ],
+      "CD4_T": [
+        "CD4"
+      ],
+      "CD4_Tn": [
+        "FHIT",
+        "CCR7",
+        "LEF1",
+        "SELL",
+        "TCF7",
+        "TCEA3"
+      ],
+      "CD4_Treg": [
+        "FOXP3",
+        "IL2RA",
+        "CTLA4",
+        "TNFRSF4"
+      ],
+      "CD4_Tfh": [
+        "CXCL13",
+        "PDCD1",
+        "TOX",
+        "ICOS",
+        "BCL6"
+      ],
+      "Th1": [
+        "TBX21",
+        "IFNG",
+        "CXCR3",
+        "STAT1",
+        "STAT4"
+      ],
+      "Th2": [
+        "GATA3",
+        "IL4",
+        "IL5",
+        "IL13",
+        "CCR4"
+      ],
+      "Th17": [
+        "RORC",
+        "IL17A",
+        "IL17F",
+        "IL22",
+        "IL21",
+        "CCR6",
+        "IL26"
+      ],
+      "Th22": [
+        "AHR",
+        "CCR10"
+      ],
+      "CTL": [
+        "GZMB",
+        "GZMK",
+        "IFNG",
+        "GZMA",
+        "GZMH",
+        "GNLY",
+        "NKG7",
+        "PRF1",
+        "KLRG1",
+        "FGFBP2",
+        "RPF1"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "33936064": {
+    "Source": "Manual",
+    "Major": {
+      "CC": [
+        "TOP2A",
+        "MKI67"
+      ],
+      "DT": [
+        "SLC12A3",
+        "CALB1",
+        "SLC8A1"
+      ],
+      "EC": [
+        "PECAM1",
+        "VWF",
+        "CLDN5",
+        "ACKR1"
+      ],
+      "FIB": [
+        "LUM",
+        "COL1A1",
+        "DCN"
+      ],
+      "IC": [
+        "SLC26A7",
+        "SLC4A1",
+        "ATP6V1G3"
+      ],
+      "LOH": [
+        "UMOD",
+        "SLC12A1",
+        "CLDN16"
+      ],
+      "MES": [
+        "FN1",
+        "FHL2",
+        "CTGF",
+        "MYL9"
+      ],
+      "MC": [
+        "LYZ",
+        "CD68",
+        "MRC1",
+        "C1QA",
+        "C1QB"
+      ],
+      "MON": [
+        "CD14",
+        "FCN1",
+        "VCAN"
+      ],
+      "DC": [
+        "CD1C",
+        "CD1E",
+        "FCER1A",
+        "CLEC10A"
+      ],
+      "PC": [
+        "AQP2",
+        "AQP3"
+      ],
+      "POD": [
+        "NPHS2",
+        "PODXL",
+        "PTPRO"
+      ],
+      "PT": [
+        "CUBN",
+        "SLC13A1",
+        "LRP2",
+        "ALDOB"
+      ],
+      "SMC": [
+        "ACTA2",
+        "TAGLN",
+        "MYH11",
+        "MYLK"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  },
+  "38051587": {
+    "Source": "Manual",
+    "Major": {
+      "T_NKs": [
+        "CD3D",
+        "CD3E",
+        "CD3G",
+        "CD2",
+        "NKG7",
+        "GNLY",
+        "GZMK"
+      ],
+      "B_cells": [
+        "CD79A",
+        "MS4A1",
+        "CD19",
+        "CD22",
+        "BLK"
+      ],
+      "Plasmas": [
+        "MZB1",
+        "JCHAIN"
+      ],
+      "Myeloid_cells": [
+        "LYZ",
+        "CD14",
+        "CD68",
+        "FCGR3A",
+        "CD163"
+      ],
+      "Endothelials": [
+        "PECAM1",
+        "VWF",
+        "ENG",
+        "CDH5"
+      ],
+      "Fibroblasts": [
+        "DCN",
+        "COL1A2",
+        "COL3A1",
+        "COL14A1"
+      ],
+      "Pericytes": [
+        "PDGFRB",
+        "NOTCH3"
+      ],
+      "Smooth_muscles": [
+        "ACTA2",
+        "ACTG2"
+      ],
+      "Keratinocyte": [
+        "KRT1",
+        "KRT10",
+        "KRT14",
+        "DMKN",
+        "KRTDAP"
+      ],
+      "Melanocyte": [
+        "DCT",
+        "TYRP1",
+        "PMEL",
+        "MLANA",
+        "QPCT"
+      ],
+      "Eccrine_Gland": [
+        "DCD",
+        "MUCL1",
+        "PIP",
+        "SCGB1DC",
+        "SCGB2A2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
+  }
 }

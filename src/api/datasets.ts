@@ -14,14 +14,15 @@ export async function fetchStats(): Promise<StatsResponse> {
   return cachedFetch<StatsResponse>('/api/stats')
 }
 
-export async function findDataset(tissue: string, disease: string, pmid: string): Promise<DatasetInfo | null> {
+export async function findDataset(tissue: string, disease: string, pmid: string, omicsType?: string): Promise<DatasetInfo | null> {
   // Bypass cache — scanner may have updated dataset list since last fetch
   const datasets = await apiFetch<DatasetInfo[]>(`/api/datasets?t=${Date.now()}`)
   return datasets.find(
     (d) =>
       d.tissue.toLowerCase() === tissue.toLowerCase() &&
       d.disease.toLowerCase() === disease.toLowerCase() &&
-      d.pmid === pmid
+      d.pmid === pmid &&
+      (!omicsType || d.omics_type === omicsType)
   ) ?? null
 }
 

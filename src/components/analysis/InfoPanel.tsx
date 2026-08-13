@@ -5,9 +5,11 @@ import type { AnalysisInfo } from '../../api/types'
 export default function InfoPanel({
   info,
   loading,
+  isBulk = false,
 }: {
   info: AnalysisInfo | null
   loading: boolean
+  isBulk?: boolean
 }) {
   if (loading) {
     return (
@@ -54,20 +56,29 @@ export default function InfoPanel({
       <div>
         <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Dataset Summary</h3>
         <div className="grid grid-cols-5 gap-2">
-          {[
-            { label: 'Donors', value: stats.patient_count },
-            { label: 'Samples', value: stats.sample_count },
-            { label: 'Cells', value: formatNumber(stats.cells) },
-            { label: 'Cell Types', value: stats.celltype_count },
-            { label: 'Genes', value: formatNumber(stats.genes) },
-          ].map((item) => (
+          {(isBulk
+            ? [
+                { label: 'Samples', value: stats.sample_count },
+                { label: 'Patients', value: stats.patient_count },
+                { label: 'Diseases', value: stats.disease_count },
+                { label: 'Genes', value: formatNumber(stats.genes) },
+                { label: 'Tumor / Normal', value: stats.group_dist },
+              ]
+            : [
+                { label: 'Donors', value: stats.patient_count },
+                { label: 'Samples', value: stats.sample_count },
+                { label: 'Cells', value: formatNumber(stats.cells) },
+                { label: 'Cell Types', value: stats.celltype_count },
+                { label: 'Genes', value: formatNumber(stats.genes) },
+              ]
+          ).map((item) => (
             <div key={item.label} className="bg-surface-raised rounded-lg p-2 text-center">
               <div className="text-lg font-bold text-text-primary">{item.value ?? '-'}</div>
               <div className="text-[10px] text-text-muted">{item.label}</div>
             </div>
           ))}
         </div>
-        {stats.cell_type_names.length > 0 && (
+        {!isBulk && stats.cell_type_names.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {stats.cell_type_names.map((ct) => (
               <span key={ct} className="text-[10px] bg-brand/10 text-brand-dark px-1.5 py-0.5 rounded">
