@@ -32,6 +32,7 @@ _importing_lock = threading.Lock()
 # ─── Global state ────────────────────────────────────────────
 datasets: list[dict] = []
 datasets_lock = threading.Lock()
+_first_scan_done = False
 
 # Cache for obs statistics: key = (str(real_path), mtime), value = dict of stats
 _obs_cache = LRUCache(max_size=1000)
@@ -454,7 +455,7 @@ def scan_datasets():
     (which imports asynchronously on first sight); the generated cache files live
     under a .bulk_cache dir and are skipped by this loop.
     """
-    global datasets
+    global datasets, _first_scan_done
     cache = _load_cache()
     found = []
     for data_dir in DATA_DIRS:
@@ -482,14 +483,18 @@ def scan_datasets():
         new_keys = {(d['tissue'], d['disease'], d['pmid']) for d in found}
         added = new_keys - old_keys
         removed = old_keys - new_keys
-        for tissue, disease, pmid in added:
-            log_event('dataset_added', f'New dataset: {tissue}/{disease} (PMID:{pmid})',
-                      f'{tissue}/{disease} | PMID:{pmid} | {disease}',
-                      ui_message=f'New dataset: {disease}')
-        for tissue, disease, pmid in removed:
-            log_event('dataset_removed', f'Removed dataset: {tissue}/{disease} (PMID:{pmid})',
-                      f'{tissue}/{disease} | PMID:{pmid}',
-                      ui_message=f'Removed: {disease}')
+        # Skip diff logging on the first scan: it's a load of existing data,
+        # not a discovery. Otherwise every restart spams "New dataset".
+        if _first_scan_done:
+            for tissue, disease, pmid in added:
+                log_event('dataset_added', f'New dataset: {tissue}/{disease} (PMID:{pmid})',
+                          f'{tissue}/{disease} | PMID:{pmid} | {disease}',
+                          ui_message=f'New dataset: {disease}')
+            for tissue, disease, pmid in removed:
+                log_event('dataset_removed', f'Removed dataset: {tissue}/{disease} (PMID:{pmid})',
+                          f'{tissue}/{disease} | PMID:{pmid}',
+                          ui_message=f'Removed: {disease}')
+        _first_scan_done = True
         # Invalidate search result cache when datasets change
         if added or removed:
             try:
