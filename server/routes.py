@@ -486,6 +486,8 @@ def handle_bulk_de(handler, q):
     real_path_str = q.get('real_path', '')
     disease = q.get('disease', '') or None
     top_n = int(q.get('top_n', 100))
+    case_group = q.get('case_group', '') or None
+    control_group = q.get('control_group', '') or None
     if top_n > 500:
         top_n = 500
     real_path = validate_real_path(real_path_str)
@@ -493,14 +495,14 @@ def handle_bulk_de(handler, q):
         handler._send_error('Invalid file path')
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'bulkde:{real_path_str}:{mtime}:{disease}:{top_n}'
+    cache_key = f'bulkde:{real_path_str}:{mtime}:{disease}:{top_n}:{case_group}:{control_group}'
     # top_n <= 0 requests the full gene table (CSV download) — too large to cache
     if top_n > 0:
         cached = _table_cache.get(cache_key)
         if cached:
             handler._json(cached)
             return
-    result = bulk_de(str(real_path), disease, top_n)
+    result = bulk_de(str(real_path), disease, top_n, case_group, control_group)
     if top_n > 0:
         _table_cache.set(cache_key, result)
     handler._json(result)
@@ -511,17 +513,19 @@ def handle_bulk_volcano(handler, q):
     disease = q.get('disease', '') or None
     fc_thresh = float(q.get('fc', 1.0))
     alpha = float(q.get('alpha', 0.05))
+    case_group = q.get('case_group', '') or None
+    control_group = q.get('control_group', '') or None
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'bulkvol:{real_path_str}:{mtime}:{disease}:{fc_thresh}:{alpha}'
+    cache_key = f'bulkvol:{real_path_str}:{mtime}:{disease}:{fc_thresh}:{alpha}:{case_group}:{control_group}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = bulk_volcano(str(real_path), disease, fc_thresh, alpha)
+    result = bulk_volcano(str(real_path), disease, fc_thresh, alpha, case_group, control_group)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 

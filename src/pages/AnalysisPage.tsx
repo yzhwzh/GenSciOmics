@@ -43,7 +43,9 @@ export default function AnalysisPage() {
   useEffect(() => { try { sessionStorage.setItem('gensci_gene_name2', geneName2) } catch { /* ignore */ } }, [geneName2])
 
   const isBulk = omicsType === 'BulkRNA'
-  const TABS = isBulk
+  const isProtein = omicsType === 'Protein'
+  const isTabular = isBulk || isProtein
+  const TABS = isTabular
     ? [
         { label: 'Study Info', icon: FileText },
         { label: 'Expression & DE', icon: BarChart3 },
@@ -68,10 +70,10 @@ export default function AnalysisPage() {
     })
   }, [tissue, disease, pmid])
 
-  // Clamp activeTab when switching between omics types (bulk has only 3 tabs)
+  // Clamp activeTab when switching between omics types (tabular has only 3 tabs)
   useEffect(() => {
-    if (isBulk && activeTab > 2) setActiveTab(0)
-  }, [isBulk, activeTab])
+    if (isTabular && activeTab > 2) setActiveTab(0)
+  }, [isTabular, activeTab])
 
   useEffect(() => {
     if (!realPath || !pmid) return
@@ -147,23 +149,23 @@ export default function AnalysisPage() {
         {activeTab === 0 && (
           <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
             <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Study Info</div>
-            <div className="flex-1 min-h-0"><InfoPanel info={info} loading={infoLoading} isBulk={isBulk} /></div>
+            <div className="flex-1 min-h-0"><InfoPanel info={info} loading={infoLoading} isBulk={isTabular} /></div>
           </div>
         )}
-        {isBulk && activeTab === 1 && (
+        {isTabular && activeTab === 1 && (
           <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
-            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression & Differential Expression (Tumor vs Normal)</div>
+            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression & Differential Expression</div>
             <div className="flex-1 min-h-0">
-              {realPath ? <BulkAnalysisTab realPath={realPath} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
+              {realPath ? <BulkAnalysisTab realPath={realPath} omicsType={omicsType} /> : <div className="text-sm text-text-muted p-4">Loading dataset...</div>}
             </div>
           </div>
         )}
-        {!isBulk && activeTab === 1 && (
+        {!isTabular && activeTab === 1 && (
           <div className="h-full p-3">
             <UmapTabContent realPath={realPath} umapData={umapData} umapLoading={umapLoading} colorBy={colorBy} onColorByChange={setColorBy} geneName={geneName} onGeneNameChange={setGeneName} geneName2={geneName2} onGeneName2Change={setGeneName2} palette={umapPalette} onPaletteChange={setUmapPalette} markerMajor={markerMajor} />
           </div>
         )}
-        {!isBulk && activeTab === 2 && (
+        {!isTabular && activeTab === 2 && (
           <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
             <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression per Sample × Cell Type</div>
             <div className="flex-1 min-h-0">
@@ -171,7 +173,7 @@ export default function AnalysisPage() {
             </div>
           </div>
         )}
-        {!isBulk && activeTab === 3 && (
+        {!isTabular && activeTab === 3 && (
           <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
             <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Expression by Cell Type (Aggregate)</div>
             <div className="flex-1 min-h-0">
@@ -180,12 +182,12 @@ export default function AnalysisPage() {
           </div>
         )}
         {/* Free Analysis — display:none to keep chat state alive across tab switches */}
-        {isBulk && (
+        {isTabular && (
           <div className="h-full p-3" style={{ display: activeTab === 2 ? 'block' : 'none' }}>
-            <FreeAnalysisTab realPath={realPath} omicsType="BulkRNA" />
+            <FreeAnalysisTab realPath={realPath} omicsType={omicsType} />
           </div>
         )}
-        {!isBulk && (
+        {!isTabular && (
           <div className="h-full p-3" style={{ display: activeTab === 4 ? 'block' : 'none' }}>
             <FreeAnalysisTab realPath={realPath} />
           </div>

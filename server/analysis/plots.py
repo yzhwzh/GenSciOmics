@@ -148,9 +148,6 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
                 palette=palette, ax=ax,
                 edgecolor='white', linewidth=0.5,
             )
-            # Annotate bar values with 2 decimal places
-            for container in ax.containers:
-                ax.bar_label(container, fmt='%.2f', fontsize=max(7, int(6 * fs)), padding=1)
             ylabel = '% Expression' if metric == 'expression_pct' else 'Mean Expression'
 
         # Styling (matches notebook pattern)

@@ -54,19 +54,23 @@ export default function FreeAnalysisTab({ realPath, omicsType = 'scRNA' }: { rea
 
   // Fetch skills list — only analysis-related skills (no system tools or Light skills)
   const isBulk = omicsType === 'BulkRNA'
+  const isProtein = omicsType === 'Protein'
+  const isTabular = isBulk || isProtein
   useEffect(() => {
     fetch('/api/skills')
       .then(r => r.json())
       .then((data: SkillDef[]) => {
         const filtered = data.filter(s =>
-          isBulk
-            ? s.name.startsWith('bulk-') || s.name === 'statistical-analysis'
-            : s.name.startsWith('single-') || s.name === 'statistical-analysis'
+          isProtein
+            ? (s.name.startsWith('proteomics-') || s.name.startsWith('protein-') || s.name === 'statistical-analysis')
+            : isBulk
+              ? s.name.startsWith('bulk-') || s.name === 'statistical-analysis'
+              : s.name.startsWith('single-') || s.name === 'statistical-analysis'
         )
         setSkills(filtered)
       })
       .catch(() => {})
-  }, [isBulk])
+  }, [isBulk, isProtein])
 
   // Restore messages from sessionStorage when realPath finishes loading
   useEffect(() => {
@@ -180,11 +184,13 @@ export default function FreeAnalysisTab({ realPath, omicsType = 'scRNA' }: { rea
 
   const hasChat = messages.length > 0
 
-  const agentSubtitle = isBulk ? 'bulk RNA · transcriptomics · statistics' : 'single-cell · statistics · visualization'
-  const agentDescription = isBulk
+  const agentSubtitle = isProtein ? 'proteomics · intensity · statistics' : isBulk ? 'bulk RNA · transcriptomics · statistics' : 'single-cell · statistics · visualization'
+  const agentDescription = isProtein
+    ? 'AI-powered proteomics analysis. Ask about protein differential expression (Intensity), pathway enrichment, protein-protein interactions, PTM annotation, and more.'
+    : isBulk
     ? 'AI-powered bulk RNA (transcriptomics) analysis. Ask about differential expression, pathway enrichment, co-expression networks, and more.'
     : 'AI-powered single-cell data analysis. Ask questions about gene expression, cell types, statistical comparisons, and more. Uses specialized analysis scripts combined with LLM reasoning.'
-  const FEATURES = isBulk ? [
+  const FEATURES = isTabular ? [
     { icon: BarChart3, text: 'Differential expression + volcano plot' },
     { icon: BookOpen, text: 'Pathway enrichment (GSEA, GO, KEGG)' },
     { icon: Network, text: 'Co-expression network (WGCNA)' },
@@ -207,7 +213,7 @@ export default function FreeAnalysisTab({ realPath, omicsType = 'scRNA' }: { rea
     { icon: BookOpen, text: 'Foundation model (Geneformer, scGPT)' },
     { icon: Table2, text: 'Export tables, plots & summaries' },
   ]
-  const EXAMPLE_PROMPTS = isBulk ? [
+  const EXAMPLE_PROMPTS = isTabular ? [
     'Show TP53 differential expression',
     'Volcano plot for TCGA-BRCA',
     'GSEA on upregulated genes',

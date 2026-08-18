@@ -53,10 +53,12 @@ export default function TissuePage() {
   // single-cell = scRNA datasets; bulk-rna = BulkRNA datasets; others stay placeholder
   const omicsRows =
     activeTab === 'single-cell'
-      ? rows.filter((r) => r.omics_type !== 'BulkRNA')
+      ? rows.filter((r) => r.omics_type === 'scRNA')
       : activeTab === 'bulk-rna'
         ? rows.filter((r) => r.omics_type === 'BulkRNA')
-        : []
+        : activeTab === 'proteomics'
+          ? rows.filter((r) => r.omics_type === 'Protein')
+          : []
   const isBulkTab = activeTab === 'bulk-rna'
 
   const downloadCSV = () => {

@@ -43,14 +43,23 @@ def _read_frame(src: Path, sep: str) -> pd.DataFrame:
     return pd.read_csv(src, sep=sep, index_col=0, low_memory=False)
 
 
-def _split_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:
-    """Partition columns into metadata (obs) and gene (var) sets."""
-    meta_cols = [c for c in df.columns if str(c) in BULK_META_COLUMNS]
-    gene_cols = [c for c in df.columns if str(c) not in BULK_META_COLUMNS]
-    return meta_cols, gene_cols
+def _split_columns(df: pd.DataFrame, omics_type: str = 'BulkRNA') -> tuple[list[str], list[str]]:
+    """Partition columns into metadata (obs) and feature (var) sets.
+
+    Protein tables use a reverse rule: columns containing '/' (GeneSymbol /
+    UniProtID) are features, everything else is sample metadata. Bulk RNA uses
+    the BULK_META_COLUMNS whitelist (everything else = gene).
+    """
+    if omics_type == 'Protein':
+        feature_cols = [c for c in df.columns if '/' in str(c)]
+        meta_cols = [c for c in df.columns if '/' not in str(c)]
+    else:
+        meta_cols = [c for c in df.columns if str(c) in BULK_META_COLUMNS]
+        feature_cols = [c for c in df.columns if str(c) not in BULK_META_COLUMNS]
+    return meta_cols, feature_cols
 
 
-def import_bulk_table(src: Path, dst_h5ad: Path) -> dict:
+def import_bulk_table(src: Path, dst_h5ad: Path, omics_type: str = 'BulkRNA') -> dict:
     """Convert a raw bulk table into an AnnData cache at dst_h5ad.
 
     Returns summary metadata for the scanner to store on the dataset entry.
@@ -58,7 +67,7 @@ def import_bulk_table(src: Path, dst_h5ad: Path) -> dict:
     """
     sep = detect_separator(src)
     df = _read_frame(src, sep)
-    meta_cols, gene_cols = _split_columns(df)
+    meta_cols, gene_cols = _split_columns(df, omics_type)
 
     if not gene_cols:
         raise ValueError(f'No gene columns detected in {src.name} '

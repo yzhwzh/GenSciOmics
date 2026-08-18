@@ -208,7 +208,7 @@ def _bulk_cache_path(path: Path) -> Path:
     return path.parent / BULK_CACHE_DIR_NAME / f'{path.stem}.h5ad'
 
 
-def _start_import(src: Path, dst: Path) -> None:
+def _start_import(src: Path, dst: Path, omics_type: str = 'BulkRNA') -> None:
     """Kick off a background import thread (idempotent per cache target)."""
     key = str(dst)
     with _importing_lock:
@@ -218,10 +218,11 @@ def _start_import(src: Path, dst: Path) -> None:
 
     def _worker() -> None:
         try:
-            import_bulk_table(src, dst)
-            log_event('bulk_imported', f'Imported bulk table {src.name}',
+            import_bulk_table(src, dst, omics_type)
+            label = 'Protein' if omics_type == 'Protein' else 'Bulk RNA'
+            log_event('bulk_imported', f'Imported {label.lower()} table {src.name}',
                       f'{src.name} → {dst.name}',
-                      ui_message=f'Bulk RNA imported: {src.name}')
+                      ui_message=f'{label} imported: {src.name}')
         except Exception as e:
             print(f'[GenSci] bulk import failed for {src}: {e}', file=sys.stderr)
         finally:
@@ -252,7 +253,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
     size_mb = round(stat.st_size / (1024 * 1024), 1)
 
     if not (dst.exists() and dst.stat().st_mtime >= stat.st_mtime):
-        _start_import(path, dst)
+        _start_import(path, dst, meta['omics_type'])
         return {
             'species': meta['species'],
             'tissue': meta['tissue'],

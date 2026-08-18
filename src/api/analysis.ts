@@ -362,10 +362,14 @@ export async function fetchBulkBoxplot(
 export async function fetchBulkDe(
   realPath: string,
   disease?: string,
-  topN = 100
+  topN = 100,
+  caseGroup?: string,
+  controlGroup?: string
 ): Promise<BulkDeResult> {
   const params = new URLSearchParams({ real_path: realPath, top_n: String(topN) })
   if (disease) params.set('disease', disease)
+  if (caseGroup) params.set('case_group', caseGroup)
+  if (controlGroup) params.set('control_group', controlGroup)
   return apiFetch<BulkDeResult>(`/api/bulk-de?${params}`)
 }
 
@@ -380,10 +384,14 @@ export async function fetchBulkVolcano(
   realPath: string,
   disease?: string,
   fcThresh = 1.0,
-  alpha = 0.05
+  alpha = 0.05,
+  caseGroup?: string,
+  controlGroup?: string
 ): Promise<BulkVolcanoResult> {
   const params = new URLSearchParams({ real_path: realPath, fc: String(fcThresh), alpha: String(alpha) })
   if (disease) params.set('disease', disease)
+  if (caseGroup) params.set('case_group', caseGroup)
+  if (controlGroup) params.set('control_group', controlGroup)
   // server caches the image; longer timeout for the cold full-matrix t-test
   return apiFetch<BulkVolcanoResult>(`/api/bulk-volcano?${params}`, undefined, 120_000)
 }

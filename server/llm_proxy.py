@@ -17,7 +17,10 @@ DEFAULT_TEMPERATURE = 0.7
 MAX_TOOL_ITERATIONS = 50
 
 # Skill filter per omics type (used by Free Analysis tab)
-OMICS_SKILL_FILTERS = {'BulkRNA': ['bulk-*', 'statistical-analysis']}
+OMICS_SKILL_FILTERS = {
+    'BulkRNA': ['bulk-*', 'statistical-analysis'],
+    'Protein': ['proteomics-*', 'protein-*', 'statistical-analysis'],
+}
 DEFAULT_SKILL_FILTER = ['single-*', 'statistical-analysis']
 
 # LITERATURE_SYSTEM_PROMPT removed — agent pipeline handles prompt generation via assemble_prompt()

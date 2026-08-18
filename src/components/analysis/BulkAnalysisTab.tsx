@@ -21,7 +21,7 @@ function fmtNum(v: number | null, digits = 3): string {
 // the full gene list is still loaded so the filter dropdown works across all genes.
 const DISPLAY_LIMIT = 100
 
-export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
+export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { realPath: string; omicsType?: string }) {
   // Shared controls
   const [disease, setDisease] = useState('All')
   const [diseases, setDiseases] = useState<string[]>([])
@@ -29,6 +29,9 @@ export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
     try { return sessionStorage.getItem('gensci_bulk_gene') ?? 'TP53' } catch { return 'TP53' }
   })
   const [palette, setPalette] = useState('default')
+  const [caseGroup, setCaseGroup] = useState('')
+  const [controlGroup, setControlGroup] = useState('')
+  const [groupInfo, setGroupInfo] = useState<{ case_group?: string; control_group?: string }>({})
 
   // Gene search autocomplete
   const geneSearchRef = useRef<HTMLDivElement>(null)
@@ -102,7 +105,7 @@ export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
   useEffect(() => {
     if (!realPath) return
     setVolcanoLoading(true); setVolcanoSrc(null); setVolcanoErr('')
-    fetchBulkVolcano(realPath, disease === 'All' ? undefined : disease)
+    fetchBulkVolcano(realPath, disease === 'All' ? undefined : disease, 1.0, 0.05, caseGroup || undefined, controlGroup || undefined)
       .then((d) => {
         if (d.error) { setVolcanoSrc(null); setVolcanoCounts({}); setVolcanoErr(d.error) }
         else if (d.image) {
@@ -112,23 +115,24 @@ export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
       })
       .catch((e) => { setVolcanoSrc(null); setVolcanoCounts({}); setVolcanoErr(e instanceof Error ? e.message : String(e)) })
       .finally(() => setVolcanoLoading(false))
-  }, [realPath, disease])
+  }, [realPath, disease, caseGroup, controlGroup])
 
   // DE table
   useEffect(() => {
     if (!realPath) return
     setDeLoading(true); setDeErr('')
-    fetchBulkDe(realPath, disease === 'All' ? undefined : disease, 0)
+    fetchBulkDe(realPath, disease === 'All' ? undefined : disease, 0, caseGroup || undefined, controlGroup || undefined)
       .then((d) => {
         if (d.error) { setDeErr(d.error); setRows([]) }
         else {
           setRows(d.genes ?? [])
           setMeta({ n_total: d.n_total, n_tumor: d.n_tumor, n_normal: d.n_normal })
+          setGroupInfo({ case_group: (d as any).case_group, control_group: (d as any).control_group })
         }
       })
       .catch((e) => { setDeErr(e.message); setRows([]) })
       .finally(() => setDeLoading(false))
-  }, [realPath, disease])
+  }, [realPath, disease, caseGroup, controlGroup])
 
   const downloadCSV = () => {
     if (!rows.length || downloading) return
@@ -186,6 +190,19 @@ export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
         </div>
 
         <div>
+          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Case group</label>
+          <input type="text" value={caseGroup} onChange={(e) => setCaseGroup(e.target.value)}
+            placeholder={groupInfo.case_group || 'Auto (case)'}
+            className="w-[110px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
+        </div>
+        <div>
+          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Control group</label>
+          <input type="text" value={controlGroup} onChange={(e) => setControlGroup(e.target.value)}
+            placeholder={groupInfo.control_group || 'Auto (control)'}
+            className="w-[110px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
+        </div>
+
+        <div>
           <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Palette</label>
           <select value={palette} onChange={(e) => setPalette(e.target.value)}
             className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand">
@@ -195,7 +212,7 @@ export default function BulkAnalysisTab({ realPath }: { realPath: string }) {
 
         {meta.n_total !== undefined && (
           <span className="text-xs text-text-muted mt-4">
-            {meta.n_tumor ?? 0} Tumor vs {meta.n_normal ?? 0} Normal · {meta.n_total} genes tested
+            {meta.n_tumor ?? 0} {groupInfo.case_group || 'Case'} vs {meta.n_normal ?? 0} {groupInfo.control_group || 'Control'} · {meta.n_total} features tested
           </span>
         )}
 

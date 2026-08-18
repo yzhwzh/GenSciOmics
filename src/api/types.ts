@@ -78,6 +78,8 @@ export interface BulkDeResult {
   n_total?: number
   n_tumor?: number
   n_normal?: number
+  case_group?: string
+  control_group?: string
   disease?: string
   error?: string
 }

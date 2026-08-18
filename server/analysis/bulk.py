@@ -54,6 +54,53 @@ def _find_group(group_vals, keyword: str) -> str | None:
     return next((g for g in seen if keyword in g.lower()), None)
 
 
+def _classify_group(value: str) -> str:
+    """Classify a Group value as 'case', 'control', or 'unknown'.
+
+    Handles standard naming (Tumor/Normal, Case/Control, Disease/Healthy) via
+    keyword + negation-prefix rules. Concrete disease acronyms (GHoma/NFPA) are
+    'unknown' — the caller surfaces them for manual selection.
+    """
+    v = value.strip().lower()
+    if not v:
+        return 'unknown'
+    if v.startswith(('non', 'not', 'adjacent', 'adj', 'para', 'peri')):
+        return 'control'
+    if any(k in v for k in ('tumor', 'tumour', 'cancer', 'carcinoma', 'case',
+                            'disease', 'patient', 'lesion', 'positive')):
+        return 'case'
+    if any(k in v for k in ('normal', 'healthy', 'control', 'negative', 'benign',
+                            'reference', 'wild')):
+        return 'control'
+    return 'unknown'
+
+
+def _find_case_control(group_vals) -> tuple[str | None, str | None]:
+    """Auto-classify group values into (case, control).
+
+    Prefers an explicit control name (Normal/Healthy/Control) over a negated one
+    (Non-tumor/Para-tumor) when both are present. Returns (None, None) when no
+    value is classifiable (e.g. concrete disease acronyms), signalling the caller
+    to ask for manual case_group/control_group.
+    """
+    seen = sorted(set(str(g) for g in group_vals))
+    case = control = None
+    negated_control = None
+    for g in seen:
+        c = _classify_group(g)
+        if c == 'case' and case is None:
+            case = g
+        elif c == 'control':
+            gl = g.lower()
+            if gl.startswith(('non', 'not', 'adjacent', 'adj', 'para', 'peri')):
+                negated_control = negated_control or g
+            elif control is None:
+                control = g
+    if control is None:
+        control = negated_control
+    return case, control
+
+
 def _json_safe(v):
     """Return a JSON-safe float (None for NaN/inf, which are invalid JSON).
 
@@ -133,7 +180,9 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
         )
         title = f'{actual_gene} — {disease if disease and disease != "All" else "All diseases"}'
         ax.set_title(title, fontsize=12)
-        ax.set_ylabel('Expression (TPM)')
+        ylabel = ('Expression (Intensity)' if 'intensity' in Path(real_path).name.lower()
+                  else 'Expression (TPM)')
+        ax.set_ylabel(ylabel)
         ax.set_xlabel(None)
         if n_diseases > 8:
             ax.tick_params(axis='x', labelrotation=90)
@@ -178,66 +227,75 @@ def _bh_fdr(pvals: np.ndarray) -> np.ndarray:
     return fdr
 
 
-def _compute_de(adata, disease: str | None) -> tuple[list[dict], int, int]:
-    """Run Tumor vs Normal Welch t-test + BH FDR across all genes.
+def _compute_de(adata, disease: str | None,
+                case_group: str | None = None,
+                control_group: str | None = None) -> tuple[list[dict], int, int, str, str]:
+    """Run case vs control Welch t-test + BH FDR across all features.
 
-    Returns (rows, n_tumor, n_normal) where rows is sorted by padj. Caller must
-    hold the adata lock (backed file must remain open while X is read).
+    Returns (rows, n_case, n_control, case_g, control_g) where rows is sorted by
+    padj. case/control are auto-detected from standard names (Tumor/Normal etc.)
+    unless case_group/control_group are provided. Caller must hold the adata lock.
     """
     group_vals = adata.obs['Group'].astype(str).values
     mask = np.ones(adata.n_obs, dtype=bool)
     if disease and disease != 'All':
         mask = adata.obs['Disease'].astype(str).values == disease
     group_vals = group_vals[mask]
-    tumor_g = _find_group(group_vals, 'tumor')
-    normal_g = _find_group(group_vals, 'normal')
-    if tumor_g is None or normal_g is None:
-        raise ValueError('Group must contain both Tumor and Normal values')
+    if case_group and control_group:
+        case_g = case_group
+        control_g = control_group
+    else:
+        case_g, control_g = _find_case_control(group_vals)
+    if case_g is None or control_g is None:
+        raise ValueError('Group must contain both case and control values; '
+                         'specify case_group/control_group')
 
     var_names = list(adata.var_names)
-    tumor_mask = mask & (adata.obs['Group'].astype(str).values == tumor_g)
-    normal_mask = mask & (adata.obs['Group'].astype(str).values == normal_g)
+    case_mask = mask & (adata.obs['Group'].astype(str).values == case_g)
+    control_mask = mask & (adata.obs['Group'].astype(str).values == control_g)
 
-    x_tumor = adata.X[tumor_mask]
-    x_normal = adata.X[normal_mask]
-    x_tumor = x_tumor.toarray() if hasattr(x_tumor, 'toarray') else np.asarray(x_tumor)
-    x_normal = x_normal.toarray() if hasattr(x_normal, 'toarray') else np.asarray(x_normal)
-    x_tumor = x_tumor.astype(np.float64)
-    x_normal = x_normal.astype(np.float64)
+    x_case = adata.X[case_mask]
+    x_control = adata.X[control_mask]
+    x_case = x_case.toarray() if hasattr(x_case, 'toarray') else np.asarray(x_case)
+    x_control = x_control.toarray() if hasattr(x_control, 'toarray') else np.asarray(x_control)
+    x_case = x_case.astype(np.float64)
+    x_control = x_control.astype(np.float64)
 
-    if x_tumor.shape[0] < 2 or x_normal.shape[0] < 2:
-        raise ValueError('Insufficient Tumor/Normal samples for the test')
+    if x_case.shape[0] < 2 or x_control.shape[0] < 2:
+        raise ValueError('Insufficient case/control samples for the test')
 
-    mean_tumor = x_tumor.mean(axis=0)
-    mean_normal = x_normal.mean(axis=0)
-    _, pvals = ttest_ind(x_tumor, x_normal, axis=0, equal_var=False, nan_policy='omit')
+    mean_case = x_case.mean(axis=0)
+    mean_control = x_control.mean(axis=0)
+    _, pvals = ttest_ind(x_case, x_control, axis=0, equal_var=False, nan_policy='omit')
     padj = _bh_fdr(pvals)
-    log2fc = np.log2((mean_tumor + 1.0) / (mean_normal + 1.0))
+    log2fc = np.log2((mean_case + 1.0) / (mean_control + 1.0))
 
     n_genes = len(var_names)
     rows = []
     for i in range(n_genes):
         rows.append({
             'gene': str(var_names[i]),
-            'mean_tumor': round(float(mean_tumor[i]), 4),
-            'mean_normal': round(float(mean_normal[i]), 4),
+            'mean_tumor': round(float(mean_case[i]), 4),
+            'mean_normal': round(float(mean_control[i]), 4),
             'log2fc': round(float(log2fc[i]), 4),
             'pvalue': float(pvals[i]),
             'padj': float(padj[i]),
         })
     rows.sort(key=lambda r: (r['padj'], r['pvalue']))
-    return rows, int(x_tumor.shape[0]), int(x_normal.shape[0])
+    return rows, int(x_case.shape[0]), int(x_control.shape[0]), case_g, control_g
 
 
-def _compute_de_cached(real_path: str, adata, disease: str | None) -> tuple[list, int, int]:
-    """Memoised _compute_de keyed by (path, mtime, disease)."""
+def _compute_de_cached(real_path: str, adata, disease: str | None,
+                       case_group: str | None = None,
+                       control_group: str | None = None):
+    """Memoised _compute_de keyed by (path, mtime, disease, case, control)."""
     mtime = Path(real_path).stat().st_mtime
-    key = (real_path, mtime, disease or 'All')
+    key = (real_path, mtime, disease or 'All', case_group, control_group)
     with _de_cache_lock:
         hit = _de_cache.get(key)
         if hit is not None:
             return hit
-    result = _compute_de(adata, disease)
+    result = _compute_de(adata, disease, case_group, control_group)
     with _de_cache_lock:
         _de_cache[key] = result
         while len(_de_cache) > _DE_CACHE_MAX:
@@ -245,18 +303,21 @@ def _compute_de_cached(real_path: str, adata, disease: str | None) -> tuple[list
     return result
 
 
-def bulk_de(real_path: str, disease: str | None = None, top_n: int = 100) -> dict:
-    """Differential expression: Tumor vs Normal (Welch t-test + BH FDR).
+def bulk_de(real_path: str, disease: str | None = None, top_n: int = 100,
+            case_group: str | None = None, control_group: str | None = None) -> dict:
+    """Differential expression: case vs control (Welch t-test + BH FDR).
 
     Returns {'genes': [{gene, mean_tumor, mean_normal, log2fc, pvalue, padj}],
-             'n_total', 'n_tumor', 'n_normal', 'disease'} sorted by padj.
+             'n_total', 'n_tumor', 'n_normal', 'case_group', 'control_group',
+             'disease'} sorted by padj.
     top_n <= 0 returns ALL genes (used for CSV download). Errors as {'error'}.
     """
     try:
         with locked_backed_adata(real_path) as adata:
             if 'Group' not in adata.obs.columns:
-                return {'error': 'Group column (Tumor/Normal) not found in obs'}
-            rows, n_tumor, n_normal = _compute_de_cached(real_path, adata, disease)
+                return {'error': 'Group column not found in obs'}
+            rows, n_case, n_control, case_g, control_g = _compute_de_cached(
+                real_path, adata, disease, case_group, control_group)
         genes = rows[:top_n] if top_n > 0 else rows
         safe_genes = [
             {
@@ -272,8 +333,10 @@ def bulk_de(real_path: str, disease: str | None = None, top_n: int = 100) -> dic
         return {
             'genes': safe_genes,
             'n_total': len(rows),
-            'n_tumor': n_tumor,
-            'n_normal': n_normal,
+            'n_tumor': n_case,
+            'n_normal': n_control,
+            'case_group': case_g,
+            'control_group': control_g,
             'disease': disease if disease and disease != 'All' else 'All',
         }
     except Exception as e:
@@ -282,7 +345,8 @@ def bulk_de(real_path: str, disease: str | None = None, top_n: int = 100) -> dic
 
 
 def bulk_volcano(real_path: str, disease: str | None = None,
-                 fc_thresh: float = 1.0, alpha: float = 0.05) -> dict:
+                 fc_thresh: float = 1.0, alpha: float = 0.05,
+                 case_group: str | None = None, control_group: str | None = None) -> dict:
     """Volcano plot: -log10(padj) vs log2fc, up/down/n.s. genes highlighted.
 
     Returns {'image': base64, 'width', 'height', 'n_up', 'n_down', 'n_ns'}.
@@ -291,7 +355,8 @@ def bulk_volcano(real_path: str, disease: str | None = None,
         with locked_backed_adata(real_path) as adata:
             if 'Group' not in adata.obs.columns:
                 return {'error': 'Group column (Tumor/Normal) not found in obs'}
-            rows, _, _ = _compute_de_cached(real_path, adata, disease)
+            rows, _, _, case_g, control_g = _compute_de_cached(
+                real_path, adata, disease, case_group, control_group)
 
         log2fc = np.array([r['log2fc'] for r in rows], dtype=float)
         padj = np.array([r['padj'] for r in rows], dtype=float)
@@ -311,7 +376,7 @@ def bulk_volcano(real_path: str, disease: str | None = None,
         ax.axhline(-np.log10(alpha), color='#888888', linestyle='--', linewidth=0.8)
         ax.axvline(fc_thresh, color='#888888', linestyle='--', linewidth=0.8)
         ax.axvline(-fc_thresh, color='#888888', linestyle='--', linewidth=0.8)
-        ax.set_xlabel('log2 Fold Change (Tumor / Normal)')
+        ax.set_xlabel(f'log2 Fold Change ({case_g} / {control_g})')
         ax.set_ylabel('-log10(adjusted p-value)')
         title = f'Volcano — {disease if disease and disease != "All" else "All diseases"}'
         ax.set_title(title, fontsize=12)
