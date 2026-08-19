@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BoxPlotContainer from './BoxPlotContainer'
@@ -20,6 +20,9 @@ vi.mock('../../api/analysis', () => ({
 }))
 
 describe('BoxPlotContainer — Gene Input', () => {
+  // Gene selection persists to sessionStorage — clear it so tests stay isolated
+  afterEach(() => { try { sessionStorage.clear() } catch { /* ignore */ } })
+
   it('renders gene input with placeholder from selectedGene', () => {
     render(<BoxPlotContainer realPath="/test/path.h5ad" />)
     const input = screen.getByPlaceholderText('FAP')

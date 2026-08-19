@@ -592,4 +592,22 @@ if group_filter:
 
 ---
 
-*后续新缺陷按 B25、B26... 追加。*
+## B25. BulkAnalysisTab 切 Free Analysis 后选择项重置 (2026-08-19)
+
+### 现象
+Protein / Bulk RNA 分析页选中 disease + gene、出结果后，切到 Free Analysis 再切回 Expression & DE，disease/palette/case/control 全部回到默认值（disease='All'）。
+
+### 根因
+`AnalysisPage.tsx` 的 Tab 1 是条件渲染（`activeTab === 1 &&`），切 tab 时 `BulkAnalysisTab` 被卸载，本地 state 全部丢失。仅 `gene` 幸存（已持久化到 sessionStorage `gensci_bulk_gene`）。系统本有两层缓存（前端 `cachedFetch` + 后端 LRU），但缓存 key 含 disease，disease 重置使 key 漂移、命中不了缓存，导致真重算（还算错疾病）。
+
+### 修复
+`BulkAnalysisTab.tsx` 将 `disease`/`caseGroup`/`controlGroup`/`palette` 持久化到 sessionStorage（`gensci_bulk_disease`/`gensci_bulk_case`/`gensci_bulk_control`/`gensci_bulk_palette`），`useState` 初始化器读 + `useEffect` 写入，与 scRNA `gensci_boxplot_gene`/`gensci_agg_gene` 同一模式。key 稳定后命中现有两层缓存，无需重算。
+
+### 涉及文件
+- `src/components/analysis/BulkAnalysisTab.tsx`
+- `src/components/analysis/BulkAnalysisTab.test.tsx`（新增回归测试）
+- `src/components/analysis/BoxPlotContainer.test.tsx`（修复测试隔离：afterEach 清 sessionStorage）
+
+---
+
+*后续新缺陷按 B26、B27... 追加。*

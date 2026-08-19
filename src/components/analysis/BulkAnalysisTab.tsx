@@ -22,15 +22,23 @@ function fmtNum(v: number | null, digits = 3): string {
 const DISPLAY_LIMIT = 100
 
 export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { realPath: string; omicsType?: string }) {
-  // Shared controls
-  const [disease, setDisease] = useState('All')
+  // Shared controls (selections persisted to sessionStorage — same pattern as scRNA boxplot/agg gene)
+  const [disease, setDisease] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_disease') ?? 'All' } catch { return 'All' }
+  })
   const [diseases, setDiseases] = useState<string[]>([])
   const [gene, setGene] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_gene') ?? 'TP53' } catch { return 'TP53' }
   })
-  const [palette, setPalette] = useState('default')
-  const [caseGroup, setCaseGroup] = useState('')
-  const [controlGroup, setControlGroup] = useState('')
+  const [palette, setPalette] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_palette') ?? 'default' } catch { return 'default' }
+  })
+  const [caseGroup, setCaseGroup] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_case') ?? '' } catch { return '' }
+  })
+  const [controlGroup, setControlGroup] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_control') ?? '' } catch { return '' }
+  })
   const [groupInfo, setGroupInfo] = useState<{ case_group?: string; control_group?: string }>({})
 
   // Gene search autocomplete
@@ -65,6 +73,14 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   const displayRows = hasActiveFilters ? allRows : allRows.slice(0, DISPLAY_LIMIT)
 
   useEffect(() => { try { sessionStorage.setItem('gensci_bulk_gene', gene) } catch { /* ignore */ } }, [gene])
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('gensci_bulk_disease', disease)
+      sessionStorage.setItem('gensci_bulk_case', caseGroup)
+      sessionStorage.setItem('gensci_bulk_control', controlGroup)
+      sessionStorage.setItem('gensci_bulk_palette', palette)
+    } catch { /* ignore */ }
+  }, [disease, caseGroup, controlGroup, palette])
 
   useEffect(() => {
     if (!realPath) return
