@@ -6,3 +6,8 @@ __pycache__/
 .env
 *.log
 GenSci.log
+
+# 运行时/构建/派生缓存 — 不入库
+.bulk_cache/
+.scanner_cache.json
+tsconfig.app.tsbuildinfo
