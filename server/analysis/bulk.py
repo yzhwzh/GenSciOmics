@@ -233,10 +233,10 @@ def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
             y = ymax + gap + level * step
             stars = '***' if p < 0.001 else '**' if p < 0.01 else '*'
             # 学术风显著性括号（参照 server/skills/light-figure-drawing 的 sig_bar）：
-            # 实线细线 lw=0.8，星号 fontsize=8（与图下方图例一致）。
-            ax.plot([i, i, j, j], [y, y - 0.02 * yrange, y - 0.02 * yrange, y],
+            # 实线细线 lw=0.8，星号 fontsize=8（与图下方图例一致）；横线在上、两端竖线向下指向 box。
+            ax.plot([i, i, j, j], [y, y + 0.02 * yrange, y + 0.02 * yrange, y],
                     color='black', lw=0.8, ls='-')
-            ax.text((i + j) / 2, y + 0.01 * yrange, stars,
+            ax.text((i + j) / 2, y + 0.02 * yrange, stars,
                     ha='center', va='bottom', fontsize=8, color='black')
         top = ymax + gap + (max(lv for _, _, _, lv in brackets) + 1) * step + 0.05 * yrange
         ax.set_ylim(top=top)
