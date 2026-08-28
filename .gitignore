@@ -11,3 +11,6 @@ GenSci.log
 .bulk_cache/
 .scanner_cache.json
 tsconfig.app.tsbuildinfo
+
+# 软著申请材料 — 不入库
+docs/软著/
