@@ -240,18 +240,13 @@ FINAL_INSTRUCTION = (
 
 
 def _data_type_from_path(real_path: str) -> str:
-    """Extract data type (count/TPM/Intensity) from a dataset real_path filename."""
+    """Extract data type (count/TPM/FPKM/RPKM/Intensity) from a real_path filename.
+
+    Single source of truth lives in scanner._extract_data_type.
+    """
     from pathlib import Path
-    stem = Path(real_path).stem  # e.g. '29625048.TCGA.TPM' (drops .h5ad)
-    for tok in stem.split('.')[2:]:
-        t = tok.lower()
-        if 'intensity' in t or 'signal' in t:
-            return 'Intensity'
-        if 'count' in t:
-            return 'count'
-        if 'tpm' in t or 'fpkm' in t or 'rpkm' in t:
-            return 'TPM'
-    return ''
+    from scanner import _extract_data_type
+    return _extract_data_type(Path(real_path).stem)
 
 
 def assemble_prompt(

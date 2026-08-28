@@ -95,8 +95,12 @@ def _get_annotation_info(pmid: str) -> tuple[str, dict | None]:
     return (entry.get('Source', 'Paper'), entry.get('Major'))
 
 
-def _read_obs_stats(real_path: Path, mtime: float) -> dict:
-    """Read and cache obs column statistics from an .h5ad file."""
+def _read_obs_stats(real_path: Path, mtime: float, tabular: bool = False) -> dict:
+    """Read and cache obs column statistics from an .h5ad file.
+
+    tabular=True → tabular datasets (BulkRNA/Protein): group_dist shows plain
+    sample counts ('G1 5') with no '/ cells' or 'c' suffix (no cell concept).
+    """
     key = (str(real_path), mtime)
     cached = _obs_cache.get(key)
     if cached is not None:
@@ -116,7 +120,17 @@ def _read_obs_stats(real_path: Path, mtime: float) -> dict:
             # For Group & Tissue, provide the distribution/value
             if col == 'Group':
                 counts = vals.value_counts()
-                if 'Sample' in adata.obs.columns:
+                if tabular:
+                    # Tabular (BulkRNA/Protein): one row per sample, no cells —
+                    # group_dist is plain sample counts only.
+                    if 'Sample' in adata.obs.columns:
+                        grp = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
+                        stats['group_dist'] = ', '.join(
+                            f'{g} {int(grp.get(g, 0))}' for g in counts.index)
+                    else:
+                        stats['group_dist'] = ', '.join(
+                            f'{g} {int(c)}' for g, c in counts.items())
+                elif 'Sample' in adata.obs.columns:
                     grp_samples = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
                     stats['group_dist'] = ', '.join(
                         f'{g} {int(grp_samples.get(g, 0))} / {int(counts.get(g, 0))}'
@@ -156,7 +170,11 @@ def _extract_data_type(fname: str) -> str:
             return 'Intensity'
         if 'count' in t:
             return 'count'
-        if 'tpm' in t or 'fpkm' in t or 'rpkm' in t:
+        if 'fpkm' in t:
+            return 'FPKM'
+        if 'rpkm' in t:
+            return 'RPKM'
+        if 'tpm' in t:
             return 'TPM'
     return ''
 
@@ -284,7 +302,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
         }
 
     # Cache fresh — read stats from cache h5ad, point real_path at it.
-    obs_stats = _read_obs_stats(dst, dst.stat().st_mtime)
+    obs_stats = _read_obs_stats(dst, dst.stat().st_mtime, tabular=True)
     result = {
         'species': meta['species'],
         'tissue': meta['tissue'],
@@ -400,7 +418,8 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
     omics_type = meta['omics_type']
 
     # Read obs stats from the .h5ad file (cached by mtime for performance)
-    obs_stats = _read_obs_stats(real, stat.st_mtime)
+    obs_stats = _read_obs_stats(real, stat.st_mtime,
+                                tabular=meta['omics_type'] in ('BulkRNA', 'Protein'))
 
     # Build result and update persistent cache
     result = {
@@ -476,6 +495,15 @@ def scan_datasets():
                 continue
             if info:
                 found.append(info)
+    # DATA_DIRS contains Data/ plus its Mouse/Monkey subdirs, so the same file
+    # can be reached twice — dedupe by source path to avoid duplicate rows.
+    deduped, seen = [], set()
+    for info in found:
+        if info['path'] in seen:
+            continue
+        seen.add(info['path'])
+        deduped.append(info)
+    found = deduped
     _save_cache(cache)
     with datasets_lock:
         # Detect changes for logging
