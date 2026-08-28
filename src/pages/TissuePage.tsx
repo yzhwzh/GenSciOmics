@@ -22,10 +22,20 @@ export default function TissuePage() {
   const navigate = useNavigate()
   const [rows, setRows] = useState<DatasetInfo[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<OmicsTab>('single-cell')
+  const [activeTab, setActiveTab] = useState<OmicsTab>(() => {
+    try {
+      const v = sessionStorage.getItem('gensci_tissue_tab') as OmicsTab | null
+      return v && OMICS_TABS.some((t) => t.key === v) ? v : 'single-cell'
+    } catch { return 'single-cell' }
+  })
   const {
     filteredRows, getUniqueValues, toggleFilter, clearFilter, clearAllFilters, isFilterActive, filters,
   } = useTableFilter(rows)
+
+  // Persist the active omics tab so a refresh doesn't bounce back to Single Cell.
+  useEffect(() => {
+    try { sessionStorage.setItem('gensci_tissue_tab', activeTab) } catch { /* ignore */ }
+  }, [activeTab])
 
   const organ = ORGANS.find((o) => o.slug === slug)
   const tissueName = organ?.label ?? slug ?? 'Unknown'
