@@ -9,6 +9,7 @@ table.
 
 import base64
 import io
+import re
 import sys
 import threading
 from pathlib import Path
@@ -19,10 +20,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import ttest_ind
+from scipy.stats import mannwhitneyu, ttest_ind
 
 from core.adata_cache import locked_backed_adata
-from analysis.utils import build_cond_palette, cond_sort_key
+from analysis.utils import build_cond_palette
+from scanner import _extract_data_type  # filename → count/TPM/FPKM/RPKM/Intensity
 
 
 plt.rcParams['font.family'] = 'serif'
@@ -75,6 +77,19 @@ def _classify_group(value: str) -> str:
     return 'unknown'
 
 
+def _group_sort_key(name: str) -> tuple:
+    """Boxplot group order: if a group name contains a number, sort by that
+    number ascending; non-numeric names (e.g. 'Normal') come after, with
+    control/normal/healthy last. Both tuple branches share the (int, int, str)
+    shape so mixed names stay comparable."""
+    ln = name.lower()
+    m = re.search(r'\d+', name)
+    if m:
+        return (0, int(m.group()), name)
+    is_ctrl = any(k in ln for k in ('control', 'normal', 'healthy'))
+    return (1, 1 if is_ctrl else 0, name)
+
+
 def _find_case_control(group_vals) -> tuple[str | None, str | None]:
     """Auto-classify group values into (case, control).
 
@@ -124,13 +139,144 @@ def bulk_diseases(real_path: str) -> dict:
         return {'diseases': [], 'error': str(e)}
 
 
+def bulk_groups(real_path: str) -> dict:
+    """Return the distinct Group values for a bulk dataset."""
+    try:
+        with locked_backed_adata(real_path) as adata:
+            if 'Group' not in adata.obs.columns:
+                return {'groups': [], 'error': 'Group column not found in obs'}
+            groups = sorted(set(str(g) for g in adata.obs['Group'].dropna()), key=_group_sort_key)
+        return {'groups': groups}
+    except Exception as e:
+        print(f'[GenSci] bulk_groups error: {e}', file=sys.stderr)
+        return {'groups': [], 'error': str(e)}
+
+
+def _layout_brackets(pairs: list[tuple[int, int, float]]) -> list[tuple[int, int, float, int]]:
+    """Assign each significant pair (i, j, p) a non-overlapping bracket level.
+
+    Greedy interval colouring: pairs are processed most-significant first; each
+    takes the lowest level whose already-placed bracket at that level does not
+    overlap in x-range (overlap iff i <= other_j and j >= other_i). Returns
+    (i, j, p, level).
+    """
+    placed: list[tuple[int, int, int]] = []  # (i, j, level)
+    out: list[tuple[int, int, float, int]] = []
+    for i, j, p in sorted(pairs, key=lambda t: t[2]):
+        level = 0
+        while any(pl == level and i <= oi and j >= oj for oj, oi, pl in placed):
+            level += 1
+        placed.append((i, j, level))
+        out.append((i, j, p, level))
+    return out
+
+
+def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
+                          disease: str | None, palette_name: str,
+                          target_group: str | None = None) -> dict:
+    """Group-mode boxplot: x = Group, pairwise Mann-Whitney U significance.
+
+    expr/group_vals are already masked to the selected disease. Boxes + jittered
+    scatter share the disease-mode styling; significant pairs (p < 0.05) get a
+    dashed bracket with stars (* <0.05, ** <0.01, *** <0.001) above the boxes.
+    """
+    if not np.isfinite(expr).any():
+        return {'error': 'No valid expression values for the selected disease'}
+    df = pd.DataFrame({'Group': group_vals, 'Expression': expr})
+    group_order = sorted(df['Group'].unique(), key=_group_sort_key)
+    palette = build_cond_palette(group_order, palette_name)
+    n_groups = len(group_order)
+
+    # Pairwise Mann-Whitney U (two-sided); only significant pairs get brackets.
+    sig: list[tuple[int, int, float]] = []
+    for gi in range(n_groups):
+        for gj in range(gi + 1, n_groups):
+            a = expr[group_vals == group_order[gi]]
+            b = expr[group_vals == group_order[gj]]
+            a = a[np.isfinite(a)]
+            b = b[np.isfinite(b)]
+            if a.size < 2 or b.size < 2:
+                continue
+            try:
+                _, p = mannwhitneyu(a, b, alternative='two-sided')
+            except Exception:
+                continue
+            if not np.isfinite(p) or p >= 0.05:
+                continue
+            sig.append((gi, gj, float(p)))
+
+    # Target filter: when a specific group is chosen, only draw brackets/stars
+    # for significant pairs involving it (x-axis still shows every group).
+    if target_group and target_group in group_order:
+        ti = group_order.index(target_group)
+        sig = [(i, j, p) for (i, j, p) in sig if i == ti or j == ti]
+
+    fig_w = max(6, min(22, n_groups * 0.5))
+    fig_h = 5.5
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=100)
+    sns.boxplot(data=df, x='Group', y='Expression', hue='Group',
+                order=group_order, hue_order=group_order, palette=palette, ax=ax,
+                showfliers=False, fill=False, linewidth=1.3, legend=False)
+    sns.stripplot(data=df, x='Group', y='Expression', hue='Group',
+                  order=group_order, hue_order=group_order, palette=palette, ax=ax,
+                  size=4, alpha=0.9, jitter=0.2, dodge=False, edgecolor='k',
+                  linewidth=0.5, legend=False)
+
+    ymin = float(np.nanmin(expr))
+    ymax = float(np.nanmax(expr))
+    yrange = ymax - ymin if ymax > ymin else 1.0
+    if sig:
+        brackets = _layout_brackets(sig)
+        gap = 0.08 * yrange
+        step = 0.12 * yrange
+        for i, j, p, level in brackets:
+            y = ymax + gap + level * step
+            stars = '***' if p < 0.001 else '**' if p < 0.01 else '*'
+            # 学术风显著性括号（参照 server/skills/light-figure-drawing 的 sig_bar）：
+            # 实线细线 lw=0.8，星号 fontsize=8（与图下方图例一致）。
+            ax.plot([i, i, j, j], [y, y - 0.02 * yrange, y - 0.02 * yrange, y],
+                    color='black', lw=0.8, ls='-')
+            ax.text((i + j) / 2, y + 0.01 * yrange, stars,
+                    ha='center', va='bottom', fontsize=8, color='black')
+        top = ymax + gap + (max(lv for _, _, _, lv in brackets) + 1) * step + 0.05 * yrange
+        ax.set_ylim(top=top)
+    else:
+        ax.set_ylim(top=ymax + 0.13 * yrange)
+
+    ax.set_title(actual_gene, fontsize=12)
+    dtype = _extract_data_type(Path(real_path).stem)
+    ax.set_ylabel(f'Expression ({dtype})' if dtype else 'Expression')
+    ax.set_xlabel(None)
+    if n_groups > 8:
+        ax.tick_params(axis='x', labelrotation=90)
+    for s in ('top', 'right'):
+        ax.spines[s].set_visible(False)
+    # Significance-stars legend below the plot (dashes + stars only appear in
+    # group mode, where this function is the only renderer). bbox_inches='tight'
+    # crops the saved figure to include this axes-fraction text.
+    ax.annotate('* p < 0.05    ** p < 0.01    *** p < 0.001 (Mann-Whitney U)',
+                xy=(0, -0.16), xycoords='axes fraction', ha='left', va='top',
+                fontsize=8, color='0.35', annotation_clip=False)
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.3, dpi=100,
+                facecolor='white')
+    plt.close(fig)
+    img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return {'image': img_b64, 'width': fig_w, 'height': fig_h}
+
+
 def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
-                 palette_name: str = 'default') -> dict:
+                 palette_name: str = 'default',
+                 target_group: str | None = None) -> dict:
     """Boxplot of a single gene's expression.
 
     x-axis = Disease (cancer type), hue = Group (Tumor/Normal).
     disease=None → one panel per disease (all cancers on the x-axis);
     otherwise only that disease's samples are shown.
+    target_group (group mode only) restricts significance brackets/stars to
+    pairs involving that group.
     Returns {'image': base64, 'width', 'height'} or {'error': str}.
     """
     try:
@@ -149,6 +295,12 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
             group_vals = adata.obs['Group'].astype(str).values.copy()
             disease_vals = adata.obs['Disease'].astype(str).values.copy()
 
+            # x-axis mode: a specific disease (or a single-disease dataset) shows
+            # pairwise Group comparison; otherwise one panel per disease, hue=Group.
+            all_diseases = sorted(set(str(d) for d in adata.obs['Disease'].dropna()))
+            force_group = len(all_diseases) <= 1
+            group_mode = (disease and disease != 'All') or force_group
+
             mask = np.ones(adata.n_obs, dtype=bool)
             if disease and disease != 'All':
                 mask = disease_vals == disease
@@ -157,10 +309,14 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
         group_vals = group_vals[mask]
         disease_vals = disease_vals[mask]
 
+        if group_mode:
+            return _render_group_boxplot(real_path, expr, group_vals, actual_gene,
+                                         disease, palette_name, target_group)
+
         disp_disease = [str(d)[5:] if str(d).startswith('TCGA-') else str(d) for d in disease_vals]
         df = pd.DataFrame({'Disease': disp_disease, 'Group': group_vals, 'Expression': expr})
         disease_order = sorted(df['Disease'].unique())
-        group_order = sorted(df['Group'].unique(), key=cond_sort_key)
+        group_order = sorted(df['Group'].unique(), key=_group_sort_key)
         palette = build_cond_palette(group_order, palette_name)
         n_diseases = len(disease_order)
 
@@ -172,17 +328,18 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
             palette=palette, ax=ax, showfliers=False, fill=False,
             linewidth=1.3,
         )
+        # Scatter points keep a small jitter so overlapping dots spread
+        # horizontally; dark edge keeps each dot distinct over box borders.
         sns.stripplot(
             data=df, x='Disease', y='Expression', hue='Group',
             order=disease_order, hue_order=group_order,
-            palette=palette, ax=ax, size=1.5, alpha=0.35, jitter=0.28,
-            dodge=True, legend=False,
+            palette=palette, ax=ax, size=4, alpha=0.9, jitter=0.2,
+            dodge=True, edgecolor='k', linewidth=0.5, legend=False,
         )
-        title = f'{actual_gene} — {disease if disease and disease != "All" else "All diseases"}'
-        ax.set_title(title, fontsize=12)
-        ylabel = ('Expression (Intensity)' if 'intensity' in Path(real_path).name.lower()
-                  else 'Expression (TPM)')
-        ax.set_ylabel(ylabel)
+        ax.set_title(actual_gene, fontsize=12)
+        # y-axis label follows the file's annotation (TPM/FPKM/RPKM/count/Intensity)
+        dtype = _extract_data_type(Path(real_path).stem)
+        ax.set_ylabel(f'Expression ({dtype})' if dtype else 'Expression')
         ax.set_xlabel(None)
         if n_diseases > 8:
             ax.tick_params(axis='x', labelrotation=90)

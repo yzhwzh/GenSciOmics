@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Loader2, Download } from 'lucide-react'
 import { useTableFilter } from '../../hooks/useTableFilter'
 import FilterDropdown from '../FilterDropdown'
-import { searchGenes, fetchBulkBoxplot, fetchBulkVolcano, fetchBulkDe, fetchBulkDiseases } from '../../api/analysis'
+import { searchGenes, fetchBulkBoxplot, fetchBulkVolcano, fetchBulkDe, fetchBulkDiseases, fetchBulkGroups } from '../../api/analysis'
 import { PALETTE_OPTIONS, type BulkDeRow } from '../../api/types'
 import ZoomableImage from './ZoomableImage'
 
@@ -17,21 +17,69 @@ function fmtNum(v: number | null, digits = 3): string {
   return v === null ? 'NA' : v.toFixed(digits)
 }
 
+// Case/Control candidate dropdown — same UX as the Gene autocomplete: click into the
+// box and the dataset's Group values appear (in-memory substring filter, no network).
+// Free typing is still allowed; selecting a candidate fills the box.
+function GroupPicker({
+  label, value, onChange, options, placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: string[]
+  placeholder?: string
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  const candidates = options.filter((g) => g.toLowerCase().includes(value.toLowerCase()))
+  return (
+    <div className="relative" ref={ref}>
+      <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">{label}</label>
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className="w-[110px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
+      {open && candidates.length > 0 && (
+        <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-[160px]">
+          {candidates.map((g) => (
+            <button key={g} onClick={() => { onChange(g); setOpen(false) }}
+              className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // When no gene filter is active, render only the top N by padj to keep the DOM light;
 // the full gene list is still loaded so the filter dropdown works across all genes.
 const DISPLAY_LIMIT = 100
 
 export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { realPath: string; omicsType?: string }) {
   // Shared controls (selections persisted to sessionStorage — same pattern as scRNA boxplot/agg gene)
-  const [disease, setDisease] = useState(() => {
+  // Boxplot has its own Disease selector (default All); the volcano card has an independent one.
+  const [boxplotDisease, setBoxplotDisease] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_disease') ?? 'All' } catch { return 'All' }
   })
+  const [deDisease, setDeDisease] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_dedisease') ?? 'All' } catch { return 'All' }
+  })
   const [diseases, setDiseases] = useState<string[]>([])
+  const [groupOptions, setGroupOptions] = useState<string[]>([])
   const [gene, setGene] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_gene') ?? 'TP53' } catch { return 'TP53' }
   })
   const [palette, setPalette] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_palette') ?? 'default' } catch { return 'default' }
+  })
+  const [targetGroup, setTargetGroup] = useState(() => {
+    try { return sessionStorage.getItem('gensci_bulk_target') ?? 'All' } catch { return 'All' }
   })
   const [caseGroup, setCaseGroup] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_case') ?? '' } catch { return '' }
@@ -75,16 +123,19 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   useEffect(() => { try { sessionStorage.setItem('gensci_bulk_gene', gene) } catch { /* ignore */ } }, [gene])
   useEffect(() => {
     try {
-      sessionStorage.setItem('gensci_bulk_disease', disease)
+      sessionStorage.setItem('gensci_bulk_disease', boxplotDisease)
+      sessionStorage.setItem('gensci_bulk_dedisease', deDisease)
       sessionStorage.setItem('gensci_bulk_case', caseGroup)
       sessionStorage.setItem('gensci_bulk_control', controlGroup)
       sessionStorage.setItem('gensci_bulk_palette', palette)
+      sessionStorage.setItem('gensci_bulk_target', targetGroup)
     } catch { /* ignore */ }
-  }, [disease, caseGroup, controlGroup, palette])
+  }, [boxplotDisease, deDisease, caseGroup, controlGroup, palette, targetGroup])
 
   useEffect(() => {
     if (!realPath) return
     fetchBulkDiseases(realPath).then(setDiseases).catch(() => setDiseases([]))
+    fetchBulkGroups(realPath).then(setGroupOptions).catch(() => setGroupOptions([]))
   }, [realPath])
 
   // Gene autocomplete (debounced)
@@ -108,20 +159,20 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   useEffect(() => {
     if (!realPath || !gene) return
     setBoxplotLoading(true); setBoxplotErr(''); setBoxplotSrc(null)
-    fetchBulkBoxplot(realPath, gene, disease === 'All' ? undefined : disease, palette)
+    fetchBulkBoxplot(realPath, gene, boxplotDisease === 'All' ? undefined : boxplotDisease, palette, targetGroup)
       .then((d) => {
         if (d.error) setBoxplotErr(d.error)
         else if (d.image) setBoxplotSrc(`data:image/png;base64,${d.image}`)
       })
       .catch((e) => setBoxplotErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setBoxplotLoading(false))
-  }, [realPath, gene, disease, palette])
+  }, [realPath, gene, boxplotDisease, palette, targetGroup])
 
   // Volcano
   useEffect(() => {
     if (!realPath) return
     setVolcanoLoading(true); setVolcanoSrc(null); setVolcanoErr('')
-    fetchBulkVolcano(realPath, disease === 'All' ? undefined : disease, 1.0, 0.05, caseGroup || undefined, controlGroup || undefined)
+    fetchBulkVolcano(realPath, deDisease === 'All' ? undefined : deDisease, 1.0, 0.05, caseGroup || undefined, controlGroup || undefined)
       .then((d) => {
         if (d.error) { setVolcanoSrc(null); setVolcanoCounts({}); setVolcanoErr(d.error) }
         else if (d.image) {
@@ -131,13 +182,13 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       })
       .catch((e) => { setVolcanoSrc(null); setVolcanoCounts({}); setVolcanoErr(e instanceof Error ? e.message : String(e)) })
       .finally(() => setVolcanoLoading(false))
-  }, [realPath, disease, caseGroup, controlGroup])
+  }, [realPath, deDisease, caseGroup, controlGroup])
 
   // DE table
   useEffect(() => {
     if (!realPath) return
     setDeLoading(true); setDeErr('')
-    fetchBulkDe(realPath, disease === 'All' ? undefined : disease, 0, caseGroup || undefined, controlGroup || undefined)
+    fetchBulkDe(realPath, deDisease === 'All' ? undefined : deDisease, 0, caseGroup || undefined, controlGroup || undefined)
       .then((d) => {
         if (d.error) { setDeErr(d.error); setRows([]) }
         else {
@@ -148,7 +199,7 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       })
       .catch((e) => { setDeErr(e.message); setRows([]) })
       .finally(() => setDeLoading(false))
-  }, [realPath, disease, caseGroup, controlGroup])
+  }, [realPath, deDisease, caseGroup, controlGroup])
 
   const downloadCSV = () => {
     if (!rows.length || downloading) return
@@ -163,7 +214,7 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `bulk_de_${disease === 'All' ? 'all' : disease}.csv`
+      a.download = `bulk_de_${deDisease === 'All' ? 'all' : deDisease}.csv`
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -175,112 +226,120 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
 
   return (
     <div className="h-full flex flex-col p-3 gap-2 overflow-hidden">
-      {/* Top control bar */}
-      <div className="flex items-center gap-3 shrink-0 flex-wrap">
-        <div className="relative" ref={geneSearchRef}>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Gene</label>
-          <input type="text" value={geneInput}
-            onChange={(e) => { setGeneInput(e.target.value); setShowSuggestions(false) }}
-            onFocus={() => { if (geneSuggestions.length) setShowSuggestions(true) }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && geneInput.trim()) selectGene(geneInput.trim()) }}
-            onBlur={() => { if (geneInput.trim()) selectGene(geneInput.trim()) }}
-            placeholder={gene || 'Search...'}
-            className="w-[140px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand font-medium" />
-          {showSuggestions && geneSuggestions.length > 0 && (
-            <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-[220px]">
-              {geneSuggestions.map((g) => (
-                <button key={g} onClick={() => selectGene(g)}
-                  className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Disease</label>
-          <select value={disease} onChange={(e) => setDisease(e.target.value)}
-            className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand min-w-[140px]">
-            <option value="All">All</option>
-            {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Case group</label>
-          <input type="text" value={caseGroup} onChange={(e) => setCaseGroup(e.target.value)}
-            placeholder={groupInfo.case_group || 'Auto (case)'}
-            className="w-[110px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Control group</label>
-          <input type="text" value={controlGroup} onChange={(e) => setControlGroup(e.target.value)}
-            placeholder={groupInfo.control_group || 'Auto (control)'}
-            className="w-[110px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Palette</label>
-          <select value={palette} onChange={(e) => setPalette(e.target.value)}
-            className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand">
-            {PALETTE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-
-        {meta.n_total !== undefined && (
-          <span className="text-xs text-text-muted mt-4">
-            {meta.n_tumor ?? 0} {groupInfo.case_group || 'Case'} vs {meta.n_normal ?? 0} {groupInfo.control_group || 'Control'} · {meta.n_total} features tested
-          </span>
-        )}
-
-        <div className="flex-1" />
-        <button onClick={downloadCSV} disabled={downloading}
-          className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-brand bg-surface border border-border-light hover:border-brand rounded-lg px-3 py-2 transition-colors disabled:opacity-50 mt-4">
-          <Download className="w-3.5 h-3.5" /> {downloading ? 'Preparing...' : 'Download CSV'}
-        </button>
-      </div>
-
       {/* Top row: boxplot (left) + volcano (right) */}
-      <div className="h-[44%] shrink-0 flex gap-2">
-        <div className="flex-1 min-w-0 bg-surface rounded-md shadow-card overflow-hidden relative flex items-center justify-center">
+      <div className="h-[58%] shrink-0 flex gap-2">
+        <div className="flex-1 min-w-0 bg-surface rounded-md shadow-card overflow-hidden relative flex flex-col">
           <div className="absolute top-2 left-3 text-[10px] font-semibold text-text-muted uppercase tracking-wider z-10">
             Gene Expression
           </div>
-          {boxplotLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
-              <Loader2 className="w-5 h-5 text-brand animate-spin" />
+          <div className="shrink-0 flex items-center gap-3 flex-wrap px-3 pb-2 pt-7 border-b border-border-light">
+            <div className="relative" ref={geneSearchRef}>
+              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Gene</label>
+              <input type="text" value={geneInput}
+                onChange={(e) => { setGeneInput(e.target.value); setShowSuggestions(false) }}
+                onFocus={() => { if (geneSuggestions.length) setShowSuggestions(true) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && geneInput.trim()) selectGene(geneInput.trim()) }}
+                onBlur={() => { if (geneInput.trim()) selectGene(geneInput.trim()) }}
+                placeholder={gene || 'Search...'}
+                className="w-[140px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand font-medium" />
+              {showSuggestions && geneSuggestions.length > 0 && (
+                <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-[220px]">
+                  {geneSuggestions.map((g) => (
+                    <button key={g} onMouseDown={(e) => { e.preventDefault(); selectGene(g) }}
+                      className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-          {!boxplotLoading && boxplotErr && <div className="text-sm text-text-muted p-4 text-center">{boxplotErr}</div>}
-          {!boxplotLoading && !boxplotErr && !boxplotSrc && <div className="text-sm text-text-muted p-4">Select a gene to plot</div>}
-          {boxplotSrc && <ZoomableImage src={boxplotSrc} alt="bulk boxplot" className="max-w-full max-h-full object-contain" />}
+
+            <div>
+              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Disease</label>
+              <select value={boxplotDisease} onChange={(e) => setBoxplotDisease(e.target.value)}
+                className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand min-w-[140px]">
+                <option value="All">All</option>
+                {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Palette</label>
+              <select value={palette} onChange={(e) => setPalette(e.target.value)}
+                className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand">
+                {PALETTE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Target</label>
+              <select value={targetGroup} onChange={(e) => setTargetGroup(e.target.value)}
+                className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand">
+                <option value="All">All</option>
+                {groupOptions.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 relative flex items-center justify-center">
+            {boxplotLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
+                <Loader2 className="w-5 h-5 text-brand animate-spin" />
+              </div>
+            )}
+            {!boxplotLoading && boxplotErr && <div className="text-sm text-text-muted p-4 text-center">{boxplotErr}</div>}
+            {!boxplotLoading && !boxplotErr && !boxplotSrc && <div className="text-sm text-text-muted p-4">Select a gene to plot</div>}
+            {boxplotSrc && <ZoomableImage src={boxplotSrc} alt="bulk boxplot" className="max-w-full max-h-full object-contain" />}
+          </div>
         </div>
 
-        <div className="flex-1 min-w-0 bg-surface rounded-md shadow-card overflow-hidden relative flex items-center justify-center">
+        <div className="flex-1 min-w-0 bg-surface rounded-md shadow-card overflow-hidden relative flex flex-col">
           <div className="absolute top-2 left-3 text-[10px] font-semibold text-text-muted uppercase tracking-wider z-10">
             Volcano Plot
           </div>
-          {volcanoLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
-              <Loader2 className="w-5 h-5 text-brand animate-spin" />
+          <div className="shrink-0 flex items-center gap-3 flex-wrap px-3 pb-2 pt-7 border-b border-border-light">
+            <div>
+              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Disease</label>
+              <select value={deDisease} onChange={(e) => setDeDisease(e.target.value)}
+                className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand min-w-[120px]">
+                <option value="All">All</option>
+                {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
-          )}
-          {!volcanoLoading && !volcanoSrc && (
-            <div className="text-sm text-text-muted p-4 text-center">
-              {volcanoErr ? `Volcano plot error: ${volcanoErr}` : 'Volcano plot unavailable'}
-            </div>
-          )}
-          {volcanoSrc && (
-            <>
-              <ZoomableImage src={volcanoSrc} alt="volcano plot" className="max-w-full max-h-full object-contain" />
-              {volcanoCounts.n_up !== undefined && (
-                <div className="absolute bottom-2 right-3 flex items-center gap-3 text-[11px] font-medium bg-surface/80 rounded-md px-2 py-1 z-10">
-                  <span className="text-error">▲ {volcanoCounts.n_up} up</span>
-                  <span className="text-brand">▼ {volcanoCounts.n_down} down</span>
-                  <span className="text-text-muted">{volcanoCounts.n_ns} n.s.</span>
-                </div>
-              )}
-            </>
-          )}
+            <GroupPicker label="Case group" value={caseGroup} onChange={setCaseGroup} options={groupOptions} placeholder={groupInfo.case_group || 'Auto (case)'} />
+            <GroupPicker label="Control group" value={controlGroup} onChange={setControlGroup} options={groupOptions} placeholder={groupInfo.control_group || 'Auto (control)'} />
+            {meta.n_total !== undefined && (
+              <span className="text-xs text-text-muted mt-4">
+                {meta.n_tumor ?? 0} {groupInfo.case_group || 'Case'} vs {meta.n_normal ?? 0} {groupInfo.control_group || 'Control'} · {meta.n_total} features tested
+              </span>
+            )}
+            <div className="flex-1" />
+            <button onClick={downloadCSV} disabled={downloading}
+              className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-brand bg-surface border border-border-light hover:border-brand rounded-lg px-3 py-2 transition-colors disabled:opacity-50 mt-4">
+              <Download className="w-3.5 h-3.5" /> {downloading ? 'Preparing...' : 'Download CSV'}
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 relative flex items-center justify-center">
+            {volcanoLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-surface/60 z-10">
+                <Loader2 className="w-5 h-5 text-brand animate-spin" />
+              </div>
+            )}
+            {!volcanoLoading && !volcanoSrc && (
+              <div className="text-sm text-text-muted p-4 text-center">
+                {volcanoErr ? `Volcano plot error: ${volcanoErr}` : 'Volcano plot unavailable'}
+              </div>
+            )}
+            {volcanoSrc && (
+              <>
+                <ZoomableImage src={volcanoSrc} alt="volcano plot" className="max-w-full max-h-full object-contain" />
+                {volcanoCounts.n_up !== undefined && (
+                  <div className="absolute bottom-2 right-3 flex items-center gap-3 text-[11px] font-medium bg-surface/80 rounded-md px-2 py-1 z-10">
+                    <span className="text-error">▲ {volcanoCounts.n_up} up</span>
+                    <span className="text-brand">▼ {volcanoCounts.n_down} down</span>
+                    <span className="text-text-muted">{volcanoCounts.n_ns} n.s.</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 

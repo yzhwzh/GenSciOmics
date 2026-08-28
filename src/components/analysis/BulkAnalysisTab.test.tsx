@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkAnalysisTab from './BulkAnalysisTab'
+import { searchGenes } from '../../api/analysis'
 
 // Mock API layer — BulkAnalysisTab fetches on mount
 vi.mock('../../api/analysis', () => ({
   searchGenes: vi.fn(() => Promise.resolve([])),
   fetchBulkDiseases: vi.fn(() => Promise.resolve(['RA', 'COPD'])),
+  fetchBulkGroups: vi.fn(() => Promise.resolve(['G1', 'G2'])),
   fetchBulkBoxplot: vi.fn(() => Promise.resolve({})),
   fetchBulkVolcano: vi.fn(() => Promise.resolve({})),
   fetchBulkDe: vi.fn(() => Promise.resolve({ genes: [], n_total: 0, n_tumor: 0, n_normal: 0 })),
@@ -27,11 +29,21 @@ describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)
     const selects = screen.getAllByRole('combobox')
     expect(selects[0]).toHaveValue('RA') // Disease select
     expect(selects[1]).toHaveValue('pastel') // Palette select
+    expect(selects[2]).toHaveValue('All') // Target select defaults to All
 
     // [0] = gene input, [1] = case group, [2] = control group
     const inputs = screen.getAllByRole('textbox')
     expect(inputs[1]).toHaveValue('Tumor')
     expect(inputs[2]).toHaveValue('Normal')
+  })
+
+  it('persists a changed Target group selection to sessionStorage', async () => {
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    await user.selectOptions(screen.getAllByRole('combobox')[2], 'G1')
+    expect(sessionStorage.getItem('gensci_bulk_target')).toBe('G1')
   })
 
   it('persists a changed disease selection to sessionStorage', async () => {
@@ -41,5 +53,23 @@ describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)
 
     await user.selectOptions(screen.getAllByRole('combobox')[0], 'COPD')
     expect(sessionStorage.getItem('gensci_bulk_disease')).toBe('COPD')
+  })
+
+  it('selects a gene on suggestion mouseDown (regression: onBlur swallowed onClick)', async () => {
+    vi.mocked(searchGenes).mockResolvedValue(['TP53', 'TPM2'])
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    const geneInput = screen.getAllByRole('textbox')[0] // [0] = gene, [1] = case, [2] = control
+    await user.type(geneInput, 'TP')
+    const tp53 = await screen.findByRole('button', { name: 'TP53' }) // debounced suggestions
+
+    fireEvent.mouseDown(tp53) // new handler: preventDefault + select
+    fireEvent.blur(geneInput) // simulate the browser focus-move that used to swallow the click
+    fireEvent.click(tp53) // no-op on old code (button already unmounted)
+
+    expect(geneInput).toHaveAttribute('placeholder', 'TP53') // gene box shows full gene
+    expect(screen.queryByRole('button', { name: 'TP53' })).toBeNull() // dropdown closed
   })
 })

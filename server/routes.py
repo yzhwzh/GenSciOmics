@@ -29,7 +29,7 @@ from analysis.expression import _get_expression_stats
 from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_aggregate_table, _get_raw_expression
 from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition, _generate_marker_dotplot
 from analysis.utils import CATEGORICAL_PALETTE_MAP
-from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_volcano
+from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_groups, bulk_volcano
 from search import _get_genes
 from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
 from skills import list_skills, get_skill_content
@@ -464,6 +464,7 @@ def handle_bulk_boxplot(handler, q):
     gene = q.get('gene', '')
     disease = q.get('disease', '') or None
     palette = get_palette_name(q)
+    target_group = q.get('target_group', '') or None
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
@@ -472,12 +473,12 @@ def handle_bulk_boxplot(handler, q):
         handler._send_error('gene parameter required')
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}'
+    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}:{target_group}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = bulk_boxplot(str(real_path), gene, disease, palette)
+    result = bulk_boxplot(str(real_path), gene, disease, palette, target_group)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 
@@ -537,6 +538,15 @@ def handle_bulk_diseases(handler, q):
         handler._send_error('Invalid file path')
         return
     handler._json(bulk_diseases(str(real_path)))
+
+
+def handle_bulk_groups(handler, q):
+    real_path_str = q.get('real_path', '')
+    real_path = validate_real_path(real_path_str)
+    if not real_path or not real_path.is_file():
+        handler._send_error('Invalid file path')
+        return
+    handler._json(bulk_groups(str(real_path)))
 
 
 
@@ -932,5 +942,6 @@ ROUTES = {
     ('GET', '/api/bulk-boxplot'): handle_bulk_boxplot,
     ('GET', '/api/bulk-de'): handle_bulk_de,
     ('GET', '/api/bulk-diseases'): handle_bulk_diseases,
+    ('GET', '/api/bulk-groups'): handle_bulk_groups,
     ('GET', '/api/bulk-volcano'): handle_bulk_volcano,
 }

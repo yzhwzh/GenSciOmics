@@ -89,6 +89,11 @@ export interface BulkDiseasesResult {
   error?: string
 }
 
+export interface BulkGroupsResult {
+  groups: string[]
+  error?: string
+}
+
 export interface BulkVolcanoResult {
   image?: string
   error?: string

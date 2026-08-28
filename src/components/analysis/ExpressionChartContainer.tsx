@@ -89,7 +89,7 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
             {showSuggestions && geneSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {geneSuggestions.map(g => (
-                  <button key={g} onClick={() => { setSelectedGene(g); setGeneSearchInput(''); setShowSuggestions(false) }}
+                  <button key={g} onMouseDown={(e) => { e.preventDefault(); setSelectedGene(g); setGeneSearchInput(''); setShowSuggestions(false) }}
                     className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
                 ))}
               </div>
@@ -111,7 +111,7 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
             {showGene2Suggestions && gene2Suggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {gene2Suggestions.map(g => (
-                  <button key={g} onClick={() => { setSelectedGene2(g); setGene2Input(''); setShowGene2Suggestions(false) }}
+                  <button key={g} onMouseDown={(e) => { e.preventDefault(); setSelectedGene2(g); setGene2Input(''); setShowGene2Suggestions(false) }}
                     className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
                 ))}
               </div>

@@ -11,6 +11,7 @@ import type {
   UmapRatioPlots,
   BulkDeResult,
   BulkDiseasesResult,
+  BulkGroupsResult,
   BulkVolcanoResult,
   SkillDef,
   ChatMessage,
@@ -352,10 +353,12 @@ export async function fetchBulkBoxplot(
   realPath: string,
   gene: string,
   disease?: string,
-  palette = 'default'
+  palette = 'default',
+  targetGroup?: string
 ): Promise<PlotResult> {
   const params = new URLSearchParams({ real_path: realPath, gene, palette })
   if (disease) params.set('disease', disease)
+  if (targetGroup && targetGroup !== 'All') params.set('target_group', targetGroup)
   return cachedFetch<PlotResult>(`/api/bulk-boxplot?${params}`)
 }
 
@@ -378,6 +381,13 @@ export async function fetchBulkDiseases(realPath: string): Promise<string[]> {
     `/api/bulk-diseases?real_path=${encodeURIComponent(realPath)}`
   )
   return Array.isArray(data.diseases) ? data.diseases : []
+}
+
+export async function fetchBulkGroups(realPath: string): Promise<string[]> {
+  const data = await apiFetch<BulkGroupsResult>(
+    `/api/bulk-groups?real_path=${encodeURIComponent(realPath)}`
+  )
+  return Array.isArray(data.groups) ? data.groups : []
 }
 
 export async function fetchBulkVolcano(
