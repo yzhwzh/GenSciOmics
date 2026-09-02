@@ -610,4 +610,29 @@ Protein / Bulk RNA 分析页选中 disease + gene、出结果后，切到 Free A
 
 ---
 
-*后续新缺陷按 B26、B27... 追加。*
+## B26. PMID 摘要/方法永久为空：瞬时网络失败被 _EUROPE_PMC_CACHE 永久缓存 (2026-09-02)
+
+### 现象
+打开 Kidney/IgAN（PMID 33936064，PMC8085501 在 PMC 可检索）数据集，InfoPanel 的摘要和方法都显示 "not available"。但独立进程直接调 `_fetch_abstract('33936064')` 能拿到 abstract 1792 字 + methods 4805 字。
+
+### 根因
+`server/pubmed.py::_fetch_abstract` 把结果**无条件**写入 `_EUROPE_PMC_CACHE`（含全空 dict）。某次代理/网络瞬时失败时，5 个字段全空的结果被永久缓存；此后该 PMID 永远返回空，直到服务重启。routes 层 `_analysis_info_cache` 又把含空 abstract 的 `result` 缓存，形成双层毒缓存（`/api/analysis-info` 直接中招）。
+
+### 修复
+`pubmed.py` 加"失败不缓存"策略：
+```python
+has_record = bool(info['title'] or info['abstract'] or info.get('pmcid'))
+if has_record and not (pmc_error and not info['methods']):
+    _EUROPE_PMC_CACHE[pmid] = info
+```
+空 / PMC 全文出错的结果不写缓存，下次请求自动重试。重启服务清除已被污染的进程内缓存。
+
+### 涉及文件
+- `server/pubmed.py`
+
+### 关键教训
+**进程内 dict 缓存不能缓存"失败/空"结果，否则一次瞬时网络故障 = 永久错误（直到重启）。** 抓取类缓存正确写法：只缓存成功且完整的结果，失败走不缓存-重试路径。
+
+---
+
+*后续新缺陷按 B27、B28... 追加。*

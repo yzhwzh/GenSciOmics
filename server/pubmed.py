@@ -74,6 +74,7 @@ def _fetch_abstract(pmid: str) -> dict:
             continue
 
     # PMC full text — best-effort, short timeout
+    pmc_error = False
     if pmcid:
         try:
             url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id={pmcid}&retmode=xml'
@@ -140,7 +141,12 @@ def _fetch_abstract(pmid: str) -> dict:
             info['methods'] = methods
             info['results'] = results_text
         except Exception as pmc_err:
+            pmc_error = True
             print(f'[GenSci] PMC fetch error: {pmc_err}', file=sys.stderr)
 
-    _EUROPE_PMC_CACHE[pmid] = info
+    # 只缓存"有记录/已完整"的结果：若整次抓取为空(网络/代理瞬时失败)或 PMC 全文抓取出错，
+    # 不写缓存、下次请求重试——否则一次瞬时故障会让该 PMID 永久返回空(需重启服务才恢复)。
+    has_record = bool(info['title'] or info['abstract'] or info.get('pmcid'))
+    if has_record and not (pmc_error and not info['methods']):
+        _EUROPE_PMC_CACHE[pmid] = info
     return info
