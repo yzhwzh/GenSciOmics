@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkAnalysisTab from './BulkAnalysisTab'
-import { searchGenes } from '../../api/analysis'
+import { searchGenes, fetchBulkBoxplot } from '../../api/analysis'
 
 // Mock API layer — BulkAnalysisTab fetches on mount
 vi.mock('../../api/analysis', () => ({
@@ -71,5 +71,68 @@ describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)
 
     expect(geneInput).toHaveAttribute('placeholder', 'TP53') // gene box shows full gene
     expect(screen.queryByRole('button', { name: 'TP53' })).toBeNull() // dropdown closed
+  })
+
+  // ─── Show-Groups chips (subset display: which groups appear on the x-axis) ───
+  // fetchBulkBoxplot(realPath, gene, disease?, palette, targetGroup?, groups?)
+  const boxplotGroupsArg = (): string[] | undefined => {
+    const calls = vi.mocked(fetchBulkBoxplot).mock.calls
+    return calls[calls.length - 1]?.[5]
+  }
+
+  it('sends no groups param when all groups are shown (default)', async () => {
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results') // flush mount-time effects + group fetch
+    expect(boxplotGroupsArg()).toBeUndefined()
+  })
+
+  it('hiding a group chip refetches with a groups param that excludes it', async () => {
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    await user.click(screen.getByRole('button', { name: 'G1' })) // hide G1 → only G2 shown
+    expect(boxplotGroupsArg()).toEqual(['G2'])
+    expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('["G1"]')
+    expect(screen.getByRole('button', { name: 'G1' }).title).toBe('Show') // off → re-show
+    expect(screen.getByRole('button', { name: 'G2' }).title).toBe('Hide') // on
+  })
+
+  it('re-shows a hidden group chip and drops the groups param when all are shown again', async () => {
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    await user.click(screen.getByRole('button', { name: 'G1' })) // hide G1
+    expect(boxplotGroupsArg()).toEqual(['G2'])
+    await user.click(screen.getByRole('button', { name: 'G1' })) // re-show G1
+    expect(boxplotGroupsArg()).toBeUndefined()
+    expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('[]')
+  })
+
+  it('refuses to hide the last visible group (prevent-zero)', async () => {
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    await user.click(screen.getByRole('button', { name: 'G1' })) // now only G2 visible
+    const callsBefore = vi.mocked(fetchBulkBoxplot).mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'G2' })) // try to hide the last one
+    expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('["G1"]') // unchanged
+    expect(vi.mocked(fetchBulkBoxplot).mock.calls.length).toBe(callsBefore) // no refetch
+  })
+
+  it('resets the hidden-group subset when the dataset changes', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<BulkAnalysisTab realPath="/dataset/a" />)
+    await screen.findByText('No results')
+    await user.click(screen.getByRole('button', { name: 'G1' }))
+    expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('["G1"]')
+
+    rerender(<BulkAnalysisTab realPath="/dataset/b" />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'G1' }).title).toBe('Hide') // shown again
+    })
+    expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('[]')
   })
 })

@@ -173,15 +173,25 @@ def _layout_brackets(pairs: list[tuple[int, int, float]]) -> list[tuple[int, int
 
 def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
                           disease: str | None, palette_name: str,
-                          target_group: str | None = None) -> dict:
+                          target_group: str | None = None,
+                          groups: list[str] | None = None) -> dict:
     """Group-mode boxplot: x = Group, pairwise Mann-Whitney U significance.
 
     expr/group_vals are already masked to the selected disease. Boxes + jittered
     scatter share the disease-mode styling; significant pairs (p < 0.05) get a
-    dashed bracket with stars (* <0.05, ** <0.01, *** <0.001) above the boxes.
+    bracket with stars (* <0.05, ** <0.01, *** <0.001) above the boxes.
+    groups (optional): plot only the samples whose Group is in this list; the
+    pairwise brackets/stars recompute over the shown subset only.
     """
     if not np.isfinite(expr).any():
         return {'error': 'No valid expression values for the selected disease'}
+    # Show-groups subset: plot only the samples whose Group the user selected.
+    # If none of the requested names match, keep everything — never render empty.
+    if groups:
+        keep = np.isin(group_vals, groups)
+        if keep.any():
+            expr = expr[keep]
+            group_vals = group_vals[keep]
     df = pd.DataFrame({'Group': group_vals, 'Expression': expr})
     group_order = sorted(df['Group'].unique(), key=_group_sort_key)
     palette = build_cond_palette(group_order, palette_name)
@@ -269,7 +279,8 @@ def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
 
 def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
                  palette_name: str = 'default',
-                 target_group: str | None = None) -> dict:
+                 target_group: str | None = None,
+                 groups: list[str] | None = None) -> dict:
     """Boxplot of a single gene's expression.
 
     x-axis = Disease (cancer type), hue = Group (Tumor/Normal).
@@ -277,6 +288,8 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
     otherwise only that disease's samples are shown.
     target_group (group mode only) restricts significance brackets/stars to
     pairs involving that group.
+    groups (group mode only) restricts which Group samples are plotted; the
+    shown subset is recomputed (x-axis + brackets).
     Returns {'image': base64, 'width', 'height'} or {'error': str}.
     """
     try:
@@ -311,7 +324,7 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
 
         if group_mode:
             return _render_group_boxplot(real_path, expr, group_vals, actual_gene,
-                                         disease, palette_name, target_group)
+                                         disease, palette_name, target_group, groups)
 
         disp_disease = [str(d)[5:] if str(d).startswith('TCGA-') else str(d) for d in disease_vals]
         df = pd.DataFrame({'Disease': disp_disease, 'Group': group_vals, 'Expression': expr})

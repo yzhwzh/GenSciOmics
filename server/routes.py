@@ -465,6 +465,11 @@ def handle_bulk_boxplot(handler, q):
     disease = q.get('disease', '') or None
     palette = get_palette_name(q)
     target_group = q.get('target_group', '') or None
+    # Show-groups subset: optional CSV of Group names to plot (group mode only).
+    groups_list = None
+    raw_groups = q.get('groups', '')
+    if raw_groups.strip():
+        groups_list = [g.strip() for g in raw_groups.split(',') if g.strip()] or None
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
@@ -473,12 +478,12 @@ def handle_bulk_boxplot(handler, q):
         handler._send_error('gene parameter required')
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}:{target_group}'
+    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}:{target_group}:{groups_list}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = bulk_boxplot(str(real_path), gene, disease, palette, target_group)
+    result = bulk_boxplot(str(real_path), gene, disease, palette, target_group, groups_list)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 

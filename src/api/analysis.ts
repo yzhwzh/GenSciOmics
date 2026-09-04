@@ -354,11 +354,13 @@ export async function fetchBulkBoxplot(
   gene: string,
   disease?: string,
   palette = 'default',
-  targetGroup?: string
+  targetGroup?: string,
+  groups?: string[]
 ): Promise<PlotResult> {
   const params = new URLSearchParams({ real_path: realPath, gene, palette })
   if (disease) params.set('disease', disease)
   if (targetGroup && targetGroup !== 'All') params.set('target_group', targetGroup)
+  if (groups && groups.length > 0) params.set('groups', groups.join(','))
   return cachedFetch<PlotResult>(`/api/bulk-boxplot?${params}`)
 }
 

@@ -81,6 +81,11 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   const [targetGroup, setTargetGroup] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_target') ?? 'All' } catch { return 'All' }
   })
+  // Groups hidden from the boxplot x-axis (subset display). [] = all shown.
+  // Persisted per dataset; reset to [] whenever the dataset changes.
+  const [hiddenGroups, setHiddenGroups] = useState<string[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('gensci_bulk_hidegroups') ?? '[]') } catch { return [] }
+  })
   const [caseGroup, setCaseGroup] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_case') ?? '' } catch { return '' }
   })
@@ -129,11 +134,13 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       sessionStorage.setItem('gensci_bulk_control', controlGroup)
       sessionStorage.setItem('gensci_bulk_palette', palette)
       sessionStorage.setItem('gensci_bulk_target', targetGroup)
+      sessionStorage.setItem('gensci_bulk_hidegroups', JSON.stringify(hiddenGroups))
     } catch { /* ignore */ }
-  }, [boxplotDisease, deDisease, caseGroup, controlGroup, palette, targetGroup])
+  }, [boxplotDisease, deDisease, caseGroup, controlGroup, palette, targetGroup, hiddenGroups])
 
   useEffect(() => {
     if (!realPath) return
+    setHiddenGroups([]) // new dataset → show every group again
     fetchBulkDiseases(realPath).then(setDiseases).catch(() => setDiseases([]))
     fetchBulkGroups(realPath).then(setGroupOptions).catch(() => setGroupOptions([]))
   }, [realPath])
@@ -159,14 +166,25 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   useEffect(() => {
     if (!realPath || !gene) return
     setBoxplotLoading(true); setBoxplotErr(''); setBoxplotSrc(null)
-    fetchBulkBoxplot(realPath, gene, boxplotDisease === 'All' ? undefined : boxplotDisease, palette, targetGroup)
+    // Show-groups subset: send `groups` only when it is a strict subset — when all
+    // groups are shown the param is omitted so the backend keeps every group (and
+    // the existing all-groups cache entry is still hit).
+    const subset = groupOptions.length > 0 && hiddenGroups.length > 0
+      ? groupOptions.filter((g) => !hiddenGroups.includes(g))
+      : undefined
+    fetchBulkBoxplot(
+      realPath, gene,
+      boxplotDisease === 'All' ? undefined : boxplotDisease,
+      palette, targetGroup,
+      subset && subset.length < groupOptions.length ? subset : undefined,
+    )
       .then((d) => {
         if (d.error) setBoxplotErr(d.error)
         else if (d.image) setBoxplotSrc(`data:image/png;base64,${d.image}`)
       })
       .catch((e) => setBoxplotErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setBoxplotLoading(false))
-  }, [realPath, gene, boxplotDisease, palette, targetGroup])
+  }, [realPath, gene, boxplotDisease, palette, targetGroup, hiddenGroups, groupOptions])
 
   // Volcano
   useEffect(() => {
@@ -224,6 +242,18 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
 
   const selectGene = (g: string) => { setGene(g); setGeneInput(''); setShowSuggestions(false) }
 
+  // Show-groups toggle: hiding a group removes its box from the x-axis and the
+  // significance brackets/stars recompute over the remaining visible groups.
+  // Never hide the last visible group so the plot can't become empty.
+  const toggleGroup = (g: string) => {
+    setHiddenGroups((prev) => {
+      if (prev.includes(g)) return prev.filter((x) => x !== g) // re-show
+      const remainingVisible = groupOptions.filter((x) => !prev.includes(x) && x !== g)
+      if (remainingVisible.length === 0) return prev // prevent hiding the last group
+      return [...prev, g]
+    })
+  }
+
   return (
     <div className="h-full flex flex-col p-3 gap-2 overflow-hidden">
       {/* Top row: boxplot (left) + volcano (right) */}
@@ -277,6 +307,27 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
                 {groupOptions.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
+
+            {groupOptions.length >= 2 && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Show Groups</label>
+                <div className="flex items-center gap-1 flex-wrap max-w-[360px]">
+                  {groupOptions.map((g) => {
+                    const on = !hiddenGroups.includes(g)
+                    return (
+                      <button key={g} onClick={() => toggleGroup(g)} title={on ? 'Hide' : 'Show'}
+                        className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
+                          on
+                            ? 'bg-brand text-white border-brand'
+                            : 'bg-surface text-text-secondary border-border-light opacity-60 hover:opacity-100'
+                        }`}>
+                        {g}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex-1 min-h-0 relative flex items-center justify-center">
             {boxplotLoading && (
