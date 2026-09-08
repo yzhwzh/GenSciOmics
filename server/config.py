@@ -12,6 +12,8 @@ for d in ['Mouse', 'Monkey']:
     p = PROJECT_ROOT / 'Data' / d
     if p.is_dir():
         DATA_DIRS.append(p)
+# Agent 记忆根目录（每用户隔离于 MEMORY_DIR/<sanitized_user_id>/）
+MEMORY_DIR = PROJECT_ROOT / 'server' / 'memory'
 
 # ─── Server ───────────────────────────────────────────────────
 HOST = '0.0.0.0'  # bind to all interfaces (needed for SSE direct connection from browser)

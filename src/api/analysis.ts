@@ -35,6 +35,24 @@ window.addEventListener('beforeunload', (e) => {
 export function _enterSSE() { _sseActiveCount++ }
 export function _leaveSSE() { _sseActiveCount = Math.max(0, _sseActiveCount - 1) }
 
+// ─── Per-user identity ──────────────────────────────────────────
+// 浏览器级稳定 user_id（localStorage 持久化）：每台浏览器/设备 = 一个用户。
+// 后端据此隔离 agent 记忆到 server/memory/<user_id>/。
+// 与 OnlineUsers 心跳的临时 randomUUID 无关（后者只用于在线计数去重）。
+const USER_KEY = 'gensci_user_id'
+let _cachedUserId: string | null = null
+function getClientUserId(): string {
+  if (_cachedUserId) return _cachedUserId
+  try {
+    const existing = localStorage.getItem(USER_KEY)
+    if (existing) { _cachedUserId = existing; return existing }
+  } catch { /* localStorage unavailable — fall through to in-memory id */ }
+  const id = crypto.randomUUID?.() ?? `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  try { localStorage.setItem(USER_KEY, id) } catch { /* ignore */ }
+  _cachedUserId = id
+  return id
+}
+
 export async function fetchAnalysisInfo(pmid: string, realPath: string): Promise<AnalysisInfo> {
   return apiFetch<AnalysisInfo>(`/api/analysis-info?pmid=${pmid}&real_path=${encodeURIComponent(realPath)}`)
 }
@@ -166,6 +184,7 @@ export async function sendChatMessage(
       model: config.model,
       base_url: config.baseUrl,
       temperature: config.temperature,
+      user_id: getClientUserId(),
     }),
   })
 }
@@ -194,6 +213,7 @@ export async function sendChatMessageStreaming(
         base_url: config.baseUrl,
         temperature: config.temperature,
         omics_type: omicsType,
+        user_id: getClientUserId(),
       }),
     })
 
@@ -254,6 +274,7 @@ export async function sendLiteratureMessageStreaming(
         base_url: config.baseUrl,
         temperature: config.temperature,
         context,
+        user_id: getClientUserId(),
       }),
     })
 

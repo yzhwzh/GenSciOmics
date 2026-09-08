@@ -616,6 +616,7 @@ def handle_llm_chat(handler, data):
     model = data.get('model', 'deepseek-chat')
     base_url = data.get('base_url', 'https://api.deepseek.com')
     temperature = float(data.get('temperature', 0.7))
+    user_id = data.get('user_id', '')
 
     if not messages:
         handler._send_error('messages required')
@@ -627,7 +628,7 @@ def handle_llm_chat(handler, data):
         handler._send_error('api_key required')
         return
 
-    result = process_chat(messages, real_path, api_key, model, base_url, temperature)
+    result = process_chat(messages, real_path, api_key, model, base_url, temperature, user_id=user_id)
     handler._json(result)
 
 
@@ -640,6 +641,7 @@ def handle_llm_chat_stream(handler, data):
     base_url = data.get('base_url', 'https://api.deepseek.com')
     temperature = float(data.get('temperature', 0.7))
     omics_type = data.get('omics_type', '')
+    user_id = data.get('user_id', '')
 
     if not messages:
         handler._send_error('messages required')
@@ -680,7 +682,7 @@ def handle_llm_chat_stream(handler, data):
     _hb_thread.start()
 
     try:
-        for event in process_chat_streaming(messages, real_path, api_key, model, base_url, temperature, omics_type):
+        for event in process_chat_streaming(messages, real_path, api_key, model, base_url, temperature, omics_type, user_id=user_id):
             # Check if client disconnected
             if _hb_stop.is_set():
                 break
@@ -723,6 +725,7 @@ def handle_llm_literature_stream(handler, data):
     base_url = data.get('base_url', 'https://api.deepseek.com')
     temperature = float(data.get('temperature', 0.7))
     context = data.get('context', '')  # tissue/disease context from the page
+    user_id = data.get('user_id', '')
 
     if not messages:
         handler._send_error('messages required')
@@ -763,6 +766,7 @@ def handle_llm_literature_stream(handler, data):
         for event in process_literature_chat_streaming(
             messages, api_key, context=context,
             model=model, base_url=base_url, temperature=temperature,
+            user_id=user_id,
         ):
             if _lit_hb_stop.is_set():
                 break

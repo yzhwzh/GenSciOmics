@@ -209,18 +209,20 @@ def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type
 # ── Public API ────────────────────────────────────────────────
 
 def process_chat(messages, real_path, api_key, model=DEFAULT_MODEL,
-                 base_url=DEFAULT_BASE_URL, temperature=DEFAULT_TEMPERATURE):
+                 base_url=DEFAULT_BASE_URL, temperature=DEFAULT_TEMPERATURE,
+                 user_id=''):
     """Process a chat request. Delegates to Agent Engine."""
     return _agent_process_chat(
         messages=messages, real_path=real_path, api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
+        user_id=user_id,
         max_iterations=MAX_TOOL_ITERATIONS,
     )
 
 
 def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
                             base_url=DEFAULT_BASE_URL, temperature=DEFAULT_TEMPERATURE,
-                            omics_type=''):
+                            omics_type='', user_id=''):
     """Streaming chat — delegates to agent.process_chat_streaming()."""
     from agent import process_chat_streaming as _stream
     skills_filter = OMICS_SKILL_FILTERS.get(omics_type, DEFAULT_SKILL_FILTER)
@@ -228,6 +230,7 @@ def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
     for event in _stream(
         messages=messages, real_path=real_path, api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
+        user_id=user_id,
         max_iterations=MAX_TOOL_ITERATIONS,
         skills_filter=skills_filter,
     ):
@@ -237,7 +240,8 @@ def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
 def process_literature_chat_streaming(messages, api_key, context='',
                                        model=DEFAULT_MODEL,
                                        base_url=DEFAULT_BASE_URL,
-                                       temperature=DEFAULT_TEMPERATURE):
+                                       temperature=DEFAULT_TEMPERATURE,
+                                       user_id=''):
     """Literature streaming — delegates to agent.process_chat_streaming() with tools_filter."""
     from agent import process_chat_streaming as _stream
     msgs = list(messages)
@@ -249,6 +253,7 @@ def process_literature_chat_streaming(messages, api_key, context='',
     for event in _stream(
         messages=msgs, real_path='', api_key=api_key,
         model=model, base_url=base_url, temperature=temperature,
+        user_id=user_id,
         max_iterations=MAX_TOOL_ITERATIONS,
         skills_filter=['light-*'],
     ):

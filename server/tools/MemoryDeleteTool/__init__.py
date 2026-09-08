@@ -1,14 +1,24 @@
 """MemoryDeleteTool — 删除记忆。"""
 from __future__ import annotations
+import re
 from pathlib import Path
+from config import MEMORY_DIR as _BASE
 from skills import register_skill, ParamDef
 
-_MD = Path(__file__).resolve().parent.parent.parent / 'memory'
+_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
-def memory_delete(name: str) -> dict:
-    fp = _MD / f'{name}.md'
+
+def _mem_dir(root: str) -> Path:
+    return Path(root) if root else _BASE
+
+
+def memory_delete(name: str, root: str = '') -> dict:
+    if not _NAME_RE.match(name):
+        return {'error': f'Invalid memory name: {name}'}
+    md = _mem_dir(root)
+    fp = md / f'{name}.md'
     if not fp.is_file(): return {'error': f'Memory not found: {name}'}
-    idx = _MD / 'MEMORY.md'
+    idx = md / 'MEMORY.md'
     if idx.is_file():
         c = idx.read_text(encoding='utf-8')
         idx.write_text('\n'.join([l for l in c.split('\n') if f'({name}.md)' not in l]) + '\n', encoding='utf-8')

@@ -7,6 +7,7 @@ LLM 根据 skill/tool description 自己路由（ReAct 风格）。
 """
 from __future__ import annotations
 import json
+import re
 import time
 import traceback
 
@@ -37,6 +38,32 @@ def _init_mcp_tools():
         ))
 
 
+# ── Per-user memory scoping ─────────────────────────────────
+# 记忆按用户隔离：每个浏览器 user_id → server/memory/<sanitized>/。
+# 工具在流式路径跑在 ThreadPoolExecutor worker 线程，无请求线程上下文 → 不能用
+# thread-local/contextvar，必须把 root 作为显式参数在调用点注入（镜像 real_path 惯例）。
+_MEMORY_TOOL_NAMES = frozenset({'memory_read', 'memory_write', 'memory_delete'})
+
+
+def resolve_memory_root(user_id: str):
+    """user_id → 隔离记忆目录；空/净化后为空 → None（回退全局 server/memory/）。"""
+    if not user_id:
+        return None
+    safe = re.sub(r'[^A-Za-z0-9_-]', '', str(user_id))[:64]
+    if not safe:
+        return None
+    from config import MEMORY_DIR
+    return MEMORY_DIR / safe
+
+
+def _scope_args(name: str, args: dict, mem_root) -> dict:
+    """给 memory_* 工具注入 per-user 记忆 root（不在 LLM schema 中，LLM 不会看到）。"""
+    if mem_root is not None and name in _MEMORY_TOOL_NAMES:
+        args = dict(args)
+        args['root'] = str(mem_root)
+    return args
+
+
 def process_chat(
     messages: list[dict],
     real_path: str,
@@ -44,6 +71,7 @@ def process_chat(
     model: str = 'deepseek-chat',
     base_url: str = 'https://api.deepseek.com',
     temperature: float = 0.7,
+    user_id: str = '',
     max_iterations: int = 100,
 ) -> dict:
     """Process a chat request with the full agent pipeline + memory."""
@@ -53,6 +81,9 @@ def process_chat(
         if msg.get('role') == 'user':
             user_msg = msg.get('content', '')
             break
+
+    # Per-user memory scope
+    mem_root = resolve_memory_root(user_id)
 
     # 1. Build system prompt — 注入日期 + 记忆指令 + skill 列表
     session_id = real_path if real_path else 'default'
@@ -129,7 +160,7 @@ def process_chat(
         # Execute each tool call
         for tc in tool_calls:
             name = tc.get('function', {}).get('name', '')
-            tool_result = _execute_tool(tc, real_path)
+            tool_result = _execute_tool(tc, real_path, mem_root)
             all_tool_results.append(tool_result)
             tc_id = tc.get('id', f'call_{len(all_tool_results)-1}')
             # Tool result format: wrap in user message (Anthropic-style, works better with DeepSeek)
@@ -182,6 +213,7 @@ def process_chat_streaming(
     model: str = 'deepseek-chat',
     base_url: str = 'https://api.deepseek.com',
     temperature: float = 0.7,
+    user_id: str = '',
     max_iterations: int = 100,
     skills_filter: list[str] | None = None,
 ) -> dict:
@@ -203,6 +235,9 @@ def process_chat_streaming(
             user_msg = msg.get('content', ''); break
 
     session_id = real_path if real_path else ('stream-' + (user_msg.replace(' ', '_')[:32] if user_msg else 'default'))
+
+    # Per-user memory scope
+    mem_root = resolve_memory_root(user_id)
 
     # Build supervisor prompt — 列出所有可用 skill，LLM 自己路由
     md_skills = scan_skills()
@@ -232,7 +267,7 @@ def process_chat_streaming(
     # 非阻塞注入：在首轮请求前搜索相关记忆，无需 LLM 主动调用 memory_read
     try:
         from tools.MemoryReadTool import memory_read as _prefetch_memory
-        mem = _prefetch_memory(query=user_msg)
+        mem = _prefetch_memory(query=user_msg, root=str(mem_root)) if mem_root is not None else _prefetch_memory(query=user_msg)
         if mem and mem.get('n_results', 0) > 0:
             preview = '\n'.join(
                 f"📝 {r['name']} ({r.get('type', '')}): {r.get('description', '')}"
@@ -304,6 +339,7 @@ def process_chat_streaming(
             def _run_one(i, t):
                 fn_name = t.get('function', {}).get('name', '')
                 args = json.loads(t.get('function', {}).get('arguments', '{}') or '{}')
+                args = _scope_args(fn_name, args, mem_root)  # per-user 记忆 root（闭包注入，worker 线程可见）
                 try:
                     # Check ALL_TOOLS first (supports Native + MCP)
                     tool = next((t for t in ALL_TOOLS if t.name == fn_name), None)
@@ -373,7 +409,7 @@ def process_chat_streaming(
     yield {'event': 'done', 'data': {'final': True, 'warning': 'Max iterations reached'}}
 
 
-def _execute_tool(tool_call: dict, real_path: str) -> dict:
+def _execute_tool(tool_call: dict, real_path: str, mem_root=None) -> dict:
     """Execute a tool call — supports NativeTool + MCPToolProxy."""
     func_info = tool_call.get('function', {})
     name = func_info.get('name', '')
@@ -381,6 +417,7 @@ def _execute_tool(tool_call: dict, real_path: str) -> dict:
         args = json.loads(func_info.get('arguments', '{}'))
     except json.JSONDecodeError:
         args = {}
+    args = _scope_args(name, args, mem_root)  # per-user 记忆 root
 
     # 1. Try ALL_TOOLS (unified registry) first
     tool = next((t for t in ALL_TOOLS if t.name == name), None)
