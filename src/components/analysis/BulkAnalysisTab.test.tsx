@@ -2,12 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkAnalysisTab from './BulkAnalysisTab'
-import { searchGenes, fetchBulkBoxplot } from '../../api/analysis'
+import { searchGenes, fetchBulkBoxplot, fetchBulkAxes } from '../../api/analysis'
 
 // Mock API layer — BulkAnalysisTab fetches on mount
 vi.mock('../../api/analysis', () => ({
   searchGenes: vi.fn(() => Promise.resolve([])),
-  fetchBulkDiseases: vi.fn(() => Promise.resolve(['RA', 'COPD'])),
+  fetchBulkAxes: vi.fn(() => Promise.resolve({ diseases: ['RA', 'COPD'], tissueColumn: null })),
   fetchBulkGroups: vi.fn(() => Promise.resolve(['G1', 'G2'])),
   fetchBulkBoxplot: vi.fn(() => Promise.resolve({})),
   fetchBulkVolcano: vi.fn(() => Promise.resolve({})),
@@ -15,7 +15,12 @@ vi.mock('../../api/analysis', () => ({
 }))
 
 describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)', () => {
-  afterEach(() => { try { sessionStorage.clear() } catch { /* ignore */ } })
+  afterEach(() => {
+    try { sessionStorage.clear() } catch { /* ignore */ }
+    // Tests that fake a Tissue column restore the no-tissue default afterwards.
+    vi.mocked(fetchBulkAxes).mockImplementation(() =>
+      Promise.resolve({ diseases: ['RA', 'COPD'], tissueColumn: null }))
+  })
 
   it('restores persisted selections from sessionStorage on mount', async () => {
     try { sessionStorage.setItem('gensci_bulk_disease', 'RA') } catch { /* ignore */ }
@@ -134,5 +139,62 @@ describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)
       expect(screen.getByRole('button', { name: 'G1' }).title).toBe('Hide') // shown again
     })
     expect(sessionStorage.getItem('gensci_bulk_hidegroups')).toBe('[]')
+  })
+
+  // ─── Panel X-axis segmented control (疾病 | 组织) ───
+  // fetchBulkBoxplot(realPath, gene, disease?, palette, targetGroup?, groups?, xFactorCol?)
+  const boxplotXFactorArg = (): string | undefined => {
+    const calls = vi.mocked(fetchBulkBoxplot).mock.calls
+    return calls[calls.length - 1]?.[6]
+  }
+
+  it('shows no tissue toggle when the dataset has no Tissue column', async () => {
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+    expect(screen.queryByRole('button', { name: '组织' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '疾病' })).toBeNull()
+  })
+
+  it('switching the toggle to 组织 refetches the boxplot with the Tissue x-axis', async () => {
+    vi.mocked(fetchBulkAxes).mockImplementation(() =>
+      Promise.resolve({ diseases: ['RA', 'COPD'], tissueColumn: 'Tissue' }))
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    expect(boxplotXFactorArg()).toBeUndefined() // 疾病 (default) → param omitted
+    await user.click(screen.getByRole('button', { name: '组织' }))
+    expect(boxplotXFactorArg()).toBe('Tissue') // x_factor = obs column name
+    expect(sessionStorage.getItem('gensci_bulk_xfactor')).toBe('Tissue')
+
+    await user.click(screen.getByRole('button', { name: '疾病' }))
+    expect(boxplotXFactorArg()).toBeUndefined() // back to Disease → omitted
+    expect(sessionStorage.getItem('gensci_bulk_xfactor')).toBe('Disease')
+  })
+
+  it('choosing 组织 hides the boxplot Disease selector and resets it to All', async () => {
+    vi.mocked(fetchBulkAxes).mockImplementation(() =>
+      Promise.resolve({ diseases: ['RA', 'COPD'], tissueColumn: 'Tissue' }))
+    const user = userEvent.setup()
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    // 4 selects: boxplot Disease/Palette/Target + the volcano card's Disease.
+    const combos = () => screen.getAllByRole('combobox')
+    expect(combos()).toHaveLength(4)
+    await user.selectOptions(combos()[0], 'COPD') // pick a specific disease
+    expect(combos()).toHaveLength(4) // 疾病 mode keeps the selector visible
+
+    await user.click(screen.getByRole('button', { name: '组织' }))
+    // Disease selector is meaningless in tissue mode → hidden (Palette/Target + volcano left).
+    expect(combos()).toHaveLength(3)
+    const calls = vi.mocked(fetchBulkBoxplot).mock.calls
+    const last = calls[calls.length - 1]
+    expect(last[2]).toBeUndefined() // disease reset to All → param omitted
+    expect(last[6]).toBe('Tissue') // x_factor = tissue column
+
+    await user.click(screen.getByRole('button', { name: '疾病' }))
+    expect(combos()).toHaveLength(4) // selector restored...
+    expect(combos()[0]).toHaveValue('All') // ...back to the all-disease default
   })
 })

@@ -192,9 +192,12 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
 
 def _generate_celltype_composition(real_path: str, gene: str,
                                     palette_name: str = 'default',
-                                    gene2: str = '') -> dict:
+                                    gene2: str = '',
+                                    gene2_label: str = '') -> dict:
     """Generate stacked bar chart: among gene-positive cells, cell type proportions.
-    If gene2 is provided, show co-expression breakdown: gene1+, gene1+gene2+, gene2+."""
+    If gene2 is provided, show co-expression breakdown: gene1+, gene1+gene2+, gene2+.
+    For an OR-merge gene2 (member set), `gene2_label` overrides the member set's
+    display tag used in the group labels (fallback: the raw gene2 string)."""
     try:
         adata = get_adata(str(real_path))
 
@@ -221,20 +224,41 @@ def _generate_celltype_composition(real_path: str, gene: str,
 
         has_g2 = bool(gene2.strip())
         g2_expr = None
+        g2_display = ''  # user-named tag for an OR-merge set (fallback: raw gene2)
         if has_g2:
-            g2_idx = find_gene_idx(gene2)
-            if g2_idx is not None:
-                g2_expr = adata[:, g2_idx].X
-                g2_expr = np.asarray(g2_expr.toarray() if hasattr(g2_expr, 'toarray') else g2_expr).flatten()
+            # gene2 may be a '|'-separated OR-merge set (MergeGene): resolve each
+            # member and take the union of member-positive cells as g2_expr. A plain
+            # single gene keeps its raw continuous expression (unchanged behavior).
+            parts = [p for p in (s.strip() for s in gene2.split('|')) if p]
+            if len(parts) > 1:
+                for part in parts:
+                    idx = find_gene_idx(part)
+                    if idx is None:
+                        continue
+                    col = adata[:, idx].X
+                    pos = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten() > 0
+                    g2_expr = pos if g2_expr is None else (g2_expr | pos)
+                if g2_expr is not None:
+                    g2_expr = g2_expr.astype(float)
+                    g2_display = (gene2_label or '').strip() or gene2
+            else:
+                # Exactly one surviving part (including a degenerate 'A|' spec) or a
+                # plain single gene: resolve it by name, matching stats._get_aggregate_table.
+                g2_name = parts[0] if parts else gene2
+                g2_idx = find_gene_idx(g2_name)
+                if g2_idx is not None:
+                    col = adata[:, g2_idx].X
+                    g2_expr = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten()
         unique_ct = sorted(set(ct_vals))
         cat_colors, _ = get_palette(palette_name)
         palette = cat_colors[:len(unique_ct)] if len(cat_colors) >= len(unique_ct) else \
                   cat_colors * (len(unique_ct) // len(cat_colors) + 1)
 
         if has_g2 and g2_expr is not None:
+            g2_tag = g2_display or gene2  # custom label for merge, raw gene2 otherwise
             groups = [(f'{gene}+', g1_expr > 0),
-                      (f'{gene}+_{gene2}+', (g1_expr > 0) & (g2_expr > 0)),
-                      (f'{gene2}+', g2_expr > 0)]
+                      (f'{gene}+_{g2_tag}+', (g1_expr > 0) & (g2_expr > 0)),
+                      (f'{g2_tag}+', g2_expr > 0)]
             n_groups = 3
         else:
             groups = [(f'{gene}+', g1_expr > 0)]

@@ -349,6 +349,8 @@ def handle_aggregate_table(handler, q):
     genes_str = q.get('genes', '')
     group_col = q.get('group_col', '')
     celltype_col = q.get('celltype_col', 'CellType')
+    gene2 = q.get('gene2', '') or None
+    gene2_label = q.get('gene2_label', '') or None
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
@@ -358,13 +360,13 @@ def handle_aggregate_table(handler, q):
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
     eff_group = group_col if group_col and group_col != 'None' else ''
-    cache_key = f'aggtbl:{real_path_str}:{mtime}:{genes_str}:{eff_group}:{celltype_col}'
+    cache_key = f'aggtbl:{real_path_str}:{mtime}:{genes_str}:{eff_group}:{celltype_col}:{gene2 or ""}:{gene2_label or ""}'
     cached = _table_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
     # When condition is None/empty, pass empty group_col to backend
-    result = _get_aggregate_table(str(real_path), genes_str, eff_group, celltype_col)
+    result = _get_aggregate_table(str(real_path), genes_str, eff_group, celltype_col, gene2 or '', gene2_label or '')
     _table_cache.set(cache_key, result)
     handler._json(result)
 
@@ -435,14 +437,15 @@ def handle_composition_plot(handler, q):
         return
     gene = q.get('gene', '')
     gene2 = q.get('gene2', '')
+    gene2_label = q.get('gene2_label', '')
     palette = get_palette_name(q)
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'comp:{real_path_str}:{mtime}:{gene}:{gene2}:{palette}'
+    cache_key = f'comp:{real_path_str}:{mtime}:{gene}:{gene2}:{gene2_label}:{palette}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = _generate_celltype_composition(str(real_path), gene, palette, gene2)
+    result = _generate_celltype_composition(str(real_path), gene, palette, gene2, gene2_label)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 
@@ -470,6 +473,8 @@ def handle_bulk_boxplot(handler, q):
     raw_groups = q.get('groups', '')
     if raw_groups.strip():
         groups_list = [g.strip() for g in raw_groups.split(',') if g.strip()] or None
+    # Panel x-axis factor: 'Disease' (default) or another obs column like 'Tissue'.
+    x_factor = q.get('x_factor', '') or None
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
@@ -478,12 +483,13 @@ def handle_bulk_boxplot(handler, q):
         handler._send_error('gene parameter required')
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}:{target_group}:{groups_list}'
+    cache_key = f'bulkbox:{real_path_str}:{mtime}:{gene}:{disease}:{palette}:{target_group}:{groups_list}:{x_factor}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = bulk_boxplot(str(real_path), gene, disease, palette, target_group, groups_list)
+    result = bulk_boxplot(str(real_path), gene, disease, palette, target_group,
+                          groups_list, x_factor)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 

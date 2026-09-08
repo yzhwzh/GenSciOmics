@@ -25,11 +25,15 @@ export default function AggregateDetailTable({
   realPath,
   gene,
   conditionCol = 'Group',
+  gene2 = '',
+  gene2Label = '',
 }: {
   realPath: string
   gene: string
   conditionCol?: string
   palette?: string
+  gene2?: string
+  gene2Label?: string
 }) {
   const [data, setData] = useState<AggregateTableData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -44,13 +48,15 @@ export default function AggregateDetailTable({
     setLoading(true)
     const groupCol = conditionCol === 'None' ? '' : 'Group'
     const params = new URLSearchParams({ real_path: realPath, genes: gene, group_col: groupCol })
+    if (gene2?.trim()) params.set('gene2', gene2.trim())
+    if (gene2Label?.trim()) params.set('gene2_label', gene2Label.trim())
     cachedFetch<AggregateTableData>(`/api/aggregate-table?${params}`)
       .then(d => {
         if (d.rows) setData(d)
         else console.error('Aggregate table error:', (d as any).error)
       }).catch(e => console.error(e))
       .finally(() => setLoading(false))
-  }, [realPath, gene, conditionCol])
+  }, [realPath, gene, conditionCol, gene2, gene2Label])
 
   if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
   if (!data?.rows.length) return <div className="text-xs text-text-muted py-4 text-center">No data</div>

@@ -1,10 +1,64 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchGenes, fetchCompositionPlot } from '../../api/analysis'
 import { PALETTE_OPTIONS } from '../../api/types'
 import PlotImage from './PlotImage'
 import AggregateDetailTable from './AggregateDetailTable'
 import FisherTable from './FisherTable'
 import ZoomableImage from './ZoomableImage'
+import AsyncCreatableSelect from 'react-select/async-creatable'
+import type { StylesConfig } from 'react-select'
+
+interface Option {
+  value: string
+  label: string
+}
+
+// Tailwind-styled react-select theme (same pattern as UmapTabContent / RawDataDownload)
+const selectStyles: StylesConfig<Option, true> = {
+  control: (base, { isFocused }) => ({
+    ...base,
+    borderColor: isFocused ? '#93c5fd' : '#e5e7eb',
+    boxShadow: isFocused ? '0 0 0 1px #93c5fd' : 'none',
+    '&:hover': { borderColor: '#93c5fd' },
+    fontSize: '11px',
+    minHeight: '28px',
+    borderRadius: '6px',
+    cursor: 'text',
+  }),
+  multiValue: (base) => ({
+    ...base,
+    backgroundColor: '#eff6ff',
+    borderRadius: '4px',
+    fontSize: '10px',
+  }),
+  multiValueLabel: (base) => ({
+    ...base,
+    color: '#1d4ed8',
+    fontWeight: 500,
+    padding: '1px 3px',
+  }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#93c5fd',
+    '&:hover': { backgroundColor: '#dbeafe', color: '#2563eb' },
+    borderRadius: '0 4px 4px 0',
+  }),
+  menu: (base) => ({
+    ...base,
+    fontSize: '11px',
+    zIndex: 60,
+  }),
+  option: (base, { isFocused, isSelected }) => ({
+    ...base,
+    backgroundColor: isSelected ? '#2563eb' : isFocused ? '#eff6ff' : '#fff',
+    color: isSelected ? '#fff' : '#374151',
+    padding: '4px 8px',
+    cursor: 'pointer',
+  }),
+  input: (base) => ({ ...base, fontSize: '11px' }),
+  placeholder: (base) => ({ ...base, color: '#9ca3af', fontSize: '11px' }),
+  noOptionsMessage: (base) => ({ ...base, fontSize: '11px', color: '#9ca3af' }),
+}
 
 export default function ExpressionChartContainer({ realPath }: { realPath: string }) {
   const geneSearchRef = useRef<HTMLDivElement>(null)
@@ -24,7 +78,45 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   const [gene2Input, setGene2Input] = useState('')
   const [gene2Suggestions, setGene2Suggestions] = useState<string[]>([])
   const [showGene2Suggestions, setShowGene2Suggestions] = useState(false)
+  const [gene2Mode, setGene2Mode] = useState<'single' | 'merge'>('single')
+  const [mergeGenes, setMergeGenes] = useState<Option[]>([])  // editable chips (staging — does NOT drive backend)
+  const [mergeRun, setMergeRun] = useState<Option[]>([])      // applied members — the only thing that drives backend (Run)
+  const [mergeLabel, setMergeLabel] = useState('')            // staging alias (editable)
+  const [mergeLabelTouched, setMergeLabelTouched] = useState(false)
+  const [mergeRunLabel, setMergeRunLabel] = useState('')      // applied alias — drives backend (Run)
   const gene2Ref = useRef<HTMLDivElement>(null)
+
+  // Downstream gene2: single Gene2 name, or the '|'-joined OR-merge set (MergeGene).
+  // Merge only commits on Run (mergeRun + mergeRunLabel); editing staging must NOT hit backend.
+  const mergeKey = (opts: Option[]) => opts.map(g => g.value).join('|')
+  const defaultMergeLabel = mergeGenes.length > 0 ? `M${mergeGenes.length}` : ''   // recommended alias
+  const stagedLabel = mergeLabelTouched ? mergeLabel.trim() : defaultMergeLabel
+  const mergeDirty = mergeKey(mergeRun) !== mergeKey(mergeGenes) || stagedLabel !== mergeRunLabel
+  const g2 = gene2Mode === 'merge' ? mergeKey(mergeRun) : selectedGene2
+  const g2Label = gene2Mode === 'merge' ? mergeRunLabel : ''   // user-named M, empty until a merge Run
+
+  // Merge mode commits staged chips + alias atomically on Run.
+  const handleMergeRun = () => {
+    const label = stagedLabel || defaultMergeLabel
+    setMergeRun(mergeGenes.map(g => ({ ...g })))
+    setMergeRunLabel(label)
+    if (!stagedLabel) { setMergeLabel(''); setMergeLabelTouched(false) }  // blank alias → reshow recommended default
+  }
+  const handleMergeClear = () => {
+    setMergeGenes([]); setMergeRun([])
+    setMergeLabel(''); setMergeLabelTouched(false); setMergeRunLabel('')
+  }
+
+  // Async gene search for the MergeGene multi-select (mirrors UmapTabContent dotplot)
+  const loadGeneOptions = useCallback(async (input: string): Promise<Option[]> => {
+    if (!realPath || input.length < 1) return []
+    try {
+      const results = await searchGenes(realPath, input)
+      return results.slice(0, 30).map(g => ({ value: g, label: g }))
+    } catch {
+      return []
+    }
+  }, [realPath])
 
   useEffect(() => { try { sessionStorage.setItem('gensci_agg_gene', selectedGene) } catch { /* ignore */ } }, [selectedGene])
 
@@ -33,11 +125,11 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
     if (!realPath || metric !== 'expression_pct' || !selectedGene) { setCompositionImg(''); return }
     let cancelled = false
     setCompLoading(true)
-    fetchCompositionPlot(realPath, selectedGene, palette, selectedGene2)
+    fetchCompositionPlot(realPath, selectedGene, palette, g2, g2Label)
       .then(d => { if (!cancelled) { setCompositionImg(d.image ?? ''); setCompLoading(false) } })
       .catch(() => { if (!cancelled) { setCompositionImg(''); setCompLoading(false) } })
     return () => { cancelled = true }
-  }, [realPath, metric, selectedGene, selectedGene2, palette])
+  }, [realPath, metric, selectedGene, g2, g2Label, palette])
 
   // Gene2 search
   useEffect(() => {
@@ -99,27 +191,84 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
 
         {metric === 'expression_pct' && (
         <div>
-          <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Gene 2 <span className="font-normal text-text-muted">(共表达)</span></label>
-          <div className="relative" ref={gene2Ref}>
-            <input type="text" value={gene2Input}
-              onChange={(e) => { setGene2Input(e.target.value); setShowGene2Suggestions(false) }}
-              onFocus={() => { if (gene2Suggestions.length) setShowGene2Suggestions(true) }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input(''); setShowGene2Suggestions(false) } }}
-              onBlur={() => { if (gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input('') } }}
-              placeholder={selectedGene2 || 'Optional...'}
-              className="w-full text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
-            {showGene2Suggestions && gene2Suggestions.length > 0 && (
-              <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
-                {gene2Suggestions.map(g => (
-                  <button key={g} onMouseDown={(e) => { e.preventDefault(); setSelectedGene2(g); setGene2Input(''); setShowGene2Suggestions(false) }}
-                    className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
-                ))}
-              </div>
-            )}
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <label className="text-[10px] font-semibold text-text-muted">共表达</label>
+            <div className="flex bg-surface-muted rounded-sm p-px text-[9px] leading-none shrink-0">
+              <button onClick={() => setGene2Mode('single')}
+                className={`px-1.5 py-[3px] rounded-sm transition-colors ${gene2Mode === 'single' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>GENE2</button>
+              <button onClick={() => setGene2Mode('merge')}
+                className={`px-1.5 py-[3px] rounded-sm transition-colors ${gene2Mode === 'merge' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>MERGE</button>
+            </div>
           </div>
-          {selectedGene2 && (
-            <button onClick={() => setSelectedGene2('')}
-              className="text-[10px] text-text-muted hover:text-error mt-1">✕ clear</button>
+          {gene2Mode === 'single' ? (
+            <>
+              <div className="relative" ref={gene2Ref}>
+                <input type="text" value={gene2Input}
+                  onChange={(e) => { setGene2Input(e.target.value); setShowGene2Suggestions(false) }}
+                  onFocus={() => { if (gene2Suggestions.length) setShowGene2Suggestions(true) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input(''); setShowGene2Suggestions(false) } }}
+                  onBlur={() => { if (gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input('') } }}
+                  placeholder={selectedGene2 || 'Optional...'}
+                  className="w-full text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
+                {showGene2Suggestions && gene2Suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
+                    {gene2Suggestions.map(g => (
+                      <button key={g} onMouseDown={(e) => { e.preventDefault(); setSelectedGene2(g); setGene2Input(''); setShowGene2Suggestions(false) }}
+                        className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-surface-muted text-text-secondary border-b border-border-light last:border-0">{g}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedGene2 && (
+                <button onClick={() => setSelectedGene2('')}
+                  className="text-[10px] text-text-muted hover:text-error mt-1">✕ clear</button>
+              )}
+            </>
+          ) : (
+            <>
+              <AsyncCreatableSelect
+                isMulti
+                cacheOptions
+                loadOptions={loadGeneOptions}
+                onChange={(v) => {
+                  const next = (v ?? []) as Option[]
+                  setMergeGenes(next)
+                  if (!next.length) { setMergeLabel(''); setMergeLabelTouched(false) }  // no chips → drop stale alias
+                }}
+                value={mergeGenes}
+                placeholder="Search genes..."
+                noOptionsMessage={({ inputValue }) => inputValue ? 'No genes found' : 'Type to search'}
+                styles={selectStyles}
+              />
+              <input
+                type="text"
+                value={stagedLabel}
+                onChange={(e) => { setMergeLabel(e.target.value); setMergeLabelTouched(true) }}
+                disabled={!mergeGenes.length}
+                maxLength={40}
+                placeholder={mergeGenes.length ? '合并基因别名 (M#)' : '合并基因别名'}
+                title={mergeGenes.length ? '合并基因显示名，Run 后生效' : '先选择要合并的基因'}
+                className="w-full mt-1 text-[10px] border border-border-light rounded-sm px-1.5 py-[3px] bg-surface text-text-primary outline-none focus:border-brand disabled:opacity-50"
+              />
+              <div className="flex items-center gap-1.5 mt-1">
+                {mergeGenes.length > 0 && (
+                  <button onClick={handleMergeClear}
+                    className="text-[10px] text-text-muted hover:text-error">✕ clear</button>
+                )}
+                <span className="ml-auto flex items-center">
+                  {mergeDirty && mergeGenes.length > 0 && (
+                    <span className="text-[9px] text-text-muted mr-1.5">(改动未应用)</span>
+                  )}
+                  <button
+                    onClick={handleMergeRun}
+                    disabled={!mergeDirty}
+                    className={`px-2 py-[3px] rounded-sm text-[9px] leading-none font-semibold transition-colors ${
+                      mergeDirty
+                        ? 'bg-brand text-white shadow-card hover:opacity-90'
+                        : 'bg-surface-muted text-text-muted cursor-default'}`}>Run</button>
+                </span>
+              </div>
+            </>
           )}
         </div>
         )}
@@ -179,9 +328,9 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
           </div>
           <div className="flex-1 bg-surface rounded-md shadow-card overflow-auto min-h-0">
             {tableTab === 'aggregate' ? (
-              <AggregateDetailTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} palette={palette} />
+              <AggregateDetailTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} palette={palette} gene2={g2} gene2Label={g2Label} />
             ) : (
-              <FisherTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} />
+              <FisherTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} gene2={g2} gene2Label={g2Label} />
             )}
           </div>
         </div>

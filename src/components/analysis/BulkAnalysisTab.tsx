@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Loader2, Download } from 'lucide-react'
 import { useTableFilter } from '../../hooks/useTableFilter'
 import FilterDropdown from '../FilterDropdown'
-import { searchGenes, fetchBulkBoxplot, fetchBulkVolcano, fetchBulkDe, fetchBulkDiseases, fetchBulkGroups } from '../../api/analysis'
+import { searchGenes, fetchBulkBoxplot, fetchBulkVolcano, fetchBulkDe, fetchBulkAxes, fetchBulkGroups } from '../../api/analysis'
 import { PALETTE_OPTIONS, type BulkDeRow } from '../../api/types'
 import ZoomableImage from './ZoomableImage'
 
@@ -81,6 +81,12 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   const [targetGroup, setTargetGroup] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_target') ?? 'All' } catch { return 'All' }
   })
+  // Panel x-axis factor: 'Disease' (default) or 'Tissue' (organ comparison). The
+  // tissue option is only offered when the dataset has a Tissue obs column.
+  const [tissueColumn, setTissueColumn] = useState<string | null>(null)
+  const [xFactor, setXFactor] = useState<'Disease' | 'Tissue'>(() => {
+    try { return sessionStorage.getItem('gensci_bulk_xfactor') === 'Tissue' ? 'Tissue' : 'Disease' } catch { return 'Disease' }
+  })
   // Groups hidden from the boxplot x-axis (subset display). [] = all shown.
   // Persisted per dataset; reset to [] whenever the dataset changes.
   const [hiddenGroups, setHiddenGroups] = useState<string[]>(() => {
@@ -93,6 +99,10 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
     try { return sessionStorage.getItem('gensci_bulk_control') ?? '' } catch { return '' }
   })
   const [groupInfo, setGroupInfo] = useState<{ case_group?: string; control_group?: string }>({})
+  // True only when the user picked the tissue axis AND this dataset actually has a
+  // Tissue column. Derived (not raw xFactor) so a persisted 'Tissue' choice on a
+  // dataset without Tissue does not hide the Disease selector or send x_factor.
+  const tissueMode = xFactor === 'Tissue' && tissueColumn != null
 
   // Gene search autocomplete
   const geneSearchRef = useRef<HTMLDivElement>(null)
@@ -134,14 +144,20 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       sessionStorage.setItem('gensci_bulk_control', controlGroup)
       sessionStorage.setItem('gensci_bulk_palette', palette)
       sessionStorage.setItem('gensci_bulk_target', targetGroup)
+      sessionStorage.setItem('gensci_bulk_xfactor', xFactor)
       sessionStorage.setItem('gensci_bulk_hidegroups', JSON.stringify(hiddenGroups))
     } catch { /* ignore */ }
-  }, [boxplotDisease, deDisease, caseGroup, controlGroup, palette, targetGroup, hiddenGroups])
+  }, [boxplotDisease, deDisease, caseGroup, controlGroup, palette, targetGroup, xFactor, hiddenGroups])
 
   useEffect(() => {
     if (!realPath) return
     setHiddenGroups([]) // new dataset → show every group again
-    fetchBulkDiseases(realPath).then(setDiseases).catch(() => setDiseases([]))
+    fetchBulkAxes(realPath)
+      .then(({ diseases: ds, tissueColumn: tc }) => {
+        setDiseases(ds)
+        setTissueColumn(tc)
+      })
+      .catch(() => { setDiseases([]); setTissueColumn(null) })
     fetchBulkGroups(realPath).then(setGroupOptions).catch(() => setGroupOptions([]))
   }, [realPath])
 
@@ -172,11 +188,15 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
     const subset = groupOptions.length > 0 && hiddenGroups.length > 0
       ? groupOptions.filter((g) => !hiddenGroups.includes(g))
       : undefined
+    // Panel x-axis: send the obs column only when comparing by tissue; otherwise
+    // the param is omitted so the backend renders the Disease axis (default).
+    const axisCol = tissueMode ? tissueColumn : undefined
     fetchBulkBoxplot(
       realPath, gene,
       boxplotDisease === 'All' ? undefined : boxplotDisease,
       palette, targetGroup,
       subset && subset.length < groupOptions.length ? subset : undefined,
+      axisCol,
     )
       .then((d) => {
         if (d.error) setBoxplotErr(d.error)
@@ -184,7 +204,7 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       })
       .catch((e) => setBoxplotErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setBoxplotLoading(false))
-  }, [realPath, gene, boxplotDisease, palette, targetGroup, hiddenGroups, groupOptions])
+  }, [realPath, gene, boxplotDisease, palette, targetGroup, xFactor, tissueColumn, hiddenGroups, groupOptions])
 
   // Volcano
   useEffect(() => {
@@ -282,14 +302,48 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
               )}
             </div>
 
-            <div>
-              <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Disease</label>
-              <select value={boxplotDisease} onChange={(e) => setBoxplotDisease(e.target.value)}
-                className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand min-w-[140px]">
-                <option value="All">All</option>
-                {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
+            {/* Disease selector is meaningless in tissue mode (a specific disease
+                forces the per-group comparison and ignores the tissue axis), so it
+                is hidden while the tissue x-axis is active. */}
+            {!tissueMode && (
+              <div>
+                <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Disease</label>
+                <select value={boxplotDisease} onChange={(e) => setBoxplotDisease(e.target.value)}
+                  className="text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-brand min-w-[140px]">
+                  <option value="All">All</option>
+                  {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Panel x-axis factor: compare by Disease or, when the dataset has a
+                Tissue obs column, by organ/tissue. Choosing 组织 hides the Disease
+                selector (a specific disease would switch to the per-group pairwise
+                comparison and ignore the tissue axis), so clicking 组织 resets the
+                disease back to All. */}
+            {tissueColumn && diseases.length >= 2 && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">X axis</label>
+                <div className="flex items-center gap-1">
+                  {(['Disease', 'Tissue'] as const).map((opt) => {
+                    const on = xFactor === opt
+                    return (
+                      <button key={opt}
+                        onClick={() => {
+                          if (opt === 'Tissue') setBoxplotDisease('All') // tissue view is always all-disease
+                          setXFactor(opt)
+                        }}
+                        title={on ? undefined : opt === 'Tissue' ? '按组织/器官比较' : '按疾病比较'}
+                        className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
+                          on ? 'bg-brand text-white border-brand' : 'bg-surface text-text-secondary border-border-light opacity-80 hover:opacity-100'
+                        }`}>
+                        {opt === 'Tissue' ? '组织' : '疾病'}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Palette</label>

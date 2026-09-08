@@ -294,9 +294,10 @@ export async function sendLiteratureMessageStreaming(
   }
 }
 
-export async function fetchCompositionPlot(realPath: string, gene: string, palette = 'default', gene2 = ''): Promise<PlotResult> {
+export async function fetchCompositionPlot(realPath: string, gene: string, palette = 'default', gene2 = '', gene2Label = ''): Promise<PlotResult> {
   const g2 = gene2 ? `&gene2=${encodeURIComponent(gene2)}` : ''
-  return apiFetch<PlotResult>(`/api/composition-plot?real_path=${encodeURIComponent(realPath)}&gene=${encodeURIComponent(gene)}&palette=${palette}${g2}`)
+  const lbl = gene2Label?.trim() ? `&gene2_label=${encodeURIComponent(gene2Label.trim())}` : ''
+  return apiFetch<PlotResult>(`/api/composition-plot?real_path=${encodeURIComponent(realPath)}&gene=${encodeURIComponent(gene)}&palette=${palette}${g2}${lbl}`)
 }
 
 export async function fetchUmapRatioPlots(
@@ -355,13 +356,32 @@ export async function fetchBulkBoxplot(
   disease?: string,
   palette = 'default',
   targetGroup?: string,
-  groups?: string[]
+  groups?: string[],
+  xFactorCol?: string
 ): Promise<PlotResult> {
   const params = new URLSearchParams({ real_path: realPath, gene, palette })
   if (disease) params.set('disease', disease)
   if (targetGroup && targetGroup !== 'All') params.set('target_group', targetGroup)
   if (groups && groups.length > 0) params.set('groups', groups.join(','))
+  // xFactorCol: panel x-axis obs column ('Disease' = default → not sent).
+  if (xFactorCol) params.set('x_factor', xFactorCol)
   return cachedFetch<PlotResult>(`/api/bulk-boxplot?${params}`)
+}
+
+export interface BulkAxes {
+  diseases: string[]
+  tissueColumn: string | null
+}
+
+/** Diseases + optional organ/tissue panel column for a bulk/protein dataset. */
+export async function fetchBulkAxes(realPath: string): Promise<BulkAxes> {
+  const data = await apiFetch<BulkDiseasesResult>(
+    `/api/bulk-diseases?real_path=${encodeURIComponent(realPath)}`
+  )
+  return {
+    diseases: Array.isArray(data.diseases) ? data.diseases : [],
+    tissueColumn: data.tissue_column ?? null
+  }
 }
 
 export async function fetchBulkDe(
@@ -376,13 +396,6 @@ export async function fetchBulkDe(
   if (caseGroup) params.set('case_group', caseGroup)
   if (controlGroup) params.set('control_group', controlGroup)
   return apiFetch<BulkDeResult>(`/api/bulk-de?${params}`)
-}
-
-export async function fetchBulkDiseases(realPath: string): Promise<string[]> {
-  const data = await apiFetch<BulkDiseasesResult>(
-    `/api/bulk-diseases?real_path=${encodeURIComponent(realPath)}`
-  )
-  return Array.isArray(data.diseases) ? data.diseases : []
 }
 
 export async function fetchBulkGroups(realPath: string): Promise<string[]> {

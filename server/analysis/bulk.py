@@ -36,6 +36,10 @@ _de_cache: dict[tuple[str, float, str], tuple[list, int, int]] = {}
 _de_cache_lock = threading.Lock()
 _DE_CACHE_MAX = 8
 
+# Marker size for the boxplot scatter points (seaborn stripplot `size`), shared
+# by both the group-comparison and the disease/tissue panel render.
+_STRIP_SIZE = 2.0
+
 
 def _resolve_gene(var_names, gene: str) -> tuple[int, str]:
     """Return (index, actual_name) for a gene, exact then partial match."""
@@ -126,17 +130,31 @@ def _json_safe(v):
     return f if np.isfinite(f) else None
 
 
+def _tissue_column(obs_columns) -> str | None:
+    """Return the obs column literally named 'Tissue' (the canonical organ axis).
+
+    Used to offer 'Tissue' as an alternative panel x-axis (see bulk_boxplot).
+    Matching is exact and case-insensitive; no fuzzy keyword guessing.
+    """
+    for c in obs_columns:
+        if str(c).strip().lower() == 'tissue':
+            return str(c)
+    return None
+
+
 def bulk_diseases(real_path: str) -> dict:
-    """Return the distinct Disease values for a bulk dataset."""
+    """Return the distinct Disease values for a bulk dataset, plus whether it has
+    an organ/tissue axis ('tissue_column' — None when absent)."""
     try:
         with locked_backed_adata(real_path) as adata:
             if 'Disease' not in adata.obs.columns:
                 return {'diseases': [], 'error': 'Disease column not found in obs'}
             diseases = sorted(set(str(d) for d in adata.obs['Disease'].dropna()))
-        return {'diseases': diseases}
+            tissue = _tissue_column(adata.obs.columns)
+        return {'diseases': diseases, 'tissue_column': tissue}
     except Exception as e:
         print(f'[GenSci] bulk_diseases error: {e}', file=sys.stderr)
-        return {'diseases': [], 'error': str(e)}
+        return {'diseases': [], 'tissue_column': None, 'error': str(e)}
 
 
 def bulk_groups(real_path: str) -> dict:
@@ -229,7 +247,7 @@ def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
                 showfliers=False, fill=False, linewidth=1.3, legend=False)
     sns.stripplot(data=df, x='Group', y='Expression', hue='Group',
                   order=group_order, hue_order=group_order, palette=palette, ax=ax,
-                  size=4, alpha=0.9, jitter=0.2, dodge=False, edgecolor='k',
+                  size=_STRIP_SIZE, alpha=0.9, jitter=0.2, dodge=False, edgecolor='k',
                   linewidth=0.5, legend=False)
 
     ymin = float(np.nanmin(expr))
@@ -280,16 +298,20 @@ def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
 def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
                  palette_name: str = 'default',
                  target_group: str | None = None,
-                 groups: list[str] | None = None) -> dict:
+                 groups: list[str] | None = None,
+                 x_factor: str | None = None) -> dict:
     """Boxplot of a single gene's expression.
 
-    x-axis = Disease (cancer type), hue = Group (Tumor/Normal).
-    disease=None → one panel per disease (all cancers on the x-axis);
-    otherwise only that disease's samples are shown.
+    x-axis = the panel factor (default Disease / cancer type), hue = Group
+    (Tumor/Normal). x_factor selects another obs column as the panel factor
+    (e.g. the 'Tissue' organ axis); it falls back to Disease when the column is
+    absent. disease=None → one panel per factor value; otherwise only that
+    disease's samples are shown (group mode).
     target_group (group mode only) restricts significance brackets/stars to
     pairs involving that group.
-    groups (group mode only) restricts which Group samples are plotted; the
-    shown subset is recomputed (x-axis + brackets).
+    groups restricts which Group samples are plotted — group mode recomputes
+    the shown subset (x-axis + brackets); panel mode hides the hue boxes +
+    legend entries for unselected groups.
     Returns {'image': base64, 'width', 'height'} or {'error': str}.
     """
     try:
@@ -308,8 +330,18 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
             group_vals = adata.obs['Group'].astype(str).values.copy()
             disease_vals = adata.obs['Disease'].astype(str).values.copy()
 
+            # Panel x-axis factor: default Disease; an explicit x_factor selects
+            # another obs column (e.g. the 'Tissue' organ axis) when present.
+            panel_col = 'Disease'
+            if x_factor and str(x_factor).strip().lower() != 'disease':
+                if str(x_factor) in adata.obs.columns:
+                    panel_col = str(x_factor)
+            factor_vals = (disease_vals.copy() if panel_col == 'Disease'
+                           else adata.obs[panel_col].astype(str).values.copy())
+
             # x-axis mode: a specific disease (or a single-disease dataset) shows
-            # pairwise Group comparison; otherwise one panel per disease, hue=Group.
+            # pairwise Group comparison; otherwise one panel per factor value,
+            # hue=Group. The panel factor is always Disease for this decision.
             all_diseases = sorted(set(str(d) for d in adata.obs['Disease'].dropna()))
             force_group = len(all_diseases) <= 1
             group_mode = (disease and disease != 'All') or force_group
@@ -321,32 +353,47 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
         expr = expr[mask]
         group_vals = group_vals[mask]
         disease_vals = disease_vals[mask]
+        factor_vals = factor_vals[mask]
 
         if group_mode:
             return _render_group_boxplot(real_path, expr, group_vals, actual_gene,
                                          disease, palette_name, target_group, groups)
 
-        disp_disease = [str(d)[5:] if str(d).startswith('TCGA-') else str(d) for d in disease_vals]
-        df = pd.DataFrame({'Disease': disp_disease, 'Group': group_vals, 'Expression': expr})
-        disease_order = sorted(df['Disease'].unique())
+        # Show-groups subset (panel mode): plot only the samples whose Group the
+        # user selected — hue boxes + legend entries follow the shown subset.
+        if groups:
+            keep = np.isin(group_vals, groups)
+            if keep.any():
+                expr = expr[keep]
+                group_vals = group_vals[keep]
+                factor_vals = factor_vals[keep]
+
+        if panel_col == 'Disease':
+            # Keep the existing Disease display: strip the TCGA- prefix.
+            axis_vals = np.array([str(v)[5:] if str(v).startswith('TCGA-') else str(v)
+                                  for v in factor_vals])
+        else:
+            axis_vals = factor_vals
+        df = pd.DataFrame({'Axis': axis_vals, 'Group': group_vals, 'Expression': expr})
+        axis_order = sorted(df['Axis'].unique())
         group_order = sorted(df['Group'].unique(), key=_group_sort_key)
         palette = build_cond_palette(group_order, palette_name)
-        n_diseases = len(disease_order)
+        n_axes = len(axis_order)
 
-        fig_w = max(6, min(22, n_diseases * 0.45))
+        fig_w = max(6, min(22, n_axes * 0.45))
         fig, ax = plt.subplots(figsize=(fig_w, 5), dpi=100)
         sns.boxplot(
-            data=df, x='Disease', y='Expression', hue='Group',
-            order=disease_order, hue_order=group_order,
+            data=df, x='Axis', y='Expression', hue='Group',
+            order=axis_order, hue_order=group_order,
             palette=palette, ax=ax, showfliers=False, fill=False,
             linewidth=1.3,
         )
         # Scatter points keep a small jitter so overlapping dots spread
         # horizontally; dark edge keeps each dot distinct over box borders.
         sns.stripplot(
-            data=df, x='Disease', y='Expression', hue='Group',
-            order=disease_order, hue_order=group_order,
-            palette=palette, ax=ax, size=4, alpha=0.9, jitter=0.2,
+            data=df, x='Axis', y='Expression', hue='Group',
+            order=axis_order, hue_order=group_order,
+            palette=palette, ax=ax, size=_STRIP_SIZE, alpha=0.9, jitter=0.2,
             dodge=True, edgecolor='k', linewidth=0.5, legend=False,
         )
         ax.set_title(actual_gene, fontsize=12)
@@ -354,7 +401,7 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
         dtype = _extract_data_type(Path(real_path).stem)
         ax.set_ylabel(f'Expression ({dtype})' if dtype else 'Expression')
         ax.set_xlabel(None)
-        if n_diseases > 8:
+        if n_axes > 8:
             ax.tick_params(axis='x', labelrotation=90)
         for s in ('top', 'right'):
             ax.spines[s].set_visible(False)

@@ -253,15 +253,37 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
 
 def _get_aggregate_table(real_path: str, genes_str: str,
                           group_col: str = 'Group',
-                          celltype_col: str = 'CellType') -> dict:
+                          celltype_col: str = 'CellType',
+                          gene2: str = '',
+                          gene2_label: str = '') -> dict:
     """Per-gene, per-celltype, per-group stats + Fisher exact test.
+
+    When `gene2` is given (and resolvable, differing from the primary gene),
+    extra rows are appended for gene2 itself plus two boolean combos:
+    '{g1} | {g2}' (OR: either gene expressed) and '{g1} & {g2}' (AND: both).
+    Boolean combo rows carry GeneMeanExpression=None (positive-only features).
+
+    `gene2` may also be a '|'-separated OR-merge set (MergeGene): each member is
+    resolved and the union of member-positive cells becomes a single synthetic
+    boolean gene 'M' labelled 'A|B|…'. Rows are appended for M plus '{g1} | M' and
+    '{g1} & M'. A single-part `gene2` (no '|') keeps the real per-gene row (with a
+    mean); multi-part specs are boolean-only. Unresolvable members are dropped.
+
+    `gene2_label` optionally overrides the display name of a synthetic merge M
+    (ignored for single-gene `gene2`). If blank, or equal to any primary gene
+    label (collision would produce duplicate Gene rows), M falls back to the
+    '|'-joined member names.
 
     Returns:
       'rows': flat list of {Gene, CellType, Group, CellTypeNumber,
               CellTotalNumber, CellTypeRatio, GeneMeanExpression,
               GeneExpressionPct, GeneExpressionNumber}
       'groups': ordered group names (disease first, control last)
-      'fisher': {'pairs': [...], 'cell_types': [...], 'matrix': [[pval,...],...]}
+      'fisher': {'cell_types': [...],
+                 'rows': [{'gene': <feature label>, 'pair': 'A_vs_B',
+                           'pvals': [pval_or_None, ...]}, ...]}
+                 # One Fisher row per emitted feature label (primary / gene2 / '|' / '&')
+                 # × group pair, so the Fisher table can carry a Gene column.
     """
     try:
         adata = get_adata(real_path)
@@ -290,108 +312,160 @@ def _get_aggregate_table(real_path: str, genes_str: str,
         ct_vals = adata.obs[celltype_col].values.astype(str)
         unique_ct = sorted(set(ct_vals))
 
+        # Grouped-mode prep (non-empty group_col → per-group rows)
+        grouped = bool(group_col)
+        g_vals, unique_groups = None, []
+        if grouped:
+            group_col = resolve_group_column(adata, group_col)
+            g_vals = adata.obs[group_col].values.astype(str)
+            unique_groups = sorted(set(g_vals), key=lambda g: (
+                1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0, g))
+
         X = adata.X
         rows = []
+        total_all = int(adata.n_obs)
 
-        if not group_col:
-            # ── Ungrouped mode: aggregate per CellType only ──
-            for gi, gn in zip(gene_indices, valid_genes):
-                if gi < 0: continue
-                col = X[:, gi]
-                gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+        def _emit(feat, label, want_mean):
+            """Append one AggregateRow per (celltype [, group]) for a dense 1-D feature.
+
+            want_mean=False → GeneMeanExpression=None (boolean combos carry no amount)."""
+            if not grouped:
                 for ct in unique_ct:
                     ct_mask = ct_vals == ct
                     ct_n = int(ct_mask.sum())
                     if ct_n > 0:
-                        sub = gene_expr[ct_mask]
-                        mn = round(float(sub.mean()), 4)
+                        sub = feat[ct_mask]
+                        mn = round(float(sub.mean()), 4) if want_mean else None
                         pct = round(float((sub > 0).mean() * 100), 2)
                         expr_n = int((sub > 0).sum())
                     else:
-                        mn, pct, expr_n = 0.0, 0.0, 0
+                        mn = 0.0 if want_mean else None
+                        pct, expr_n = 0.0, 0
                     rows.append({
-                        'Gene': gn, 'CellType': ct, 'Group': '',
-                        'CellTypeNumber': ct_n, 'CellTotalNumber': adata.n_obs,
-                        'CellTypeRatio': round(ct_n / adata.n_obs * 100, 2),
+                        'Gene': label, 'CellType': ct, 'Group': '',
+                        'CellTypeNumber': ct_n, 'CellTotalNumber': total_all,
+                        'CellTypeRatio': round(ct_n / total_all * 100, 2) if total_all > 0 else 0.0,
                         'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
                         'GeneExpressionNumber': expr_n,
                     })
-            return {'rows': rows, 'groups': [], 'fisher': None}
+            else:
+                for grp in unique_groups:
+                    g_mask = g_vals == grp
+                    total_in_group = int(g_mask.sum())
+                    if total_in_group == 0:
+                        continue
+                    for ct in unique_ct:
+                        combo = g_mask & (ct_vals == ct)
+                        ct_n = int(combo.sum())
+                        if ct_n > 0:
+                            sub = feat[combo]
+                            mn = round(float(sub.mean()), 4) if want_mean else None
+                            pct = round(float((sub > 0).mean() * 100), 2)
+                            expr_n = int((sub > 0).sum())
+                        else:
+                            mn = 0.0 if want_mean else None
+                            pct, expr_n = 0.0, 0
+                        rows.append({
+                            'Gene': label, 'CellType': ct, 'Group': grp,
+                            'CellTypeNumber': ct_n, 'CellTotalNumber': total_in_group,
+                            'CellTypeRatio': round(ct_n / total_in_group * 100, 2) if total_in_group > 0 else 0.0,
+                            'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
+                            'GeneExpressionNumber': expr_n,
+                        })
 
-        # ── Grouped mode (original) ──
-        group_col = resolve_group_column(adata, group_col)
-        g_vals = adata.obs[group_col].values.astype(str)
-        unique_groups = sorted(set(g_vals), key=lambda g: (
-            1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0, g))
-
-        for gi, gn in zip(gene_indices, valid_genes):
-            if gi < 0:
-                continue
+        def _dense(gi):
             col = X[:, gi]
-            gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+            return col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
 
-            for grp in unique_groups:
-                g_mask = g_vals == grp
-                total_in_group = int(g_mask.sum())
-                if total_in_group == 0:
-                    continue
+        # Ordered emission: primary gene rows → gene2 row → OR row → AND row
+        features = []  # (label, dense 1-D array, want_mean)
+        for gi, gn in zip(gene_indices, valid_genes):
+            if gi >= 0:
+                features.append((gn, _dense(gi), True))
 
-                for ct in unique_ct:
-                    combo = g_mask & (ct_vals == ct)
-                    ct_n = int(combo.sum())
-                    if ct_n > 0:
-                        sub = gene_expr[combo]
-                        mn = round(float(sub.mean()), 4)
-                        pct = round(float((sub > 0).mean() * 100), 2)
-                        expr_n = int((sub > 0).sum())
-                    else:
-                        mn, pct, expr_n = 0.0, 0.0, 0
+        gene2_name = (gene2 or '').strip()
+        if gene2_name and features:
+            g1_label, g1_feat = features[0][0], features[0][1]
+            # gene2 is either a single gene (classic behavior) or a '|'-joined
+            # OR-merge set (MergeGene). Resolve every part; the single-gene path is
+            # unchanged (real row keeps a mean), a multi-part spec becomes a synthetic
+            # boolean "M" (union of member-positive cells) labelled 'A|B|…'.
+            parts = [p for p in (s.strip() for s in gene2_name.split('|')) if p]
+            resolved = [(i, name) for i, name in resolve_gene_indices(var_names, parts) if i >= 0]
+            # Drop members that resolved to the same gene (keep first occurrence).
+            seen, members = set(), []
+            for i, name in resolved:
+                if name.lower() not in seen:
+                    seen.add(name.lower())
+                    members.append((i, name))
+            primary_labels = {l.lower() for l, _, _ in features}
+            if members and not all(l.lower() in primary_labels for _, l in members):
+                is_merge = len(members) > 1
+                if is_merge:
+                    # OR-merge: boolean feature (no mean) over the union of members.
+                    mask = None
+                    for i, _n in members:
+                        pos = _dense(i) > 0
+                        mask = pos if mask is None else (mask | pos)
+                    g2_label = '|'.join(n for _, n in members)
+                    custom = (gene2_label or '').strip()
+                    if custom and custom.lower() not in {l.lower() for l, *_ in features}:
+                        g2_label = custom  # user-named M; features still hold only primary rows here
+                    features.append((g2_label, mask.astype(float), False))
+                else:
+                    g2_idx, g2_label = members[0]
+                    features.append((g2_label, _dense(g2_idx), True))
+                pos1 = g1_feat > 0
+                pos2 = features[-1][1] > 0
+                features.append((f'{g1_label} | {g2_label}', (pos1 | pos2).astype(float), False))
+                features.append((f'{g1_label} & {g2_label}', (pos1 & pos2).astype(float), False))
 
-                    rows.append({
-                        'Gene': gn, 'CellType': ct, 'Group': grp,
-                        'CellTypeNumber': ct_n, 'CellTotalNumber': total_in_group,
-                        'CellTypeRatio': round(ct_n / total_in_group * 100, 2) if total_in_group > 0 else 0.0,
-                        'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
-                        'GeneExpressionNumber': expr_n,
-                    })
-        # Fisher exact test for each group pair x cell type
+        for label, feat, want_mean in features:
+            _emit(feat, label, want_mean)
+
+        if not grouped:
+            return {'rows': rows, 'groups': [], 'fisher': None}
+        # Fisher exact test for every emitted feature label (primary/gene2/'|'/'&')
+        # × group pair × cell type. Boolean combos are valid binary features, so each
+        # gets the same 2x2 positive-vs-rest test as the primary gene.
         group_pairs = list(itertools.combinations(unique_groups, 2))
         pair_labels = [f'{a}_vs_{b}' for a, b in group_pairs]
-        fisher_matrix = []
+        fisher_rows = []
 
         # Build a lookup: (Gene, CellType, Group) -> row
         lookup = {}
         for r in rows:
             lookup[(r['Gene'], r['CellType'], r['Group'])] = r
 
-        for a, b in group_pairs:
-            row_pvals = []
-            for ct in unique_ct:
-                r_a = lookup.get((valid_genes[0] if valid_genes else '', ct, a))
-                r_b = lookup.get((valid_genes[0] if valid_genes else '', ct, b))
-                if r_a and r_b:
-                    a_expr = r_a['GeneExpressionNumber']
-                    a_non = r_a['CellTypeNumber'] - a_expr
-                    b_expr = r_b['GeneExpressionNumber']
-                    b_non = r_b['CellTypeNumber'] - b_expr
-                    table = [[a_expr, b_expr], [a_non, b_non]]
-                    try:
-                        _, p = fisher_exact(table)
-                        row_pvals.append(round(float(p), 6))
-                    except Exception:
+        feature_labels = [label for label, _f, _w in features]
+        for label in feature_labels:
+            for plabel, (a, b) in zip(pair_labels, group_pairs):
+                row_pvals = []
+                for ct in unique_ct:
+                    r_a = lookup.get((label, ct, a))
+                    r_b = lookup.get((label, ct, b))
+                    if r_a and r_b:
+                        a_expr = r_a['GeneExpressionNumber']
+                        a_non = r_a['CellTypeNumber'] - a_expr
+                        b_expr = r_b['GeneExpressionNumber']
+                        b_non = r_b['CellTypeNumber'] - b_expr
+                        table = [[a_expr, b_expr], [a_non, b_non]]
+                        try:
+                            _, p = fisher_exact(table)
+                            row_pvals.append(round(float(p), 6))
+                        except Exception:
+                            row_pvals.append(None)
+                    else:
                         row_pvals.append(None)
-                else:
-                    row_pvals.append(None)
-            fisher_matrix.append(row_pvals)
+                fisher_rows.append({'gene': label, 'pair': plabel, 'pvals': row_pvals})
 
         return {
             'rows': rows,
             'n_rows': len(rows),
             'groups': unique_groups,
             'fisher': {
-                'pairs': pair_labels,
                 'cell_types': unique_ct,
-                'matrix': fisher_matrix,
+                'rows': fisher_rows,
             },
         }
 

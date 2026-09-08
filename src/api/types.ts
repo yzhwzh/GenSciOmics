@@ -86,6 +86,8 @@ export interface BulkDeResult {
 
 export interface BulkDiseasesResult {
   diseases: string[]
+  /** Obs column usable as an alternative panel x-axis (organ axis), e.g. 'Tissue'. */
+  tissue_column?: string | null
   error?: string
 }
 
@@ -181,10 +183,15 @@ export interface AggregateRow {
   GeneExpressionNumber: number
 }
 
+export interface FisherResultRow {
+  gene: string
+  pair: string
+  pvals: (number | null)[]
+}
+
 export interface FisherResult {
-  pairs: string[]
   cell_types: string[]
-  matrix: (number | null)[][]
+  rows: FisherResultRow[]
 }
 
 export interface AggregateTable {
