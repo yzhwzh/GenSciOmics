@@ -811,18 +811,65 @@ AttributeError: module 'coverage' has no attribute 'types'
 | 重启后端（`coverage-report/` 在位） | ✅ 启动成功，`/api/datasets?tissue=kidney` 返回 3 条 |
 | 全仓根目录扫描「是否还有同名真模块被遮蔽」 | ✅ 无其它遮蔽目录 |
 
-新增 `src/pages/TissuePage.test.tsx` 4 项：失败不得显示 "No datasets found"、Retry 能恢复、真·空组织仍显示 "No datasets found"、成功渲染表格。**改前 3 项 RED / 1 项 GREEN，改后 4/4 GREEN**；全量 `npm test` 45 passed（7 files），`tsc -b` 干净。
+新增 `src/pages/TissuePage.test.tsx` 5 项：失败不得显示 "No datasets found"、Retry 能恢复、真·空组织仍显示 "No datasets found"、成功渲染表格、慢响应不得覆盖已切换的组织。**改前 2 项 RED / 2 项 GREEN，改后 5/5 GREEN。**
+
+> 初稿此处写的是「改前 3 项 RED / 1 项 GREEN、全量 45 passed」，**是我在自己的修正之前测的**，数字对不上：第 4 项当时还写成 `getAllByText('IgAN')` 抛多元素错误。经 code review 指出后订正。
+
+### 代码评审后的修补（同一缺陷，第二轮）
+
+首轮提交被 `ecc:typescript-reviewer` 判 **BLOCK（2 HIGH）**，逐条核实后修补：
+
+1. **【HIGH，真实缺陷】`onClick={load}` 让新增的竞态保护形同虚设。** 首轮把「导航后不得重绘」的保护写在 `useEffect` 的 cleanup 里，但 Retry 走的是 `onClick={load}` 直接发请求 —— **React 丢弃 onClick 的返回值，cleanup 永远不会被调用**。实测：Retry → 切到 lung，被遗弃的 kidney 响应照样把页面刷成 `IgAN×2 / 33936064×1`。而 Retry 恰恰是「请求失败」这一路径上用户唯一会点的按钮，也就是说保护在**最需要它的地方**失效。
+   → 改为 `attempt` 计数器：Retry 只 `setAttempt(n => n+1)`，请求一律在 effect 内发出。**所有请求都由 effect 发起是该写法唯一的意义**，不是风格。
+2. **【HIGH】轮询走 `cachedFetch`，整段逻辑是死的。** 5 分钟内每个 tick 返回**同一个数组引用**，`setRows(sameRef)` 被 React 判定为无变化而 bail out → 不重渲染 → interval 永不重建 → "Processing..." 徽标永不更新。新增 `fetchDatasetsFresh()`（带 `t=` 绕缓存）供轮询使用。
+3. **【MEDIUM】`pollError` 被吞掉。** 后端在处理途中挂掉时，页面会一直脉动 "Processing..." 而毫无提示 → 页脚改为显示 "Status refresh failing — counts may be stale"。
+4. **【MEDIUM】失败时头部与 LLM 上下文仍在断言"没有数据"。** `rows.length > 0 ? ... : 'No datasets yet'` 与传给 `LiteratureTab` 的 `"Kidney — "` 在失败态下都会读成「该组织没有疾病」—— 与本次修复要消灭的那句错误结论同类。失败态分别改文案。
+5. **【MEDIUM】空列表不缓存只覆盖数组。** `/api/stats` 把「空」藏在对象里（`{tissues: [], species: []}`），默认规则看不见，扫描窗口内仍会被钉住 5 分钟 —— 同一缺陷的另一副面孔。`cachedFetch` 增加可选 `isEmptyAnswer` 谓词，`fetchStats` 传入自己的判定。
+6. **【文档】`.gitignore` 注释自相矛盾**（称旧 `coverage/` 目录「留在盘上不影响运行」，而它恰恰是让后端起不来的东西），已订正。
+
+`src/pages/TissuePage.test.tsx` 由 5 项扩到 11 项（新增：Retry 后导航的取消、轮询成功刷新徽标、轮询失败提示、空结果复核三种走向）+ `src/api/client.test.ts` 5 项（空列表不缓存、非空列表命中缓存、对象默认仍缓存、自定义谓词、HTTP 错误不被缓存）。
+
+**两个新守卫都做了变异验证**（去掉 `cancelled` 判断 / 去掉 `setPollError`，确认对应测试恰好失败），不是「写完就绿」。
+
+### 第二次评审（对修补本身的复核）：APPROVE
+
+`ecc:typescript-reviewer` 复核后判 **APPROVE**，两个 HIGH 均已关闭。关键之处在于**它没有读代码下结论，而是把本轮新增的断言拿回去跑在修改前的组件上**（`git show HEAD:src/pages/TissuePage.tsx`），确认断言在旧代码上真的失败 —— 这正是「守卫是否有效」唯一可信的证明方式。据此它又提了 2 MEDIUM / 5 LOW，逐条处理后：
+
+1. **【MEDIUM，本项目缺陷的同类】扫描窗口内的「成功但为空」仍会被渲染成「No datasets found」。** 前面第 5 条只修了「不缓存」，没修「不显示」：后端首次扫描未完成时对所有列表请求返回 `[]`，这是**合法且成功**的响应，于是页面照样断言该组织没有数据；而 Retry 按钮只存在于**失败**分支，用户此刻无法自救，只能刷新。**这正是用户报的那句话**，属于同一缺陷的最后一条通路。
+   → 空结果不再直接当事实：先**用 `fetchDatasetsFresh` 复核一次**，第二次仍为空才渲染缺失结论；空态另加 Refresh 按钮（用户的工作流正是「改完文件重新软链 → 页面还开着」）。复核失败**不升级为加载错误** —— 首个请求是成功的，空列表仍是当时能拿到的最好答案。用 `try/catch` 而非 `.catch()`，连**同步抛错**也一并兜住（见下条）。
+2. **【MEDIUM】轮询错误把错误对象丢了。** `setPollError(true)` 无载荷，与加载路径的 `err.message` 不一致：60s 超时、HTTP 502、响应解析失败三者在界面上无法区分，且没有任何一条进入控制台。→ 改为存消息字符串。
+3. **【LOW，值得记】两处断言是空转的，读起来却像守卫。** `await waitFor(() => expect(...).toBeNull())` 的回调会**同步**跑在更新前的 DOM 上并立即返回，因此在「上一个响应当前正在重绘」时它照样通过 —— 真正拦住的是紧随其后的那一行。已改为 `await act(async () => ...)`，只保留真正的断言。**「测试是绿的」与「测试在守卫」是两回事。**
+4. **【LOW】H2 的症状本身没有测试**（只测了失败分支，没测「成功的一跳把 Processing 刷成 Ready」—— 而后者才是被报的 bug）。已补。
+5. **【LOW】`fetchStats` 谓词未防形状漂移。** `apiFetch` 直接 `as Promise<T>` 不做校验，一个 200 的异常响应体会让 `s.tissues.length` 抛 `TypeError`。已改为 `Array.isArray` 守卫。
+6. **【LOW，险些造成审计空洞】`src/api/client.test.ts` 当时是未跟踪文件。** 若用 `git add -u` 提交会被**静默漏掉**，而 BUG_LOG 已经宣称它存在。已确认入库。
+
+### 顺带发现（未修，另行记录）
+
+- **`npm run lint` 自 fork 起就是坏的**：仓库里从来没有 `eslint.config.*`，ESLint 10 直接报错退出（`git log -- '*eslint*'` 无任何提交）。不是本次引入。没有顺手加配置：对一个从未被 lint 过的代码库开机会产生大量噪声，掩盖本次真正的改动，应单独一轮处理。
+
+### 本轮验证（全部实测）
+
+| 手段 | 结果 |
+|---|---|
+| `npm test` | ✅ 57 passed（8 files） |
+| `npx tsc -b` | ✅ 干净（并**抓出**我改 `pollError` 类型时漏掉的一处 `setPollError(false)`） |
+| 变异验证 ×3 | ✅ 去掉 `cancelled` 判断 / 去掉 `setPollError` / 去掉空结果复核，各自**恰好**让对应测试失败 |
+| 浏览器（加载·错误·竞态） | ✅ 14/14，含「Retry 的请求确实在飞行中」这一条**反空转**断言 |
+| 浏览器（轮询实测） | ✅ 5/5 —— 轮询请求确实带 `t=` 绕开了缓存并让徽标消失（用 `cachedFetch` 时不带 `t=`、徽标不会消失） |
+
+> 浏览器脚本里 14/14 那条「Retry 真的发出了请求」是**故意加的**：如果 Retry 没发请求，「被遗弃的响应没有重绘」就是句废话，测了个寂寞。实测请求记录为 `fail,fail,slow`（前两个是 StrictMode 双挂载）。
 
 ### 涉及文件
 - `vitest.config.ts`、`.gitignore`
 - `src/pages/TissuePage.tsx`、`src/pages/TissuePage.test.tsx`（新增）
-- `src/api/client.ts`
+- `src/api/client.ts`、`src/api/client.test.ts`（新增）
+- `src/api/datasets.ts`
 
 ### 关键教训
 - **cwd 在 `sys.path` 上时，仓库根的任何目录都可能遮蔽依赖。** 本机 `PYTHONPATH` 前导裸冒号就是这个陷阱（`export PYTHONPATH=":$PYTHONPATH"` 的典型笔误）。凡是在仓库根产出文件的工具，**输出目录名不要与任何 Python 模块同名**。
 - **`try: import X / except ImportError` 形式的可选依赖最危险。** 遮蔽目录让 import「假装成功」，把兜底分支本该捕获的 `ImportError` 变成运行期 `AttributeError`，而且**报错位置离病因极远**（numba 抛错，根因在仓库根的覆盖率目录）。
 - **「没有数据」和「请求失败」必须是两个状态。** `.catch(() => setRows([]))` 把二者合一，代价是用户拿到一句听起来像事实的错误结论。这是 B26/B27「失败不要伪装成成功」在**前端展示层**的翻版。
-- **空列表不要缓存。** 后端启动期（扫描未完成）的 `[]` 与「真的为空」在响应上无法区分，缓存它就把瞬态固化成持久态 —— 与 B26/B27「瞬时失败被缓存固化」同源，只是这次固化在浏览器内存里。
+- **空列表不要缓存。** 后端启动期（扫描未完成）的 `[]` 与「真的为空」在响应上无法区分，缓存它就把瞬态固化成持久态 —— 与 B26/B27「瞬时失败被缓存固化」同源，只是这次固化在浏览器内存里。注意**「空」不一定长得像空数组**：`/api/stats` 报的是 `{tissues: [], species: []}`，只按 `Array.isArray` 判断会漏掉它。判断依据应当是**「这个响应能不能证明数据不存在」**，而不是它的 JS 类型。
 - **诊断「数据看起来是空的」类缺陷，先确认服务是否还活着。** 本次若只盯着数据目录和扫描器，会一路查错方向；实际病因是后端根本没起来。
 
 ---

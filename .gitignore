@@ -20,5 +20,6 @@ docs/软著/
 # 仓库根下名为 coverage 的目录会被 Python 当作命名空间包，遮蔽 numba/scanpy
 # 依赖的真 coverage 模块，导致 server/main.py 启动即崩（B29）。
 coverage-report/
-# 历史遗留：改名前生成的目录，留在盘上不影响运行，但不入库
+# 改名前用的目录名。它不能出现在仓库根 —— 不是「不该入库」，而是放在盘上就会
+# 让 server/main.py 起不来（见上）。这条只为拦住工具重新生成它。
 coverage/
