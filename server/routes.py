@@ -28,7 +28,7 @@ from analysis.umap import _get_umap_data
 from analysis.expression import _get_expression_stats
 from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_aggregate_table, _get_raw_expression
 from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition, _generate_marker_dotplot
-from analysis.utils import CATEGORICAL_PALETTE_MAP
+from analysis.utils import CATEGORICAL_PALETTE_MAP, normalize_gene2_op
 from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_groups, bulk_volcano
 from search import _get_genes
 from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
@@ -351,6 +351,8 @@ def handle_aggregate_table(handler, q):
     celltype_col = q.get('celltype_col', 'CellType')
     gene2 = q.get('gene2', '') or None
     gene2_label = q.get('gene2_label', '') or None
+    # Normalise before the cache key: 'AND' / 'and' / 'and ' must not each mint an entry.
+    gene2_op = normalize_gene2_op(q.get('gene2_op', ''))
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
@@ -360,13 +362,14 @@ def handle_aggregate_table(handler, q):
         return
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
     eff_group = group_col if group_col and group_col != 'None' else ''
-    cache_key = f'aggtbl:{real_path_str}:{mtime}:{genes_str}:{eff_group}:{celltype_col}:{gene2 or ""}:{gene2_label or ""}'
+    cache_key = f'aggtbl:{real_path_str}:{mtime}:{genes_str}:{eff_group}:{celltype_col}:{gene2 or ""}:{gene2_label or ""}:{gene2_op}'
     cached = _table_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
     # When condition is None/empty, pass empty group_col to backend
-    result = _get_aggregate_table(str(real_path), genes_str, eff_group, celltype_col, gene2 or '', gene2_label or '')
+    result = _get_aggregate_table(str(real_path), genes_str, eff_group, celltype_col,
+                                  gene2 or '', gene2_label or '', gene2_op)
     _table_cache.set(cache_key, result)
     handler._json(result)
 
@@ -438,14 +441,15 @@ def handle_composition_plot(handler, q):
     gene = q.get('gene', '')
     gene2 = q.get('gene2', '')
     gene2_label = q.get('gene2_label', '')
+    gene2_op = normalize_gene2_op(q.get('gene2_op', ''))
     palette = get_palette_name(q)
     mtime = real_path.stat().st_mtime if real_path.exists() else 0
-    cache_key = f'comp:{real_path_str}:{mtime}:{gene}:{gene2}:{gene2_label}:{palette}'
+    cache_key = f'comp:{real_path_str}:{mtime}:{gene}:{gene2}:{gene2_label}:{gene2_op}:{palette}'
     cached = _plot_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
-    result = _generate_celltype_composition(str(real_path), gene, palette, gene2, gene2_label)
+    result = _generate_celltype_composition(str(real_path), gene, palette, gene2, gene2_label, gene2_op)
     _plot_cache.set(cache_key, result)
     handler._json(result)
 

@@ -3,13 +3,8 @@ import { Loader2, XCircle } from 'lucide-react'
 import { cachedFetch } from '../../api/client'
 import { useTableFilter } from '../../hooks/useTableFilter'
 import FilterDropdown from '../FilterDropdown'
-import type { AggregateRow, FisherResult } from '../../api/types'
-
-interface AggregateTableData {
-  rows: AggregateRow[]
-  groups: string[]
-  fisher: FisherResult
-}
+import MergeWarning from './MergeWarning'
+import type { AggregateRow, AggregateTable, MergeOp } from '../../api/types'
 
 const STAT_COLS = [
   { key: 'CellTypeNumber' as const, label: 'Cell #' },
@@ -27,6 +22,7 @@ export default function AggregateDetailTable({
   conditionCol = 'Group',
   gene2 = '',
   gene2Label = '',
+  gene2Op = 'or',
 }: {
   realPath: string
   gene: string
@@ -34,8 +30,9 @@ export default function AggregateDetailTable({
   palette?: string
   gene2?: string
   gene2Label?: string
+  gene2Op?: MergeOp
 }) {
-  const [data, setData] = useState<AggregateTableData | null>(null)
+  const [data, setData] = useState<AggregateTable | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Always call hook at top level (empty rows until data loads)
@@ -45,21 +42,34 @@ export default function AggregateDetailTable({
 
   useEffect(() => {
     if (!realPath || !gene) return
+    // An older response must never overwrite a newer one: the payload carries
+    // gene2_unresolved, which is rendered against the CURRENT operator — a stale
+    // payload would label a union result as 取交集.
+    let cancelled = false
     setLoading(true)
     const groupCol = conditionCol === 'None' ? '' : 'Group'
     const params = new URLSearchParams({ real_path: realPath, genes: gene, group_col: groupCol })
     if (gene2?.trim()) params.set('gene2', gene2.trim())
     if (gene2Label?.trim()) params.set('gene2_label', gene2Label.trim())
-    cachedFetch<AggregateTableData>(`/api/aggregate-table?${params}`)
+    if (gene2Op === 'and' && gene2?.trim()) params.set('gene2_op', 'and')
+    cachedFetch<AggregateTable>(`/api/aggregate-table?${params}`)
       .then(d => {
+        if (cancelled) return
         if (d.rows) setData(d)
-        else console.error('Aggregate table error:', (d as any).error)
-      }).catch(e => console.error(e))
-      .finally(() => setLoading(false))
-  }, [realPath, gene, conditionCol, gene2, gene2Label])
+        else console.error('Aggregate table error:', d.error)
+      }).catch(e => { if (!cancelled) console.error(e) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [realPath, gene, conditionCol, gene2, gene2Label, gene2Op])
+
+  // Hoisted above the early returns below: a missing-member warning matters most
+  // exactly when the table renders as "No data".
+  const warning = (
+    <MergeWarning unresolved={data?.gene2_unresolved} resolved={data?.gene2_resolved} op={gene2Op} />
+  )
 
   if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
-  if (!data?.rows.length) return <div className="text-xs text-text-muted py-4 text-center">No data</div>
+  if (!data?.rows.length) return <div>{warning}<div className="text-xs text-text-muted py-4 text-center">No data</div></div>
 
   const { rows, groups } = data
   const activeRows = filteredRows as unknown as AggregateRow[]
@@ -113,6 +123,7 @@ export default function AggregateDetailTable({
 
   return (
     <div className="overflow-auto max-h-full">
+      {warning}
       <div className="flex items-center justify-between px-2 py-0.5">
         <div className="flex items-center gap-2">
           {hasActiveFilters && (

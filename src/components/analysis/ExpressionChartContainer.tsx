@@ -1,17 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchGenes, fetchCompositionPlot } from '../../api/analysis'
 import { PALETTE_OPTIONS } from '../../api/types'
+import type { MergeOp } from '../../api/types'
 import PlotImage from './PlotImage'
 import AggregateDetailTable from './AggregateDetailTable'
 import FisherTable from './FisherTable'
+import MergeWarning from './MergeWarning'
 import ZoomableImage from './ZoomableImage'
 import AsyncCreatableSelect from 'react-select/async-creatable'
 import type { StylesConfig } from 'react-select'
+import { MERGE_OP_KEY, deriveG2Op, readStoredOp } from './mergeOp'
 
 interface Option {
   value: string
   label: string
 }
+
+/** Stable identity for "no merge info" — a fresh literal per call would re-render the warning consumers pointlessly. */
+const EMPTY_MERGE: { resolved: string[]; unresolved: string[] } = { resolved: [], unresolved: [] }
 
 // Tailwind-styled react-select theme (same pattern as UmapTabContent / RawDataDownload)
 const selectStyles: StylesConfig<Option, true> = {
@@ -84,27 +90,44 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   const [mergeLabel, setMergeLabel] = useState('')            // staging alias (editable)
   const [mergeLabelTouched, setMergeLabelTouched] = useState(false)
   const [mergeRunLabel, setMergeRunLabel] = useState('')      // applied alias — drives backend (Run)
+  const [mergeOp, setMergeOp] = useState<MergeOp>(readStoredOp)      // staged 或/且 (does NOT drive backend)
+  const [mergeRunOp, setMergeRunOp] = useState<MergeOp>(readStoredOp) // applied 或/且 — drives backend (Run)
+  const [compMerge, setCompMerge] = useState(EMPTY_MERGE)
   const gene2Ref = useRef<HTMLDivElement>(null)
 
-  // Downstream gene2: single Gene2 name, or the '|'-joined OR-merge set (MergeGene).
-  // Merge only commits on Run (mergeRun + mergeRunLabel); editing staging must NOT hit backend.
+  // Downstream gene2: single Gene2 name, or the '|'-joined merge set (MergeGene).
+  // Merge only commits on Run (mergeRun + mergeRunLabel + mergeRunOp); editing staging
+  // must NOT hit backend.
   const mergeKey = (opts: Option[]) => opts.map(g => g.value).join('|')
   const defaultMergeLabel = mergeGenes.length > 0 ? `M${mergeGenes.length}` : ''   // recommended alias
   const stagedLabel = mergeLabelTouched ? mergeLabel.trim() : defaultMergeLabel
-  const mergeDirty = mergeKey(mergeRun) !== mergeKey(mergeGenes) || stagedLabel !== mergeRunLabel
+  const mergeDirty = mergeKey(mergeRun) !== mergeKey(mergeGenes)
+    || stagedLabel !== mergeRunLabel
+    || mergeOp !== mergeRunOp
   const g2 = gene2Mode === 'merge' ? mergeKey(mergeRun) : selectedGene2
   const g2Label = gene2Mode === 'merge' ? mergeRunLabel : ''   // user-named M, empty until a merge Run
+  const g2Op = deriveG2Op(gene2Mode, mergeRun.length, mergeRunOp)
+  // The operator toggle can dirty the panel on its own, so Run can't key off mergeDirty
+  // alone. It must however stay clickable once the user empties the chips: committing an
+  // empty set is the only way to drop an applied merge, and gating on mergeGenes.length
+  // alone stranded exactly that state — no chips, no ✕, dead Run, merge still live.
+  const canMergeRun = mergeDirty && (mergeGenes.length > 0 || mergeRun.length > 0)
 
-  // Merge mode commits staged chips + alias atomically on Run.
+  // Merge mode commits staged chips + alias + operator atomically on Run.
   const handleMergeRun = () => {
     const label = stagedLabel || defaultMergeLabel
     setMergeRun(mergeGenes.map(g => ({ ...g })))
     setMergeRunLabel(label)
+    setMergeRunOp(mergeOp)
     if (!stagedLabel) { setMergeLabel(''); setMergeLabelTouched(false) }  // blank alias → reshow recommended default
   }
+  // Sync the applied operator to whatever is staged: the Run button is gated on
+  // mergeDirty (which the operator can now set on its own), so leaving it stale here
+  // would strand a clickable Run button with no chips to run.
   const handleMergeClear = () => {
     setMergeGenes([]); setMergeRun([])
     setMergeLabel(''); setMergeLabelTouched(false); setMergeRunLabel('')
+    setMergeRunOp(mergeOp)
   }
 
   // Async gene search for the MergeGene multi-select (mirrors UmapTabContent dotplot)
@@ -119,17 +142,34 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   }, [realPath])
 
   useEffect(() => { try { sessionStorage.setItem('gensci_agg_gene', selectedGene) } catch { /* ignore */ } }, [selectedGene])
+  // Persist the APPLIED operator, mirroring gensci_agg_gene: switching 或/且 and then
+  // reloading without pressing Run must not silently remember an uncommitted choice.
+  useEffect(() => { try { sessionStorage.setItem(MERGE_OP_KEY, mergeRunOp) } catch { /* ignore */ } }, [mergeRunOp])
 
   // Fetch cell type composition plot when metric is pct
   useEffect(() => {
-    if (!realPath || metric !== 'expression_pct' || !selectedGene) { setCompositionImg(''); return }
+    if (!realPath || metric !== 'expression_pct' || !selectedGene) {
+      // compLoading must be cleared too: the panel below renders on
+      // (compositionImg || compLoading) and sits OUTSIDE the metric gate, so an
+      // abandoned in-flight request would otherwise pin it on "Loading..." forever
+      // (the .then below bails out via `cancelled` and never clears it).
+      setCompositionImg(''); setCompMerge(EMPTY_MERGE); setCompLoading(false); return
+    }
     let cancelled = false
     setCompLoading(true)
-    fetchCompositionPlot(realPath, selectedGene, palette, g2, g2Label)
-      .then(d => { if (!cancelled) { setCompositionImg(d.image ?? ''); setCompLoading(false) } })
-      .catch(() => { if (!cancelled) { setCompositionImg(''); setCompLoading(false) } })
+    fetchCompositionPlot(realPath, selectedGene, palette, g2, g2Label, g2Op)
+      .then(d => {
+        if (cancelled) return
+        setCompositionImg(d.image ?? '')
+        setCompMerge({ resolved: d.gene2_resolved ?? [], unresolved: d.gene2_unresolved ?? [] })
+        setCompLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setCompositionImg(''); setCompMerge(EMPTY_MERGE); setCompLoading(false)
+      })
     return () => { cancelled = true }
-  }, [realPath, metric, selectedGene, g2, g2Label, palette])
+  }, [realPath, metric, selectedGene, g2, g2Label, g2Op, palette])
 
   // Gene2 search
   useEffect(() => {
@@ -229,6 +269,13 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
               <AsyncCreatableSelect
                 isMulti
                 cacheOptions
+                // Merge members must be real genes. Search (routes.py:279) and the backend
+                // resolver (utils.py:124) share one predicate, so anything mergeable is
+                // listable — Create adds no capability, and a hand-typed token that merely
+                // contains a real name (e.g. COL1) would be silently resolved to whichever
+                // gene matches first and reported as resolved, suppressing the warning.
+                // See B28.
+                isValidNewOption={() => false}
                 loadOptions={loadGeneOptions}
                 onChange={(v) => {
                   const next = (v ?? []) as Option[]
@@ -250,20 +297,38 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
                 title={mergeGenes.length ? '合并基因显示名，Run 后生效' : '先选择要合并的基因'}
                 className="w-full mt-1 text-[10px] border border-border-light rounded-sm px-1.5 py-[3px] bg-surface text-text-primary outline-none focus:border-brand disabled:opacity-50"
               />
+              <div className="flex items-center justify-between gap-1 mt-1">
+                <span id="merge-op-label" className="text-[10px] text-text-muted">合并规则</span>
+                <div role="group" aria-labelledby="merge-op-label"
+                  className="flex bg-surface-muted rounded-sm p-px text-[9px] leading-none shrink-0">
+                  {/* aria-pressed carries the selection (it is otherwise colour-only) and
+                      aria-label carries the semantics, which `title` alone can't reach on touch. */}
+                  <button onClick={() => setMergeOp('or')}
+                    aria-pressed={mergeOp === 'or'}
+                    aria-label="或：任一成员基因表达即为阳性（并集）"
+                    title="任一成员基因表达即为阳性（并集）"
+                    className={`px-1.5 py-[3px] rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand ${mergeOp === 'or' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>或</button>
+                  <button onClick={() => setMergeOp('and')}
+                    aria-pressed={mergeOp === 'and'}
+                    aria-label="且：所有成员基因都表达才为阳性（交集）"
+                    title="所有成员基因都表达才为阳性（交集）"
+                    className={`px-1.5 py-[3px] rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand ${mergeOp === 'and' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>且</button>
+                </div>
+              </div>
               <div className="flex items-center gap-1.5 mt-1">
-                {mergeGenes.length > 0 && (
+                {(mergeGenes.length > 0 || mergeRun.length > 0) && (
                   <button onClick={handleMergeClear}
                     className="text-[10px] text-text-muted hover:text-error">✕ clear</button>
                 )}
                 <span className="ml-auto flex items-center">
-                  {mergeDirty && mergeGenes.length > 0 && (
+                  {canMergeRun && (
                     <span className="text-[9px] text-text-muted mr-1.5">(改动未应用)</span>
                   )}
                   <button
                     onClick={handleMergeRun}
-                    disabled={!mergeDirty}
+                    disabled={!canMergeRun}
                     className={`px-2 py-[3px] rounded-sm text-[9px] leading-none font-semibold transition-colors ${
-                      mergeDirty
+                      canMergeRun
                         ? 'bg-brand text-white shadow-card hover:opacity-90'
                         : 'bg-surface-muted text-text-muted cursor-default'}`}>Run</button>
                 </span>
@@ -308,13 +373,16 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
             <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="barplot" palette={palette} />
           </div>
           {(compositionImg || compLoading) && (
-            <div className="w-[45%] bg-surface rounded-md shadow-card overflow-hidden shrink-0 flex items-center justify-center">
-              {compLoading ? (
-                <span className="text-xs text-text-muted">Loading composition...</span>
-              ) : (
-                <ZoomableImage src={compositionImg} alt="Cell type composition"
-                  className="w-full h-full object-contain" />
-              )}
+            <div className="w-[45%] bg-surface rounded-md shadow-card overflow-hidden shrink-0 flex flex-col">
+              <MergeWarning unresolved={compMerge.unresolved} resolved={compMerge.resolved} op={g2Op} />
+              <div className="flex-1 flex items-center justify-center min-h-0">
+                {compLoading ? (
+                  <span className="text-xs text-text-muted">Loading composition...</span>
+                ) : (
+                  <ZoomableImage src={compositionImg} alt="Cell type composition"
+                    className="w-full h-full object-contain" />
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -324,13 +392,22 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
               className={`text-[11px] font-medium px-3 py-1 rounded-sm transition-colors ${tableTab === 'aggregate' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>Aggregate Table</button>
             <button onClick={() => setTableTab('fisher')}
               className={`text-[11px] font-medium px-3 py-1 rounded-sm transition-colors ${tableTab === 'fisher' ? 'bg-surface text-brand font-semibold shadow-card' : 'text-text-muted hover:text-text-secondary'}`}>Fisher Test</button>
-            <span className="text-[10px] text-text-muted ml-auto">{metric === 'mean_expression' ? 'Mean' : '%'} Expression</span>
+            <span className="text-[10px] text-text-muted ml-auto flex items-center gap-1">
+              {/* Always visible, unlike the 共表达 panel: in Mean mode the operator
+                  toggle is hidden, so this is the only cue that the table's M is an
+                  intersection rather than the historical union. */}
+              {g2Op === 'and' && (
+                <span title="合并基因 M 取成员交集（所有成员都表达）"
+                  className="px-1 py-px rounded-sm text-[9px] font-semibold leading-none text-white bg-amber-500">AND</span>
+              )}
+              {metric === 'mean_expression' ? 'Mean' : '%'} Expression
+            </span>
           </div>
           <div className="flex-1 bg-surface rounded-md shadow-card overflow-auto min-h-0">
             {tableTab === 'aggregate' ? (
-              <AggregateDetailTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} palette={palette} gene2={g2} gene2Label={g2Label} />
+              <AggregateDetailTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} palette={palette} gene2={g2} gene2Label={g2Label} gene2Op={g2Op} />
             ) : (
-              <FisherTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} gene2={g2} gene2Label={g2Label} />
+              <FisherTable realPath={realPath} gene={selectedGene} conditionCol={conditionCol} gene2={g2} gene2Label={g2Label} gene2Op={g2Op} />
             )}
           </div>
         </div>

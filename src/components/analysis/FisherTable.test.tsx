@@ -87,3 +87,52 @@ describe('FisherTable — gene2 passthrough + Gene column', () => {
     expect(screen.queryByText('COL1A1')).toBeNull()
   })
 })
+
+describe('FisherTable — gene2_op passthrough + unresolved warning', () => {
+  afterEach(() => {
+    cachedFetchMock.mockReset()
+  })
+
+  it('omits gene2_op by default and sends gene2_op=and once applied', async () => {
+    cachedFetchMock.mockResolvedValue(
+      fisherPayload([{ gene: 'COL1A1&COL1A2', pvals: [0.01] }]) as never,
+    )
+    const { rerender } = render(
+      <FisherTable realPath="/d/a.h5ad" gene="FAP" conditionCol="Group" gene2="COL1A1|COL1A2" />,
+    )
+    await screen.findByText('COL1A1&COL1A2')
+    expect(lastUrl()).not.toContain('gene2_op')
+
+    rerender(
+      <FisherTable realPath="/d/a.h5ad" gene="FAP" conditionCol="Group"
+        gene2="COL1A1|COL1A2" gene2Op="and" />,
+    )
+    await waitFor(() => {
+      expect(lastUrl()).toContain('gene2_op=and')
+    })
+  })
+
+  it('renders the shared unresolved-member warning, and nothing when all members resolved', async () => {
+    cachedFetchMock.mockResolvedValue(
+      { ...fisherPayload([{ gene: 'COL1A1&COL1A2', pvals: [0.01] }]),
+        gene2_resolved: ['COL1A1', 'COL1A2'], gene2_unresolved: [] } as never,
+    )
+    const { rerender } = render(
+      <FisherTable realPath="/d/a.h5ad" gene="FAP" conditionCol="Group"
+        gene2="COL1A1|COL1A2" gene2Op="and" />,
+    )
+    await screen.findByText('COL1A1&COL1A2')
+    expect(screen.queryByRole('status')).toBeNull()
+
+    cachedFetchMock.mockResolvedValue(
+      { ...fisherPayload([{ gene: 'COL1A1&COL1A2', pvals: [0.01] }]),
+        gene2_resolved: ['COL1A1', 'COL1A2'], gene2_unresolved: ['NOPE'] } as never,
+    )
+    rerender(
+      <FisherTable realPath="/d/a.h5ad" gene="FAP" conditionCol="Group"
+        gene2="COL1A1|NOPE|COL1A2" gene2Op="and" />,
+    )
+    const banner = await screen.findByRole('status')
+    expect(banner.textContent).toContain('NOPE')
+  })
+})

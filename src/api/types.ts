@@ -194,11 +194,22 @@ export interface FisherResult {
   rows: FisherResultRow[]
 }
 
+/** How a Merge-gene member set collapses into the synthetic gene 'M'.
+ *  'or'  = union — M positive if ANY member is (historical default).
+ *  'and' = intersection — M positive only if EVERY member is. */
+export type MergeOp = 'or' | 'and'
+
 export interface AggregateTable {
   rows: AggregateRow[]
   n_rows: number
   groups: string[]
   fisher: FisherResult
+  /** Present instead of the payload when the backend fails the request. */
+  error?: string
+  /** Merge members that resolved to real var names (post-dedup). */
+  gene2_resolved?: string[]
+  /** Merge members the user typed that matched nothing — surfaced as a warning. */
+  gene2_unresolved?: string[]
 }
 
 export interface PlotResult {
@@ -206,6 +217,10 @@ export interface PlotResult {
   error?: string
   width?: number
   height?: number
+  /** Merge members that resolved to real var names (post-dedup). */
+  gene2_resolved?: string[]
+  /** Merge members the user typed that matched nothing — surfaced as a warning. */
+  gene2_unresolved?: string[]
 }
 
 export interface MarkerDotplotResult {

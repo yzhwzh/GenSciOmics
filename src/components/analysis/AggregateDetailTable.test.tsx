@@ -22,7 +22,10 @@ interface MockRow {
   GeneExpressionNumber?: number
 }
 
-const row = (over: MockRow) => ({
+// Spread via a named defaults object rather than inline literal properties: `Gene`
+// is part of MockRow, so listing it before `...over` trips TS2783 ("specified more
+// than once, so this usage will be overwritten") on `tsc -b`, which `npm run build` runs.
+const ROW_DEFAULTS = {
   Gene: 'FAP',
   CellType: 'Macrophage',
   Group: '',
@@ -32,8 +35,9 @@ const row = (over: MockRow) => ({
   GeneMeanExpression: 0,
   GeneExpressionPct: 0,
   GeneExpressionNumber: 0,
-  ...over,
-})
+}
+
+const row = (over: MockRow) => ({ ...ROW_DEFAULTS, ...over })
 
 const singleGeneRows = [
   row({ Gene: 'FAP', GeneMeanExpression: 3.25, GeneExpressionPct: 45.5, GeneExpressionNumber: 455 }),
@@ -123,5 +127,112 @@ describe('AggregateDetailTable — gene2 passthrough', () => {
       expect(lastUrl()).not.toContain('gene2=')
     })
     expect(screen.queryByText('FAP | COL1A1')).toBeNull()
+  })
+})
+
+describe('AggregateDetailTable — gene2_op passthrough + unresolved warning', () => {
+  afterEach(() => {
+    cachedFetchMock.mockReset()
+  })
+
+  const mergeRows = [
+    row({ Gene: 'FAP', GeneMeanExpression: 3.25, GeneExpressionPct: 45.5, GeneExpressionNumber: 455 }),
+    row({ Gene: 'COL1A1&COL1A2', GeneMeanExpression: null, GeneExpressionPct: 25, GeneExpressionNumber: 250 }),
+  ]
+
+  it('omits gene2_op by default so the URL stays byte-identical to the pre-feature client', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: mergeRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+    })
+    render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="COL1A1|COL1A2" gene2Label="M2" />,
+    )
+
+    await screen.findByText('COL1A1&COL1A2')
+    expect(lastUrl()).toContain('gene2=COL1A1%7CCOL1A2')
+    expect(lastUrl()).not.toContain('gene2_op')
+  })
+
+  it('sends gene2_op=and once the operator is applied', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: mergeRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+    })
+    render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="COL1A1|COL1A2" gene2Label="M2" gene2Op="and" />,
+    )
+
+    await screen.findByText('COL1A1&COL1A2')
+    expect(lastUrl()).toContain('gene2_op=and')
+  })
+
+  it('never sends gene2_op without a gene2 to merge', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: singleGeneRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+    })
+    render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None" gene2Op="and" />,
+    )
+
+    await screen.findByText('FAP')
+    expect(lastUrl()).not.toContain('gene2_op')
+  })
+
+  it('warns about members that did not resolve, and does not render a banner when all resolved', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: mergeRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+      gene2_resolved: [], gene2_unresolved: [],
+    })
+    const { rerender } = render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="COL1A1|COL1A2" gene2Op="and" />,
+    )
+
+    // Nothing missing → no permanent banner.
+    await screen.findByText('COL1A1&COL1A2')
+    expect(screen.queryByRole('status')).toBeNull()
+
+    cachedFetchMock.mockResolvedValue({
+      rows: mergeRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+      gene2_resolved: ['COL1A1', 'COL1A2'], gene2_unresolved: ['NOPE'],
+    })
+    rerender(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="COL1A1|NOPE|COL1A2" gene2Op="and" />,
+    )
+
+    const banner = await screen.findByRole('status')
+    expect(banner.textContent).toContain('NOPE')
+    expect(banner.textContent).toContain('2 个基因取交集')
+  })
+
+  it('warns about the degenerate single-member fallback, which is not a merge at all', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: mergeRows as never, groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+      gene2_resolved: ['COL1A1'], gene2_unresolved: ['NOPE'],
+    })
+    render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="NOPE|COL1A1" gene2Op="and" />,
+    )
+
+    const banner = await screen.findByRole('status')
+    expect(banner.textContent).toContain('已退化为单基因 COL1A1')
+  })
+
+  it('still shows the warning when the table itself has no rows', async () => {
+    cachedFetchMock.mockResolvedValue({
+      rows: [], groups: [], fisher: { pairs: [], cell_types: [], matrix: [] },
+      gene2_resolved: ['COL1A1'], gene2_unresolved: ['NOPE'],
+    })
+    render(
+      <AggregateDetailTable realPath="/d/a.h5ad" gene="FAP" conditionCol="None"
+        gene2="NOPE|COL1A1" gene2Op="and" />,
+    )
+
+    // The early "No data" return must not swallow the warning.
+    await screen.findByText('No data')
+    expect(screen.getByRole('status').textContent).toContain('NOPE')
   })
 })

@@ -315,10 +315,13 @@ export async function sendLiteratureMessageStreaming(
   }
 }
 
-export async function fetchCompositionPlot(realPath: string, gene: string, palette = 'default', gene2 = '', gene2Label = ''): Promise<PlotResult> {
+export async function fetchCompositionPlot(realPath: string, gene: string, palette = 'default', gene2 = '', gene2Label = '', gene2Op = ''): Promise<PlotResult> {
   const g2 = gene2 ? `&gene2=${encodeURIComponent(gene2)}` : ''
   const lbl = gene2Label?.trim() ? `&gene2_label=${encodeURIComponent(gene2Label.trim())}` : ''
-  return apiFetch<PlotResult>(`/api/composition-plot?real_path=${encodeURIComponent(realPath)}&gene=${encodeURIComponent(gene)}&palette=${palette}${g2}${lbl}`)
+  // Only send the non-default op, mirroring gene2/gene2_label: omitting it keeps
+  // the URL byte-identical to before this feature, so caches and old clients agree.
+  const op = gene2Op === 'and' && gene2 ? '&gene2_op=and' : ''
+  return apiFetch<PlotResult>(`/api/composition-plot?real_path=${encodeURIComponent(realPath)}&gene=${encodeURIComponent(gene)}&palette=${palette}${g2}${lbl}${op}`)
 }
 
 export async function fetchUmapRatioPlots(

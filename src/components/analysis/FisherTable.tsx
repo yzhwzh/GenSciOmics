@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react'
 import { Loader2, XCircle } from 'lucide-react'
 import { cachedFetch } from '../../api/client'
 import FilterDropdown from '../FilterDropdown'
-import type { AggregateRow, FisherResult } from '../../api/types'
+import MergeWarning from './MergeWarning'
+import type { AggregateTable, MergeOp } from '../../api/types'
 
-interface FisherTableData {
-  rows: AggregateRow[]
-  fisher: FisherResult
-}
+// Same endpoint as AggregateDetailTable, but this view only reads the Fisher slice.
+type FisherTableData = Pick<AggregateTable, 'fisher' | 'gene2_resolved' | 'gene2_unresolved'>
 
 export default function FisherTable({
   realPath,
@@ -15,12 +14,14 @@ export default function FisherTable({
   conditionCol = 'Group',
   gene2 = '',
   gene2Label = '',
+  gene2Op = 'or',
 }: {
   realPath: string
   gene: string
   conditionCol?: string
   gene2?: string
   gene2Label?: string
+  gene2Op?: MergeOp
 }) {
   const [data, setData] = useState<FisherTableData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -30,17 +31,28 @@ export default function FisherTable({
   // Always call hook at top level (Fisher requires a Group condition)
   useEffect(() => {
     if (!realPath || !gene || conditionCol === 'None') { setData(null); return }
+    // An older response must never overwrite a newer one — see AggregateDetailTable:
+    // the payload's gene2_unresolved is rendered against the CURRENT operator.
+    let cancelled = false
     setLoading(true)
     const params = new URLSearchParams({ real_path: realPath, genes: gene, group_col: 'Group' })
     if (gene2?.trim()) params.set('gene2', gene2.trim())
     if (gene2Label?.trim()) params.set('gene2_label', gene2Label.trim())
-    cachedFetch<FisherTableData>(`/api/aggregate-table?${params}`)
+    if (gene2Op === 'and' && gene2?.trim()) params.set('gene2_op', 'and')
+    cachedFetch<AggregateTable>(`/api/aggregate-table?${params}`)
       .then(d => {
+        if (cancelled) return
         if (d.fisher) setData(d)
-        else console.error('Fisher error:', (d as any).error)
-      }).catch(e => console.error(e))
-      .finally(() => setLoading(false))
-  }, [realPath, gene, conditionCol, gene2, gene2Label])
+        else console.error('Fisher error:', d.error)
+      }).catch(e => { if (!cancelled) console.error(e) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [realPath, gene, conditionCol, gene2, gene2Label, gene2Op])
+
+  // Hoisted above the early returns below — see AggregateDetailTable for why.
+  const warning = (
+    <MergeWarning unresolved={data?.gene2_unresolved} resolved={data?.gene2_resolved} op={gene2Op} />
+  )
 
   // When no condition, Fisher test is not applicable
   if (conditionCol === 'None') {
@@ -48,7 +60,7 @@ export default function FisherTable({
   }
 
   if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
-  if (!data?.fisher?.rows?.length) return <div className="text-xs text-text-muted py-4 text-center">No data</div>
+  if (!data?.fisher?.rows?.length) return <div>{warning}<div className="text-xs text-text-muted py-4 text-center">No data</div></div>
 
   const { fisher } = data
   const maxCt = 30
@@ -81,6 +93,7 @@ export default function FisherTable({
 
   return (
     <div className="overflow-auto max-h-full">
+      {warning}
       <div className="flex items-center gap-2 px-2 py-0.5 min-h-[18px]">
         {(geneFilter || pairFilter) && (
           <button onClick={clearFilters} className="inline-flex items-center gap-1 text-[10px] text-brand hover:text-brand-dark">

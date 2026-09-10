@@ -129,6 +129,45 @@ def resolve_gene_indices(var_names, genes: list[str]) -> list[tuple[int, str]]:
     return results
 
 
+def normalize_gene2_op(op: str | None) -> str:
+    """Normalise a Merge-gene combine operator to 'or' (union) or 'and' (intersection).
+
+    Anything unrecognised — None, empty, 'AND ' — falls back to 'or', preserving
+    the historical union behaviour for old clients that never send the param.
+    """
+    return 'and' if str(op or '').strip().lower() == 'and' else 'or'
+
+
+def merge_op_separator(op: str | None) -> str:
+    """Label separator for a merge set — '&' for intersection, '|' for union.
+
+    Single source of truth so a label separator can never drift from the operator
+    that actually produced the mask.
+    """
+    return '&' if normalize_gene2_op(op) == 'and' else '|'
+
+
+def reduce_bool_masks(masks: list, op: str = 'or') -> np.ndarray | None:
+    """Combine per-member boolean masks into the synthetic merge gene 'M'.
+
+    'or'  → union: M=1 when ANY member is positive (historical behaviour).
+    'and' → intersection: M=1 only when EVERY member is positive.
+    Returns None when nothing resolved, so callers can tell 'no members' from
+    'members but none positive'.
+
+    `op` is normalised here so the helper is safe to call directly with a raw
+    query value rather than only via `normalize_gene2_op`. The result is always a
+    fresh array — callers never receive (and cannot mutate) one of their inputs.
+    """
+    if not masks:
+        return None
+    op = normalize_gene2_op(op)
+    acc = masks[0]
+    for m in masks[1:]:
+        acc = (acc & m) if op == 'and' else (acc | m)
+    return acc.copy()
+
+
 def resolve_group_column(adata, group_col: str = 'Group') -> str:
     """Fallback chain: Group -> Disease -> Condition -> Diagnosis."""
     if group_col and group_col in adata.obs.columns:

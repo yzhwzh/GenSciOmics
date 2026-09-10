@@ -16,7 +16,8 @@ from core.adata_cache import get_adata
 import seaborn as sns
 from matplotlib.ticker import AutoMinorLocator
 
-from analysis.utils import build_cond_palette, cond_sort_key, get_palette
+from analysis.utils import (build_cond_palette, cond_sort_key, get_palette,
+                            merge_op_separator, normalize_gene2_op, reduce_bool_masks)
 from scipy.stats import mannwhitneyu
 import scanpy as sc
 from core.adata_cache import locked_backed_adata
@@ -193,11 +194,18 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
 def _generate_celltype_composition(real_path: str, gene: str,
                                     palette_name: str = 'default',
                                     gene2: str = '',
-                                    gene2_label: str = '') -> dict:
+                                    gene2_label: str = '',
+                                    gene2_op: str = 'or') -> dict:
     """Generate stacked bar chart: among gene-positive cells, cell type proportions.
     If gene2 is provided, show co-expression breakdown: gene1+, gene1+gene2+, gene2+.
-    For an OR-merge gene2 (member set), `gene2_label` overrides the member set's
-    display tag used in the group labels (fallback: the raw gene2 string)."""
+    For a merge gene2 (member set), `gene2_op` picks how members combine — 'or' =
+    union (any member positive) or 'and' = intersection (all positive) — and
+    `gene2_label` overrides the member set's display tag used in the group labels
+    (fallback: the member names joined by that operator's separator).
+
+    The returned dict reports `gene2_resolved` / `gene2_unresolved` alongside the
+    image so the UI can warn about member names that matched nothing instead of
+    silently charting a smaller set than the user asked for."""
     try:
         adata = get_adata(str(real_path))
 
@@ -223,32 +231,56 @@ def _generate_celltype_composition(real_path: str, gene: str,
         g1_expr = np.asarray(g1_expr.toarray() if hasattr(g1_expr, 'toarray') else g1_expr).flatten()
 
         has_g2 = bool(gene2.strip())
+        op = normalize_gene2_op(gene2_op)
         g2_expr = None
-        g2_display = ''  # user-named tag for an OR-merge set (fallback: raw gene2)
+        g2_display = ''  # user-named tag for a merge set (fallback: members joined by sep)
+        gene2_resolved: list[str] = []
+        gene2_unresolved: list[str] = []
         if has_g2:
-            # gene2 may be a '|'-separated OR-merge set (MergeGene): resolve each
-            # member and take the union of member-positive cells as g2_expr. A plain
-            # single gene keeps its raw continuous expression (unchanged behavior).
+            # gene2 may be a '|'-separated merge set (MergeGene): resolve each member
+            # and combine their positive masks per `op` into g2_expr. A plain single
+            # gene keeps its raw continuous expression (unchanged behavior).
             parts = [p for p in (s.strip() for s in gene2.split('|')) if p]
             if len(parts) > 1:
+                masks = []
                 for part in parts:
                     idx = find_gene_idx(part)
                     if idx is None:
+                        gene2_unresolved.append(part)
                         continue
+                    gene2_resolved.append(str(adata.var.index[idx]))
                     col = adata[:, idx].X
-                    pos = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten() > 0
-                    g2_expr = pos if g2_expr is None else (g2_expr | pos)
-                if g2_expr is not None:
-                    g2_expr = g2_expr.astype(float)
-                    g2_display = (gene2_label or '').strip() or gene2
+                    masks.append(np.asarray(
+                        col.toarray() if hasattr(col, 'toarray') else col).flatten() > 0)
+                # Dedupe (order preserved), matching stats — a repeated typo must not
+                # read as "未找到 NOPE、NOPE".
+                gene2_unresolved = list(dict.fromkeys(gene2_unresolved))
+                merged = reduce_bool_masks(masks, op)
+                if merged is not None:
+                    g2_expr = merged.astype(float)
+                    custom = (gene2_label or '').strip()
+                    if custom:
+                        g2_display = custom
+                    elif op == 'and' or gene2_unresolved:
+                        # AND must never be labelled with '|', and after a dropped member
+                        # the raw spec would name a gene that is not in the chart.
+                        g2_display = merge_op_separator(op).join(gene2_resolved)
+                    else:
+                        # Historical OR label: the raw spec, exactly what this function
+                        # returned before the 或/且 feature existed, so a client that sends
+                        # no gene2_op still gets a byte-identical chart.
+                        g2_display = gene2
             else:
                 # Exactly one surviving part (including a degenerate 'A|' spec) or a
                 # plain single gene: resolve it by name, matching stats._get_aggregate_table.
                 g2_name = parts[0] if parts else gene2
                 g2_idx = find_gene_idx(g2_name)
                 if g2_idx is not None:
+                    gene2_resolved = [str(adata.var.index[g2_idx])]
                     col = adata[:, g2_idx].X
                     g2_expr = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten()
+                else:
+                    gene2_unresolved = [g2_name]
         unique_ct = sorted(set(ct_vals))
         cat_colors, _ = get_palette(palette_name)
         palette = cat_colors[:len(unique_ct)] if len(cat_colors) >= len(unique_ct) else \
@@ -318,7 +350,9 @@ def _generate_celltype_composition(real_path: str, gene: str,
         buf.close()
         plt.close(fig)
 
-        return {'image': f'data:image/png;base64,{b64}'}
+        return {'image': f'data:image/png;base64,{b64}',
+                'gene2_resolved': gene2_resolved,
+                'gene2_unresolved': gene2_unresolved}
     except Exception as e:
         print(f'[GenSci] Composition plot error: {e}', file=sys.stderr)
         import traceback

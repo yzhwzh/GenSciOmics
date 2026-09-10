@@ -11,7 +11,8 @@ from core.adata_cache import get_adata
 from scipy.stats import mannwhitneyu, fisher_exact
 from config import OBS_COLUMNS
 
-from analysis.utils import resolve_gene_indices, resolve_group_column
+from analysis.utils import (merge_op_separator, normalize_gene2_op, reduce_bool_masks,
+                            resolve_gene_indices, resolve_group_column)
 
 
 def _get_per_sample_table(real_path: str, genes_str: str,
@@ -255,7 +256,8 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                           group_col: str = 'Group',
                           celltype_col: str = 'CellType',
                           gene2: str = '',
-                          gene2_label: str = '') -> dict:
+                          gene2_label: str = '',
+                          gene2_op: str = 'or') -> dict:
     """Per-gene, per-celltype, per-group stats + Fisher exact test.
 
     When `gene2` is given (and resolvable, differing from the primary gene),
@@ -263,16 +265,19 @@ def _get_aggregate_table(real_path: str, genes_str: str,
     '{g1} | {g2}' (OR: either gene expressed) and '{g1} & {g2}' (AND: both).
     Boolean combo rows carry GeneMeanExpression=None (positive-only features).
 
-    `gene2` may also be a '|'-separated OR-merge set (MergeGene): each member is
-    resolved and the union of member-positive cells becomes a single synthetic
-    boolean gene 'M' labelled 'A|B|…'. Rows are appended for M plus '{g1} | M' and
-    '{g1} & M'. A single-part `gene2` (no '|') keeps the real per-gene row (with a
-    mean); multi-part specs are boolean-only. Unresolvable members are dropped.
+    `gene2` may also be a '|'-separated merge set (MergeGene): each member is
+    resolved and the member-positive cells become a single synthetic boolean gene
+    'M'. `gene2_op` picks how they combine — 'or' = union (M=1 if ANY member is
+    positive, the historical behaviour) or 'and' = intersection (M=1 only if ALL
+    are). Rows are appended for M plus '{g1} | M' and '{g1} & M' — those two always
+    keep their own operator; only the M they operate on changes. A single-part
+    `gene2` (no '|') keeps the real per-gene row (with a mean) and is unaffected by
+    `gene2_op`; multi-part specs are boolean-only.
 
     `gene2_label` optionally overrides the display name of a synthetic merge M
     (ignored for single-gene `gene2`). If blank, or equal to any primary gene
     label (collision would produce duplicate Gene rows), M falls back to the
-    '|'-joined member names.
+    member names joined by the operator's own separator ('|' for or, '&' for and).
 
     Returns:
       'rows': flat list of {Gene, CellType, Group, CellTypeNumber,
@@ -284,6 +289,11 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                            'pvals': [pval_or_None, ...]}, ...]}
                  # One Fisher row per emitted feature label (primary / gene2 / '|' / '&')
                  # × group pair, so the Fisher table can carry a Gene column.
+      'gene2_resolved': actual var names of the members that DID resolve, after
+              case-insensitive dedup (so callers can count what really merged).
+      'gene2_unresolved': the raw member names that did NOT resolve. Reported so
+              the UI can warn instead of silently dropping them. Both keys are
+              present on every non-error return.
     """
     try:
         adata = get_adata(real_path)
@@ -377,37 +387,49 @@ def _get_aggregate_table(real_path: str, genes_str: str,
             col = X[:, gi]
             return col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
 
-        # Ordered emission: primary gene rows → gene2 row → OR row → AND row
+        # Ordered emission: primary gene rows → gene2/merge row → '|' row → '&' row
         features = []  # (label, dense 1-D array, want_mean)
         for gi, gn in zip(gene_indices, valid_genes):
             if gi >= 0:
                 features.append((gn, _dense(gi), True))
 
+        # Merge-member reporting. Declared here, before the `if`, because two return
+        # sites below must always carry these keys — including when the primary gene
+        # failed to resolve and the whole gene2 block is skipped.
+        op = normalize_gene2_op(gene2_op)
+        gene2_resolved: list[str] = []
+        gene2_unresolved: list[str] = []
+
         gene2_name = (gene2 or '').strip()
+        parts = [p for p in (s.strip() for s in gene2_name.split('|')) if p] if gene2_name else []
+        # Resolved outside the `features` guard on purpose: when the primary gene fails
+        # to resolve, `features` is empty and the block below never runs — reporting here
+        # keeps that empty table from claiming "every merge member was fine". Names the
+        # user typed that matched nothing are surfaced to the UI, never silently dropped
+        # (deduped, order preserved).
+        resolved_all = resolve_gene_indices(var_names, parts) if parts else []
+        gene2_unresolved = list(dict.fromkeys(name for i, name in resolved_all if i < 0))
         if gene2_name and features:
             g1_label, g1_feat = features[0][0], features[0][1]
-            # gene2 is either a single gene (classic behavior) or a '|'-joined
-            # OR-merge set (MergeGene). Resolve every part; the single-gene path is
-            # unchanged (real row keeps a mean), a multi-part spec becomes a synthetic
-            # boolean "M" (union of member-positive cells) labelled 'A|B|…'.
-            parts = [p for p in (s.strip() for s in gene2_name.split('|')) if p]
-            resolved = [(i, name) for i, name in resolve_gene_indices(var_names, parts) if i >= 0]
+            # gene2 is either a single gene (classic behavior) or a '|'-joined merge set
+            # (MergeGene). The single-gene path is unchanged (real row keeps a mean); a
+            # multi-part spec becomes a synthetic boolean "M" (see `op` for union vs
+            # intersection), labelled by the members joined with that same operator.
+            resolved = [(i, name) for i, name in resolved_all if i >= 0]
             # Drop members that resolved to the same gene (keep first occurrence).
             seen, members = set(), []
             for i, name in resolved:
                 if name.lower() not in seen:
                     seen.add(name.lower())
                     members.append((i, name))
+            gene2_resolved = [n for _, n in members]
             primary_labels = {l.lower() for l, _, _ in features}
             if members and not all(l.lower() in primary_labels for _, l in members):
                 is_merge = len(members) > 1
                 if is_merge:
-                    # OR-merge: boolean feature (no mean) over the union of members.
-                    mask = None
-                    for i, _n in members:
-                        pos = _dense(i) > 0
-                        mask = pos if mask is None else (mask | pos)
-                    g2_label = '|'.join(n for _, n in members)
+                    # Merge: boolean feature (no mean) over the members combined by `op`.
+                    mask = reduce_bool_masks([_dense(i) > 0 for i, _n in members], op)
+                    g2_label = merge_op_separator(op).join(n for _, n in members)
                     custom = (gene2_label or '').strip()
                     if custom and custom.lower() not in {l.lower() for l, *_ in features}:
                         g2_label = custom  # user-named M; features still hold only primary rows here
@@ -424,7 +446,9 @@ def _get_aggregate_table(real_path: str, genes_str: str,
             _emit(feat, label, want_mean)
 
         if not grouped:
-            return {'rows': rows, 'groups': [], 'fisher': None}
+            return {'rows': rows, 'groups': [], 'fisher': None,
+                    'gene2_resolved': gene2_resolved,
+                    'gene2_unresolved': gene2_unresolved}
         # Fisher exact test for every emitted feature label (primary/gene2/'|'/'&')
         # × group pair × cell type. Boolean combos are valid binary features, so each
         # gets the same 2x2 positive-vs-rest test as the primary gene.
@@ -467,6 +491,8 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                 'cell_types': unique_ct,
                 'rows': fisher_rows,
             },
+            'gene2_resolved': gene2_resolved,
+            'gene2_unresolved': gene2_unresolved,
         }
 
     except Exception as e:

@@ -635,4 +635,104 @@ if has_record and not (pmc_error and not info['methods']):
 
 ---
 
-*后续新缺陷按 B27、B28... 追加。*
+## B27. Multi-organ 猴子数据集 Patient 统计恒为 0：瞬时 HDF5 读失败被持久缓存固化 (2026-09-10)
+
+### 现象
+新链接的 Monkey/Multi-organ 数据集（PMID 35831300，`Data/Monkey/Multi-organ/scRNA/35831300.Monkey.h5ad`）在数据集表格中 Patient 列显示 **0**，但该 `.h5ad` 的 `obs['Patient']` 确有 2 个取值。**重启服务后依旧为 0** —— 说明问题不在进程内缓存。
+
+### 根因
+两条缺陷叠加：
+
+1. **`server/scanner.py::_read_obs_stats` 自开第二个 h5py File 句柄。**
+   它用 `anndata.read_h5ad(path, backed='r')` 直接打开文件、读完 `adata.file.close()`。这与 analysis 线程经 `core.adata_cache` 持有的**共享 backed 句柄**并发访问同一个 3.9 GB `.h5ad`，触发 HDF5 内部错误：
+   ```
+   Can't synchronously read data (bad heap index, heap object = {768610ef, 1381})
+   ```
+   这正是 **B24（同一文件双句柄）** 根因的复发 —— 当时的修复只覆盖了 analysis 路径，漏了 scanner。
+
+2. **失败兜底值被当成权威结果写入持久缓存。**
+   异常分支返回全 0 哨兵 `{patient_count: 0, ...}`，调用方 `resolve_h5ad` 与 bulk 缓存分支**无条件**把它写进 `.scanner_cache.json`。该缓存按「符号链接路径 + `mtime`」复用，而一个写完的 `.h5ad` 的 mtime 永不变化 → **一次瞬时并发读失败 = 永久 Patient 0**，只能手工删缓存条目才能恢复。这是 **B26（失败被永久缓存）** 在磁盘持久化层的翻版。
+
+### 修复
+`server/scanner.py` 三处改动：
+
+1. **复用共享锁定句柄。** `_read_obs_stats` 改走 `core.adata_cache.locked_backed_adata()`（per-file `threading.Lock` + 共享 `backed='r'` 句柄），**不再自开、也不再自行 close 句柄**。统计量计算抽成纯函数 `_collect_obs_stats(adata, tabular)`。
+2. **失败不落盘。** 读失败时返回带 `_read_failed: True` 的占位结果；新增 `_is_cacheable()` 守卫，两个持久化写入点（`resolve_h5ad` 与 bulk 分支）在失败时**跳过写入**，占位值仅用于当次前端渲染。`_strip_read_failed()` 在结果离开 scanner 前摘掉该标记，API 契约不变。
+3. **中毒条目自愈。** `_is_valid_cache_entry()` 把 `obs_columns` 为空的缓存条目判为无效（一次成功读取必然产生非空 `obs_columns`），下次扫描自动重算 —— 无需手工清 `.scanner_cache.json`。
+
+线上已中毒的那 1 条条目已单独修复（`.scanner_cache.json` 删除该条目后重算）。影响面：99 条缓存中 1 条。
+
+### 涉及文件
+- `server/scanner.py`
+- `server/tests/test_scanner_obs_cache.py`（新增回归测试，9 项断言，自包含无需 pytest）
+
+### 关键教训
+- **B24 的「统一走共享 backed 句柄」当初没有覆盖 scanner。** 凡是新写的 `.h5ad` 读取，一律走 `core.adata_cache.locked_backed_adata()`；不要 `anndata.read_h5ad` 裸开第二个句柄。
+- **B26 的「失败不缓存」必须同时覆盖进程内缓存和磁盘持久缓存。** 按 mtime 复用的持久缓存尤其危险：文件写完 mtime 不再变，毒条目永不自愈，会跨重启存活。
+- **兜底值必须带显式失败标记**，让调用方能区分「真的是 0」和「根本没读到」。全 0 与全空无法自证。
+
+---
+
+## B28. Merge 合成基因的成员名被子串回退静默解析成别的基因 (2026-09-10，**后端未修复；UI 侧入口已封堵**)
+
+### 现象
+Barplot「共表达」的 Merge 模式下填 `COL1|COL1A2` 生成合成基因 M。数据集里并没有 `COL1`，但接口返回 `gene2_unresolved: []`、`gene2_resolved: ['COL1A1','COL1A2']`，前端**一条警告都不显示** —— M 实际是在用户从未指定的 `COL1A1` 上取的并集/交集。已实测复现（IPF 数据集，**直接调接口复现，非 UI 复现**，可达性见下）。
+
+### 根因
+`server/analysis/utils.py` 的 `resolve_gene_indices` 在精确匹配失败后有子串回退：
+
+```python
+partial = [n for n in var_names if g.lower() in n.lower()]
+```
+
+`'col1' in 'col1a1'` 成立 → `COL1` 被映射到 `COL1A1`。该回退是**既有行为**（非本次引入），但本次新增的 `gene2_resolved` 契约把它**认证成"已解析"**，使警告机制失效 —— 恰好是本功能要消除的那种失败模式。
+
+### 可达性（2026-09-10 实测修正，不要跳过）
+初判时把本缺陷说成「用户填 COL1 就会中招」，**说重了**。用 Playwright 在真实 UI 上逐场景实测后：
+
+| 输入 | 下拉内容 | 直接回车选中 |
+|---|---|---|
+| `COL1` | 17 项真实基因（`COL10A1`…`COL1A1`/`COL1A2`/`LRCOL1`），`Create "COL1"` 在**末位第 17 项** | `COL10A1`（真实基因） |
+| `COL1A1` | 1 项 `COL1A1`，**无 Create 项** | `COL1A1` |
+| `ZZZQQ` | 仅 `Create "ZZZQQ"` | `ZZZQQ` |
+
+关键对称性：下拉源 `routes.py:279` 与解析回退 `utils.py:124` 用的是**同一个子串谓词、同一份基因表**。因此
+`token 能被子串回退命中` ⟺ `下拉一定会列出那些真实基因` → 用户眼前有真选项，Create 反而被挤到末位；而当真选项为空（只剩 Create）时，后端子串回退**同样匹配不到** → `gene2_unresolved` 正常上报、警告正常显示。**静默只发生在「token 是真实基因子串 且 用户特意翻到底部点 Create」这唯一组合**。
+
+即便如此仍是真实缺陷：`AsyncCreatableSelect` 保留了 Create 项，刻意操作可以走到。
+
+### 状态
+**后端未修复；UI 入口已封堵。** 处置：
+1. `ExpressionChartContainer.tsx` 的 Merge 成员选择器加 `isValidNewOption={() => false}` —— 既然「可合并的基因必然可被搜到」，Create 对该场景零收益，去掉即把唯一入口封死（后端解析逻辑不动，避免波及单基因 `gene2` 路径与计划中划为非目标的「统一解析」）。
+2. `server/tests/test_gene2_op.py::test_known_partial_match_hazard` **钉住后端现状**（直接调 `_get_aggregate_table`，绕过 UI）。后端依旧如此，接口直连仍可触发；修掉它时该用例应当失败并被改写，**不是被删掉**。
+
+### 副作用：`gene2_unresolved` 警告在 UI 上已不可达（2026-09-10 实测）
+必须记下来，否则日后会有人以为那条警告在干活。
+
+`search.py:33` 的 `_get_genes` 返回的就是 `set(adata.var_names)`，而 `stats.py:306` 的解析器正是拿 `adata.var_names` 做精确匹配 —— **同一个源、同一个谓词**。Create 关掉后，用户在 Merge 里能选中的每一个基因都必然精确命中，`gene2_unresolved` 恒为空数组。
+
+因此「未找到成员」警告在 UI 上**实际不可达**（仅剩「选中 chip 后数据集文件被替换、mtime 变化导致基因消失」这类边界情形）。它**仍然保留**，因为：
+- 它是 API 契约的一部分，接口直连（curl / 未来的 LLM skill）仍会触发；
+- 渲染逻辑由 vitest 组件测试用 mock 响应持续覆盖（`AggregateDetailTable.test.tsx` / `FisherTable.test.tsx`）；
+- 后端行为由 `test_gene2_op.py` 覆盖。
+
+即：**警告从"运行期防线"退化成了"API 契约 + 未来防线"**。若希望它重新承担 UI 上的实时职责，需回到候选修法 1（Merge 成员改为只认精确匹配），让手输的不存在基因重新变成可表达状态。
+
+候选修法（择一）：
+1. Merge 成员要求精确（大小写不敏感）匹配，主基因路径保持不变 —— 改动最小，但会与 plots 的解析结果进一步分叉；
+2. 保留回退，但新增第三个字段 `gene2_partial`，让前端把子串命中标成"疑似"而非"已解析"。
+
+另需注意：`stats.py` 与 `plots.py` 的解析器本就不一致（前者只查 `var_names`，后者还查 `index`/`gene_ids`/`gene_symbols`/`feature_name` 列），去重行为也不同 —— 同一个 `gene2` 在图与表可能得到不同的成员集。修的时候应抽成一个共享解析器，否则图与表的警告会互相矛盾。
+
+### 涉及文件
+- `server/analysis/utils.py`（`resolve_gene_indices`）
+- `server/analysis/stats.py` / `server/analysis/plots.py`（两条各自的解析路径）
+
+### 关键教训
+- **新增的「已解析 / 未解析」契约会把既有的模糊匹配升级成静默错误。** 把宽松解析的结果当作"确认无误"回传给 UI，比不回传更危险。
+- 涉及基因名解析的功能，**只有精确匹配才能作为「已确认」的依据**；子串命中最多算「疑似」。B24/B26/B27 的教训是"失败不要伪装成成功"，这条是它的近亲：**猜测不要伪装成确认**。
+- **判定缺陷严重性必须实测可达性，不能只读代码。** 本次初判把「用户填 COL1 就会中招」当成结论写进日志，实测才发现回车选中的是 `COL10A1`、Create 项挤在末位第 17 个。**机制成立 ≠ 路径可达** —— 可达性只有把 UI 真跑一遍才量得出来，读代码永远量不出来。教训：先测可达性，再定严重级别，最后才写日志。
+
+---
+
+*后续新缺陷按 B29、B30... 追加。*
