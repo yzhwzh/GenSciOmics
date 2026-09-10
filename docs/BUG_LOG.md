@@ -735,4 +735,96 @@ partial = [n for n in var_names if g.lower() in n.lower()]
 
 ---
 
-*后续新缺陷按 B29、B30... 追加。*
+## B29. 仓库根 `coverage/` 遮蔽 Python `coverage` 模块，后端启动即崩；前端把崩溃显示成「该组织没有数据」(2026-09-10)
+
+### 现象
+组织页（本次为 kidney）显示 **"No datasets found in kidney/"**。但 `Data/Human/Kidney/` 下确有 3 个 `.h5ad`，且接口在多数时候正常返回 3 条。用户报告：「又出现刚刚的bug了」。
+
+### 根因
+两条缺陷叠加：一条让后端起不来，另一条把「起不来」伪装成「没有数据」。
+
+**1. `coverage/` 目录遮蔽真模块，`import scanpy` 在 import 阶段崩溃。**
+本机 shell 的 `PYTHONPATH` 以**裸冒号开头**：
+
+```
+PYTHONPATH=:/data/yuanwuzhou/Software/scBERT:/data/yuanwuzhou/02.AIPlatForm/OpenBioMed:...
+```
+
+前导冒号 = 一个**空条目** = **当前工作目录进入 `sys.path`**。实测从仓库根：
+
+```
+sys.path[:3] == ['', '/data/yuanwuzhou/102.ClaudeCode/10.GenSciOmics', '/data/.../scBERT']
+```
+
+而 `npm run test:coverage`（vitest 默认 `reportsDirectory: './coverage'`）会在仓库根写出 `coverage/` 目录。此时从仓库根执行 `python3 server/main.py`（即 `npm run server` / `npm start`），Python 把这个目录当作**命名空间包**导入 —— `import coverage` **成功**返回一个空模块（`__file__ is None`，`hasattr(coverage,'types') is False`）。
+
+numba 的 `numba/misc/coverage_support.py:114` 写的是：
+
+```python
+try:
+    import coverage
+except ImportError:
+    coverage = None
+...
+if coverage is not None:
+    class NumbaTracer(coverage.types.Tracer): ...
+```
+
+空模块**不是 None**，于是执行到 `coverage.types` →
+
+```
+AttributeError: module 'coverage' has no attribute 'types'
+```
+
+→ `import numba` 失败 → `import scanpy` 失败 → `server/main.py` 在 import 阶段退出（**退出码 1，HTTP 端口根本没起来**）。
+
+注意 `coverage` 在 conda 环境 `claude-code` 里**根本没安装**（从 `/tmp` 执行 `import coverage` → `ModuleNotFoundError`）。也就是说 numba 的 `except ImportError` 兜底本来工作正常 —— 是这个目录让 import **假装成功**，把本应被捕获的 `ImportError` 升级成了 `AttributeError`。
+
+**2. 前端把「请求失败」渲染成「该组织没有数据」。**
+`src/pages/TissuePage.tsx` 的加载 effect：
+
+```tsx
+.fetchDatasets(slug)
+  .then((data) => setRows(Array.isArray(data) ? data : []))
+  .catch(() => setRows([]))        // ← 错误被吞成空数组
+```
+
+后端崩溃 → 每个请求都抛错 → 被吞成 `[]` → 命中 `rows.length === 0` 分支 → 渲染 `No datasets found in kidney/`。**这是一句关于数据的断言，实际发生的却是请求失败**，两种状态被合并成同一个。违反 CLAUDE.md「No silent error swallowing」。
+
+**3. 放大器：空列表被缓存 5 分钟。**
+`server/main.py:40-47` 先起 HTTP 服务、扫描放在后台线程 —— 初次扫描完成前**所有列表接口都返回 `[]`**，这是合法且常见的响应。而 `src/api/client.ts` 的 `cachedFetch` 会把任意响应缓存 5 分钟，包括这个 `[]`，于是「后端还在扫」被钉成 5 分钟的「没有数据」，**活得比扫描本身还长**。
+
+### 时间线与责任
+`coverage/` 是**本次会话中我执行 `npm run test:coverage` 时生成的**。在我跑覆盖率之前该目录不存在，后端一直正常。**本缺陷由我的操作引入**，不是既有问题。
+
+### 修复
+1. **`vitest.config.ts`** → `coverage.reportsDirectory: './coverage-report'`。任何**非 Python 模块名**的目录名都安全；`.gitignore` 同步改为 `coverage-report/` 并保留旧 `coverage/` 条目。
+2. **`TissuePage.tsx`** → 新增 `loadError` 状态，`.catch` 记录错误消息而非静默置空；渲染区分三态：**失败**（`Failed to load datasets` + 错误详情 + Retry 按钮）/ **成功但为空**（保留原 `No datasets found` 文案）/ **有数据**。失败时页脚 `N dataset(s)` 一并隐藏（`invisible`），因为此刻根本不知道数量。
+3. **`src/api/client.ts`** → `cachedFetch` 不再缓存空数组。空列表在这些接口上的语义是「此刻还没有」，不是「不存在」，且重取代价极低。
+
+### 验证（双向实测）
+| 操作 | 结果 |
+|---|---|
+| `coverage-report/` 在位，从仓库根 `import scanpy` | ✅ OK（scanpy 1.11.5） |
+| 改名回 `coverage/` | ❌ **稳定复现** `AttributeError: module 'coverage' has no attribute 'types'` |
+| 再改名回 `coverage-report/` | ✅ 恢复正常 |
+| 重启后端（`coverage-report/` 在位） | ✅ 启动成功，`/api/datasets?tissue=kidney` 返回 3 条 |
+| 全仓根目录扫描「是否还有同名真模块被遮蔽」 | ✅ 无其它遮蔽目录 |
+
+新增 `src/pages/TissuePage.test.tsx` 4 项：失败不得显示 "No datasets found"、Retry 能恢复、真·空组织仍显示 "No datasets found"、成功渲染表格。**改前 3 项 RED / 1 项 GREEN，改后 4/4 GREEN**；全量 `npm test` 45 passed（7 files），`tsc -b` 干净。
+
+### 涉及文件
+- `vitest.config.ts`、`.gitignore`
+- `src/pages/TissuePage.tsx`、`src/pages/TissuePage.test.tsx`（新增）
+- `src/api/client.ts`
+
+### 关键教训
+- **cwd 在 `sys.path` 上时，仓库根的任何目录都可能遮蔽依赖。** 本机 `PYTHONPATH` 前导裸冒号就是这个陷阱（`export PYTHONPATH=":$PYTHONPATH"` 的典型笔误）。凡是在仓库根产出文件的工具，**输出目录名不要与任何 Python 模块同名**。
+- **`try: import X / except ImportError` 形式的可选依赖最危险。** 遮蔽目录让 import「假装成功」，把兜底分支本该捕获的 `ImportError` 变成运行期 `AttributeError`，而且**报错位置离病因极远**（numba 抛错，根因在仓库根的覆盖率目录）。
+- **「没有数据」和「请求失败」必须是两个状态。** `.catch(() => setRows([]))` 把二者合一，代价是用户拿到一句听起来像事实的错误结论。这是 B26/B27「失败不要伪装成成功」在**前端展示层**的翻版。
+- **空列表不要缓存。** 后端启动期（扫描未完成）的 `[]` 与「真的为空」在响应上无法区分，缓存它就把瞬态固化成持久态 —— 与 B26/B27「瞬时失败被缓存固化」同源，只是这次固化在浏览器内存里。
+- **诊断「数据看起来是空的」类缺陷，先确认服务是否还活着。** 本次若只盯着数据目录和扫描器，会一路查错方向；实际病因是后端根本没起来。
+
+---
+
+*后续新缺陷按 B30、B31... 追加。*

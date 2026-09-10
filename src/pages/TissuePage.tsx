@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, ExternalLink, HardDrive, Loader2, XCircle, BookOpen, Dna, FlaskConical, Beaker, Microscope } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, HardDrive, Loader2, XCircle, BookOpen, Dna, FlaskConical, Beaker, Microscope, AlertTriangle, RefreshCw } from 'lucide-react'
 import { fetchDatasets } from '../api/datasets'
 import { ORGANS } from '../data/mockData'
 import { useTableFilter } from '../hooks/useTableFilter'
@@ -22,6 +22,7 @@ export default function TissuePage() {
   const navigate = useNavigate()
   const [rows, setRows] = useState<DatasetInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<OmicsTab>(() => {
     try {
       const v = sessionStorage.getItem('gensci_tissue_tab') as OmicsTab | null
@@ -41,14 +42,38 @@ export default function TissuePage() {
   const tissueName = organ?.label ?? slug ?? 'Unknown'
   const hasActiveFilters = Object.values(filters).some(s => s.size > 0)
 
-  useEffect(() => {
+  // A failed request must never render as "this tissue has no datasets" — that
+  // sentence makes a claim about the data, but a failure only tells us the
+  // request failed. The two are different states and are rendered differently.
+  // (The backend also serves an empty list for the first seconds after a
+  // restart, while its initial scan is still running, so an empty result is
+  // only trustworthy once a request has actually succeeded.)
+  // The returned cleanup cancels the in-flight request. Without it, navigating
+  // from one tissue to another mid-flight lets whichever response lands last
+  // win — the slow one for the tissue you already left would paint the page
+  // (or set its error) after the new tissue's data arrived.
+  const load = useCallback(() => {
     if (!slug) return
+    let cancelled = false
     setLoading(true)
     fetchDatasets(slug)
-      .then((data) => setRows(Array.isArray(data) ? data : []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
+      .then((data) => {
+        if (cancelled) return
+        setRows(Array.isArray(data) ? data : [])
+        setLoadError(null)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setRows([])
+        setLoadError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
   }, [slug])
+
+  useEffect(() => load(), [load])
 
   useEffect(() => {
     if (!slug || loading) return
@@ -171,6 +196,19 @@ export default function TissuePage() {
             <Loader2 className="w-6 h-6 text-brand mx-auto mb-2 animate-spin" />
             <p className="text-sm text-text-muted">Scanning data directory...</p>
           </div>
+        ) : loadError ? (
+          <div className="bg-surface rounded-xl shadow-card p-12 text-center">
+            <AlertTriangle className="w-6 h-6 text-warning mx-auto mb-3" />
+            <p className="text-text-secondary text-sm font-medium mb-1">Failed to load datasets</p>
+            <p className="text-xs text-text-muted mb-4">
+              The server did not respond ({loadError}). This says nothing about whether
+              data exists — the request itself failed.
+            </p>
+            <button onClick={load}
+              className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-brand bg-surface border border-border-light hover:border-brand rounded-lg px-3 py-1.5 transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" /> Retry
+            </button>
+          </div>
         ) : omicsRows.length === 0 && activeTab !== 'single-cell' ? (
           <div className="bg-surface rounded-xl shadow-card p-12 text-center">
             <p className="text-text-secondary text-sm font-medium mb-2">
@@ -260,7 +298,9 @@ export default function TissuePage() {
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-4 text-xs text-text-muted">
+        {/* "0 dataset(s)" would read as a fact about the data; on a failed load
+            we don't know the count at all, so the tally is withheld. */}
+        <div className={`mt-4 flex items-center gap-4 text-xs text-text-muted ${loadError ? 'invisible' : ''}`}>
           <span>{rows.length} dataset(s)</span>
           {rows.some((r) => r.status !== 'ready') && (
             <span className="text-warning flex items-center gap-1">

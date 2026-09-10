@@ -16,4 +16,9 @@ tsconfig.app.tsbuildinfo
 docs/软著/
 
 # 覆盖率报告产物（npm run test:coverage 生成，约 3.5M HTML/lcov）— 不入库
+# 目录名不能叫 coverage/：本机 PYTHONPATH 前导 ':' 使 cwd 进入 sys.path，
+# 仓库根下名为 coverage 的目录会被 Python 当作命名空间包，遮蔽 numba/scanpy
+# 依赖的真 coverage 模块，导致 server/main.py 启动即崩（B29）。
+coverage-report/
+# 历史遗留：改名前生成的目录，留在盘上不影响运行，但不入库
 coverage/

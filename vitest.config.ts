@@ -15,6 +15,15 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'e2e/**'],
     coverage: {
       provider: 'v8',
+      // NOT the default './coverage'. This shell exports PYTHONPATH with a
+      // leading ':', which puts the cwd on sys.path — so a directory named
+      // `coverage/` at the repo root is imported by Python as an empty
+      // namespace package, shadowing the real `coverage` module that
+      // numba (via scanpy) needs. `python3 server/main.py` then dies at import
+      // with "AttributeError: module 'coverage' has no attribute 'types'" and
+      // the backend never starts. Any report dir name that isn't a Python
+      // module name avoids this; see B29.
+      reportsDirectory: './coverage-report',
       reporter: ['text', 'lcov', 'html'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/test/**', '**/*.test.*', '**/*.d.ts'],
