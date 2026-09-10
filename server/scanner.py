@@ -16,6 +16,7 @@ from config import (
 )
 from bulk_import import import_bulk_table
 from caches import LRUCache
+from core.adata_cache import locked_backed_adata
 from events import log_event
 
 
@@ -95,11 +96,66 @@ def _get_annotation_info(pmid: str) -> tuple[str, dict | None]:
     return (entry.get('Source', 'Paper'), entry.get('Major'))
 
 
-def _read_obs_stats(real_path: Path, mtime: float, tabular: bool = False) -> dict:
-    """Read and cache obs column statistics from an .h5ad file.
+def _collect_obs_stats(adata, tabular: bool) -> dict:
+    """Build obs column statistics from an already-opened AnnData (pure, no I/O).
 
     tabular=True → tabular datasets (BulkRNA/Protein): group_dist shows plain
     sample counts ('G1 5') with no '/ cells' or 'c' suffix (no cell concept).
+    """
+    stats = {'n_obs': adata.n_obs, 'n_vars': adata.n_vars}
+    for col in OBS_COLUMNS:
+        if col not in adata.obs.columns:
+            stats[f'{col.lower()}_count'] = 0
+            stats[f'{col.lower()}_dist'] = ''
+            continue
+        vals = adata.obs[col].dropna()
+        unique = vals.unique()
+        stats[f'{col.lower()}_count'] = len(unique)
+        # For Group & Tissue, provide the distribution/value
+        if col == 'Group':
+            counts = vals.value_counts()
+            if tabular:
+                # Tabular (BulkRNA/Protein): one row per sample, no cells —
+                # group_dist is plain sample counts only.
+                if 'Sample' in adata.obs.columns:
+                    grp = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
+                    stats['group_dist'] = ', '.join(
+                        f'{g} {int(grp.get(g, 0))}' for g in counts.index)
+                else:
+                    stats['group_dist'] = ', '.join(
+                        f'{g} {int(c)}' for g, c in counts.items())
+            elif 'Sample' in adata.obs.columns:
+                grp_samples = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
+                stats['group_dist'] = ', '.join(
+                    f'{g} {int(grp_samples.get(g, 0))} / {int(counts.get(g, 0))}'
+                    for g in counts.index
+                )
+            else:
+                stats['group_dist'] = ', '.join(f'{g} {int(c)}c' for g, c in counts.items())
+        elif col == 'Tissue':
+            stats['tissue_obs'] = unique[0] if len(unique) == 1 else ', '.join(str(u) for u in unique)
+        elif col == 'CellType':
+            stats['celltype_names'] = [str(v) for v in unique]
+        else:
+            stats[f'{col.lower()}_dist'] = ''
+    # Disease count (bulk RNA uses Disease as the cancer-type column)
+    stats['disease_count'] = int(adata.obs['Disease'].nunique()) if 'Disease' in adata.obs.columns else 0
+    # Static metadata for analysis-info (no h5ad read needed)
+    stats['sample_names'] = [str(s) for s in adata.obs['Sample'].unique()] if 'Sample' in adata.obs.columns else []
+    stats['group_names'] = [str(g) for g in adata.obs['Group'].unique()] if 'Group' in adata.obs.columns else []
+    stats['obs_columns'] = list(adata.obs.columns)
+    return stats
+
+
+def _read_obs_stats(real_path: Path, mtime: float, tabular: bool = False) -> dict:
+    """Read and cache obs column statistics for an .h5ad file (mtime-keyed).
+
+    走共享锁定 backed 句柄（core.adata_cache）——B24 教训：此处若自开第二个 h5py File，
+    并发下会与 analysis 线程的共享句柄冲突（"bad heap index"）。共享句柄由 adata_cache
+    管理，**不得**在本函数内 close。
+
+    读取失败时返回带 `_read_failed: True` 的占位结果：调用方**不得**持久化（B27）。
+    占位值仅供本次展示，下次扫描自动重试。
     """
     key = (str(real_path), mtime)
     cached = _obs_cache.get(key)
@@ -107,55 +163,40 @@ def _read_obs_stats(real_path: Path, mtime: float, tabular: bool = False) -> dic
         return cached
 
     try:
-        adata = anndata.read_h5ad(str(real_path), backed='r')
-        stats = {'n_obs': adata.n_obs, 'n_vars': adata.n_vars}
-        for col in OBS_COLUMNS:
-            if col not in adata.obs.columns:
-                stats[f'{col.lower()}_count'] = 0
-                stats[f'{col.lower()}_dist'] = ''
-                continue
-            vals = adata.obs[col].dropna()
-            unique = vals.unique()
-            stats[f'{col.lower()}_count'] = len(unique)
-            # For Group & Tissue, provide the distribution/value
-            if col == 'Group':
-                counts = vals.value_counts()
-                if tabular:
-                    # Tabular (BulkRNA/Protein): one row per sample, no cells —
-                    # group_dist is plain sample counts only.
-                    if 'Sample' in adata.obs.columns:
-                        grp = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
-                        stats['group_dist'] = ', '.join(
-                            f'{g} {int(grp.get(g, 0))}' for g in counts.index)
-                    else:
-                        stats['group_dist'] = ', '.join(
-                            f'{g} {int(c)}' for g, c in counts.items())
-                elif 'Sample' in adata.obs.columns:
-                    grp_samples = adata.obs.groupby('Group', observed=True)['Sample'].nunique()
-                    stats['group_dist'] = ', '.join(
-                        f'{g} {int(grp_samples.get(g, 0))} / {int(counts.get(g, 0))}'
-                        for g in counts.index
-                    )
-                else:
-                    stats['group_dist'] = ', '.join(f'{g} {int(c)}c' for g, c in counts.items())
-            elif col == 'Tissue':
-                stats['tissue_obs'] = unique[0] if len(unique) == 1 else ', '.join(str(u) for u in unique)
-            elif col == 'CellType':
-                stats['celltype_names'] = [str(v) for v in unique]
-            else:
-                stats[f'{col.lower()}_dist'] = ''
-        # Disease count (bulk RNA uses Disease as the cancer-type column)
-        stats['disease_count'] = int(adata.obs['Disease'].nunique()) if 'Disease' in adata.obs.columns else 0
-        # Static metadata for analysis-info (no h5ad read needed)
-        stats['sample_names'] = [str(s) for s in adata.obs['Sample'].unique()] if 'Sample' in adata.obs.columns else []
-        stats['group_names'] = [str(g) for g in adata.obs['Group'].unique()] if 'Group' in adata.obs.columns else []
-        stats['obs_columns'] = list(adata.obs.columns)
-        adata.file.close()
+        with locked_backed_adata(str(real_path)) as adata:
+            stats = _collect_obs_stats(adata, tabular)
         _obs_cache.set(key, stats)
         return stats
     except Exception as e:
         print(f'[GenSci] Error reading obs stats from {real_path}: {e}', file=sys.stderr)
-        return {f'{c.lower()}_count': 0 for c in OBS_COLUMNS} | {'group_dist': '', 'tissue_obs': ''}
+        return {
+            '_read_failed': True,
+            **{f'{c.lower()}_count': 0 for c in OBS_COLUMNS},
+            'group_dist': '', 'tissue_obs': '',
+            'n_obs': 0, 'n_vars': 0, 'disease_count': 0,
+            'celltype_names': [], 'sample_names': [], 'group_names': [], 'obs_columns': [],
+        }
+
+
+def _strip_read_failed(stats: dict) -> dict:
+    """Drop the transient `_read_failed` marker before stats leave the scanner."""
+    if '_read_failed' not in stats:
+        return stats
+    return {k: v for k, v in stats.items() if k != '_read_failed'}
+
+
+def _is_cacheable(stats: dict) -> bool:
+    """True unless the stats came from a failed read (B27: 失败结果永不落盘)."""
+    return not stats.get('_read_failed')
+
+
+def _is_valid_cache_entry(entry: dict) -> bool:
+    """Reject legacy poisoned entries (B27) so they self-heal on next scan.
+
+    A successful read always yields a non-empty `obs_columns`; the old
+    zero-sentinel was persisted with an empty list, so treat that as invalid.
+    """
+    return bool(entry.get('obs_columns'))
 
 
 def _extract_data_type(fname: str) -> str:
@@ -317,9 +358,9 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
         'status': 'ready',
         'annotation_source': _get_annotation_info(pmid)[0],
         'marker_major': _get_annotation_info(pmid)[1],
-        **obs_stats,
+        **_strip_read_failed(obs_stats),
     }
-    if cache is not None:
+    if cache is not None and _is_cacheable(obs_stats):
         with _cache_lock:
             cache[str(path)] = {
                 'mtime': stat.st_mtime,
@@ -380,7 +421,10 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
     cache_mtime = stat.st_mtime
     if cache is not None:
         cached = cache.get(cache_key)
-        if cached is not None and cached.get('mtime') == cache_mtime:
+        # B27: a poisoned entry (empty obs_columns from an old failed read) is
+        # treated as a miss so it gets recomputed instead of served forever.
+        if (cached is not None and cached.get('mtime') == cache_mtime
+                and _is_valid_cache_entry(cached)):
             # Return cached entry (add path fields that aren't stored in cache)
             return {
                 'species': cached['species'],
@@ -435,9 +479,9 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         'status': status,
         'annotation_source': _get_annotation_info(pmid)[0],
         'marker_major': _get_annotation_info(pmid)[1],
-        **obs_stats,
+        **_strip_read_failed(obs_stats),
     }
-    if cache is not None:
+    if cache is not None and _is_cacheable(obs_stats):
         with _cache_lock:
             cache[cache_key] = {
                 'mtime': cache_mtime,
