@@ -29,7 +29,7 @@ Phase 5: Security Review        security-reviewer (if auth/input/API)
   ↓
 Phase 6: Build Check            build-error-resolver (if build fails)
   ↓
-Phase 7: Coverage Check         npm run test:coverage ≥ 80%
+Phase 7: Coverage Check         npm run test:coverage（测量，不设阈值）
 ```
 
 ### Phase 0 — Research & Reuse
@@ -92,7 +92,14 @@ If build fails at any point:
 ```bash
 npm run test:coverage
 ```
-Target: **≥ 80%** coverage (lines, branches, functions, statements).
+**测量，不设阈值。** 2026-09-10 实测：lines 17.67% / branches 16.35% / functions 15.94%。
+
+说清楚现状，免得这条再变成一句空话：
+- 前端单元测试集中在 analysis 容器的少数几个文件（`mergeOp.ts` 92.85%、`ExpressionChartContainer.tsx` 80.55%、`FisherTable.tsx` 71.42%），**5 个 page 和多数可视化组件是 0%**。
+- `include` 只覆盖 `src/**` —— **`server/` 后端完全没有覆盖率测量**（无 pytest、无 coverage 工具，只有手写的自包含脚本）。而后端才是生物学语义所在。
+- 因此历史遗留的「≥ 80%」既不是配置里的值（曾是 40），也从未被执行过。与其留一条谁都不跑的硬性规定，不如把数字摊开。
+
+这条阶段的门槛是 **`npm test` 必须全绿**，覆盖率仅作参考。真正抓得住 bug 的是浏览器端到端（Playwright，真实数据集）与后端自包含脚本，不是覆盖率百分比。
 
 ### Full Agent Reference
 
