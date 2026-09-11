@@ -30,7 +30,7 @@ from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_a
 from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_umap_ratio_plots, _generate_celltype_composition, _generate_marker_dotplot
 from analysis.utils import CATEGORICAL_PALETTE_MAP, normalize_gene2_op
 from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_groups, bulk_volcano
-from search import _get_genes
+from search import _get_genes, rank_gene_matches
 from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
 from skills import list_skills, get_skill_content
 from online import heartbeat, count_online
@@ -276,8 +276,9 @@ def handle_search_genes(handler, q):
         return
     mtime = os.path.getmtime(real_path_str)
     all_genes = _get_genes(real_path, mtime)
-    matched = sorted(g for g in all_genes if query in g.lower())
-    handler._json({'genes': matched[:100]})
+    # Exact match first, then the 100-item cap — see rank_gene_matches: the
+    # reverse order drops short gene names out of their own result.
+    handler._json({'genes': rank_gene_matches(all_genes, query)})
 
 
 def handle_expression_stats(handler, q):

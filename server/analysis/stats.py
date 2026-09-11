@@ -3,15 +3,17 @@
 
 import sys
 import itertools
+from contextlib import ExitStack
 
 import numpy as np
 import pandas as pd
 import anndata
-from core.adata_cache import get_adata
+from core.adata_cache import locked_backed_adata
 from scipy.stats import mannwhitneyu, fisher_exact
 from config import OBS_COLUMNS
 
-from analysis.utils import (merge_op_separator, normalize_gene2_op, reduce_bool_masks,
+from analysis.utils import (extract_gene_columns, in_memory_matrix, merge_op_separator,
+                            normalize_gene2_op, reduce_bool_masks,
                             resolve_gene_indices, resolve_group_column)
 
 
@@ -25,55 +27,59 @@ def _get_per_sample_table(real_path: str, genes_str: str,
     GeneExpressionPct, GeneExpressionNumber, Group}.
     """
     try:
-        adata = get_adata(real_path)
+        with locked_backed_adata(real_path) as adata:
+            if 'Sample' not in adata.obs.columns:
+                return {'error': 'Sample column not found'}
+            if celltype_col not in adata.obs.columns:
+                return {'error': f'{celltype_col} not found in obs'}
 
-        if 'Sample' not in adata.obs.columns:
-            return {'error': 'Sample column not found'}
-        if celltype_col not in adata.obs.columns:
-            return {'error': f'{celltype_col} not found in obs'}
+            # Resolve group column (skip grouping when 'None')
+            if group_col and group_col != 'None':
+                group_col = resolve_group_column(adata, group_col)
+            else:
+                group_col = ''
 
-        # Resolve group column (skip grouping when 'None')
-        if group_col and group_col != 'None':
-            group_col = resolve_group_column(adata, group_col)
-        else:
-            group_col = ''
+            # Resolve genes
+            genes = [g.strip() for g in genes_str.split(',') if g.strip()]
+            var_names = adata.var_names
+            gene_indices, valid_genes = [], []
+            for g in genes:
+                idx = None
+                for i, n in enumerate(var_names):
+                    if n.lower() == g.lower():
+                        idx, _ = i, str(n)
+                        break
+                if idx is None:
+                    partial = [n for n in var_names if g.lower() in n.lower()]
+                    if partial:
+                        idx = list(var_names).index(partial[0])
+                gene_indices.append(idx if idx is not None else -1)
+                valid_genes.append(str(var_names[idx]) if idx is not None else g)
 
-        # Resolve genes
-        genes = [g.strip() for g in genes_str.split(',') if g.strip()]
-        var_names = adata.var_names
-        gene_indices, valid_genes = [], []
-        for g in genes:
-            idx = None
-            for i, n in enumerate(var_names):
-                if n.lower() == g.lower():
-                    idx, _ = i, str(n)
-                    break
-            if idx is None:
-                partial = [n for n in var_names if g.lower() in n.lower()]
-                if partial:
-                    idx = list(var_names).index(partial[0])
-            gene_indices.append(idx if idx is not None else -1)
-            valid_genes.append(str(var_names[idx]) if idx is not None else g)
+            sample_vals = adata.obs['Sample'].values.astype(str)
+            ct_vals = adata.obs[celltype_col].values.astype(str)
+            unique_samples = sorted(set(sample_vals))
+            unique_ct = sorted(set(ct_vals))
 
-        sample_vals = adata.obs['Sample'].values.astype(str)
-        ct_vals = adata.obs[celltype_col].values.astype(str)
-        unique_samples = sorted(set(sample_vals))
-        unique_ct = sorted(set(ct_vals))
+            # Sample -> Group map
+            s_to_g = {}
+            if group_col and group_col in adata.obs.columns:
+                sf = pd.DataFrame({'Sample': sample_vals, 'G': adata.obs[group_col].values.astype(str)}).drop_duplicates('Sample')
+                s_to_g = dict(zip(sf['Sample'], sf['G']))
 
-        # Sample -> Group map
-        s_to_g = {}
-        if group_col and group_col in adata.obs.columns:
-            sf = pd.DataFrame({'Sample': sample_vals, 'G': adata.obs[group_col].values.astype(str)}).drop_duplicates('Sample')
-            s_to_g = dict(zip(sf['Sample'], sf['G']))
+            # X[:, gi] is the only HDF5 read here, and a backed column escapes the
+            # file handle, so every requested gene has to land while the lock is
+            # held. Keyed by index so a gene named twice reads its column once —
+            # and materialised once for the whole set, not once per gene (see utils).
+            dense_by_gene = extract_gene_columns(adata.X, gene_indices)
+        # Lock released — the columns are in-memory arrays; the per-sample
+        # aggregation below touches no HDF5.
 
-        X = adata.X
         rows = []
-
         for gi, gn in zip(gene_indices, valid_genes):
             if gi < 0:
                 continue
-            col = X[:, gi]
-            gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+            gene_expr = dense_by_gene[gi]
 
             for us in unique_samples:
                 s_mask = sample_vals == us
@@ -127,51 +133,51 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
       'pairs': ['A_vs_B', ...]
     """
     try:
-        adata = get_adata(real_path)
+        with locked_backed_adata(real_path) as adata:
 
-        if 'Sample' not in adata.obs.columns:
-            return {'error': 'Sample column not found'}
-        if celltype_col not in adata.obs.columns:
-            return {'error': f'{celltype_col} not found'}
+            if 'Sample' not in adata.obs.columns:
+                return {'error': 'Sample column not found'}
+            if celltype_col not in adata.obs.columns:
+                return {'error': f'{celltype_col} not found'}
 
-        # Resolve group column (skip grouping when 'None')
-        if group_col and group_col != 'None':
-            group_col = resolve_group_column(adata, group_col)
-        else:
-            group_col = ''
+            # Resolve group column (skip grouping when 'None')
+            if group_col and group_col != 'None':
+                group_col = resolve_group_column(adata, group_col)
+            else:
+                group_col = ''
 
-        # Resolve genes (only first gene for this test)
-        genes = [g.strip() for g in genes_str.split(',') if g.strip()]
-        var_names = adata.var_names
-        gene_idx, gene_name = -1, genes[0] if genes else ''
-        for g in genes:
-            for i, n in enumerate(var_names):
-                if n.lower() == g.lower():
-                    gene_idx, gene_name = i, str(n)
+            # Resolve genes (only first gene for this test)
+            genes = [g.strip() for g in genes_str.split(',') if g.strip()]
+            var_names = adata.var_names
+            gene_idx, gene_name = -1, genes[0] if genes else ''
+            for g in genes:
+                for i, n in enumerate(var_names):
+                    if n.lower() == g.lower():
+                        gene_idx, gene_name = i, str(n)
+                        break
+                if gene_idx >= 0:
                     break
-            if gene_idx >= 0:
-                break
-        if gene_idx < 0:
-            return {'error': f'Gene "{genes[0]}" not found'}
+            if gene_idx < 0:
+                return {'error': f'Gene "{genes[0]}" not found'}
 
-        sample_vals = adata.obs['Sample'].values.astype(str)
-        ct_vals = adata.obs[celltype_col].values.astype(str)
-        cond_vals = adata.obs[group_col].values.astype(str) if group_col and group_col in adata.obs.columns else ['All'] * adata.n_obs
-        unique_ct = sorted(set(ct_vals))
-        unique_samples = sorted(set(sample_vals))
+            sample_vals = adata.obs['Sample'].values.astype(str)
+            ct_vals = adata.obs[celltype_col].values.astype(str)
+            cond_vals = adata.obs[group_col].values.astype(str) if group_col and group_col in adata.obs.columns else ['All'] * adata.n_obs
+            unique_ct = sorted(set(ct_vals))
+            unique_samples = sorted(set(sample_vals))
 
-        # Order groups: disease first, control last
-        def _g_sort(g):
-            return 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0
-        unique_groups = sorted(set(cond_vals), key=lambda g: (_g_sort(g), g))
+            # Order groups: disease first, control last
+            def _g_sort(g):
+                return 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0
+            unique_groups = sorted(set(cond_vals), key=lambda g: (_g_sort(g), g))
 
-        # Sample -> group map
-        sf = pd.DataFrame({'S': sample_vals, 'G': cond_vals}).drop_duplicates('S')
-        s_to_g = dict(zip(sf['S'], sf['G']))
+            # Sample -> group map
+            sf = pd.DataFrame({'S': sample_vals, 'G': cond_vals}).drop_duplicates('S')
+            s_to_g = dict(zip(sf['S'], sf['G']))
 
-        X = adata.X
-        col = X[:, gene_idx]
-        gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+            X = adata.X
+            col = X[:, gene_idx]
+            gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
         # Per-sample, per-cell-type aggregates
         agg_store: dict[tuple[str, str], dict] = {}
         for us in unique_samples:
@@ -296,79 +302,55 @@ def _get_aggregate_table(real_path: str, genes_str: str,
               present on every non-error return.
     """
     try:
-        adata = get_adata(real_path)
+        with locked_backed_adata(real_path) as adata:
 
-        if celltype_col not in adata.obs.columns:
-            return {'error': f'{celltype_col} not found in obs'}
+            if celltype_col not in adata.obs.columns:
+                return {'error': f'{celltype_col} not found in obs'}
 
-        # Resolve genes
-        genes = [g.strip() for g in genes_str.split(',') if g.strip()]
-        var_names = adata.var_names
-        gene_indices, valid_genes = [], []
-        for g in genes:
-            idx = None
-            for i, n in enumerate(var_names):
-                if n.lower() == g.lower():
-                    idx, _ = i, str(n)
-                    break
-            if idx is None:
-                partial = [n for n in var_names if g.lower() in n.lower()]
-                if partial:
-                    idx = list(var_names).index(partial[0])
-            gene_indices.append(idx if idx is not None else -1)
-            valid_genes.append(str(var_names[idx]) if idx is not None else g)
+            # Resolve genes
+            genes = [g.strip() for g in genes_str.split(',') if g.strip()]
+            var_names = adata.var_names
+            gene_indices, valid_genes = [], []
+            for g in genes:
+                idx = None
+                for i, n in enumerate(var_names):
+                    if n.lower() == g.lower():
+                        idx, _ = i, str(n)
+                        break
+                if idx is None:
+                    partial = [n for n in var_names if g.lower() in n.lower()]
+                    if partial:
+                        idx = list(var_names).index(partial[0])
+                gene_indices.append(idx if idx is not None else -1)
+                valid_genes.append(str(var_names[idx]) if idx is not None else g)
 
-        # Get celltype array
-        ct_vals = adata.obs[celltype_col].values.astype(str)
-        unique_ct = sorted(set(ct_vals))
+            # Get celltype array
+            ct_vals = adata.obs[celltype_col].values.astype(str)
+            unique_ct = sorted(set(ct_vals))
 
-        # Grouped-mode prep (non-empty group_col → per-group rows)
-        grouped = bool(group_col)
-        g_vals, unique_groups = None, []
-        if grouped:
-            group_col = resolve_group_column(adata, group_col)
-            g_vals = adata.obs[group_col].values.astype(str)
-            unique_groups = sorted(set(g_vals), key=lambda g: (
-                1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0, g))
+            # Grouped-mode prep (non-empty group_col → per-group rows)
+            grouped = bool(group_col)
+            g_vals, unique_groups = None, []
+            if grouped:
+                group_col = resolve_group_column(adata, group_col)
+                g_vals = adata.obs[group_col].values.astype(str)
+                unique_groups = sorted(set(g_vals), key=lambda g: (
+                    1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0, g))
 
-        X = adata.X
-        rows = []
-        total_all = int(adata.n_obs)
+            X = adata.X
+            rows = []
+            total_all = int(adata.n_obs)
 
-        def _emit(feat, label, want_mean):
-            """Append one AggregateRow per (celltype [, group]) for a dense 1-D feature.
+            def _emit(feat, label, want_mean):
+                """Append one AggregateRow per (celltype [, group]) for a dense 1-D feature.
 
-            want_mean=False → GeneMeanExpression=None (boolean combos carry no amount)."""
-            if not grouped:
-                for ct in unique_ct:
-                    ct_mask = ct_vals == ct
-                    ct_n = int(ct_mask.sum())
-                    if ct_n > 0:
-                        sub = feat[ct_mask]
-                        mn = round(float(sub.mean()), 4) if want_mean else None
-                        pct = round(float((sub > 0).mean() * 100), 2)
-                        expr_n = int((sub > 0).sum())
-                    else:
-                        mn = 0.0 if want_mean else None
-                        pct, expr_n = 0.0, 0
-                    rows.append({
-                        'Gene': label, 'CellType': ct, 'Group': '',
-                        'CellTypeNumber': ct_n, 'CellTotalNumber': total_all,
-                        'CellTypeRatio': round(ct_n / total_all * 100, 2) if total_all > 0 else 0.0,
-                        'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
-                        'GeneExpressionNumber': expr_n,
-                    })
-            else:
-                for grp in unique_groups:
-                    g_mask = g_vals == grp
-                    total_in_group = int(g_mask.sum())
-                    if total_in_group == 0:
-                        continue
+                want_mean=False → GeneMeanExpression=None (boolean combos carry no amount)."""
+                if not grouped:
                     for ct in unique_ct:
-                        combo = g_mask & (ct_vals == ct)
-                        ct_n = int(combo.sum())
+                        ct_mask = ct_vals == ct
+                        ct_n = int(ct_mask.sum())
                         if ct_n > 0:
-                            sub = feat[combo]
+                            sub = feat[ct_mask]
                             mn = round(float(sub.mean()), 4) if want_mean else None
                             pct = round(float((sub > 0).mean() * 100), 2)
                             expr_n = int((sub > 0).sum())
@@ -376,71 +358,103 @@ def _get_aggregate_table(real_path: str, genes_str: str,
                             mn = 0.0 if want_mean else None
                             pct, expr_n = 0.0, 0
                         rows.append({
-                            'Gene': label, 'CellType': ct, 'Group': grp,
-                            'CellTypeNumber': ct_n, 'CellTotalNumber': total_in_group,
-                            'CellTypeRatio': round(ct_n / total_in_group * 100, 2) if total_in_group > 0 else 0.0,
+                            'Gene': label, 'CellType': ct, 'Group': '',
+                            'CellTypeNumber': ct_n, 'CellTotalNumber': total_all,
+                            'CellTypeRatio': round(ct_n / total_all * 100, 2) if total_all > 0 else 0.0,
                             'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
                             'GeneExpressionNumber': expr_n,
                         })
-
-        def _dense(gi):
-            col = X[:, gi]
-            return col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
-
-        # Ordered emission: primary gene rows → gene2/merge row → '|' row → '&' row
-        features = []  # (label, dense 1-D array, want_mean)
-        for gi, gn in zip(gene_indices, valid_genes):
-            if gi >= 0:
-                features.append((gn, _dense(gi), True))
-
-        # Merge-member reporting. Declared here, before the `if`, because two return
-        # sites below must always carry these keys — including when the primary gene
-        # failed to resolve and the whole gene2 block is skipped.
-        op = normalize_gene2_op(gene2_op)
-        gene2_resolved: list[str] = []
-        gene2_unresolved: list[str] = []
-
-        gene2_name = (gene2 or '').strip()
-        parts = [p for p in (s.strip() for s in gene2_name.split('|')) if p] if gene2_name else []
-        # Resolved outside the `features` guard on purpose: when the primary gene fails
-        # to resolve, `features` is empty and the block below never runs — reporting here
-        # keeps that empty table from claiming "every merge member was fine". Names the
-        # user typed that matched nothing are surfaced to the UI, never silently dropped
-        # (deduped, order preserved).
-        resolved_all = resolve_gene_indices(var_names, parts) if parts else []
-        gene2_unresolved = list(dict.fromkeys(name for i, name in resolved_all if i < 0))
-        if gene2_name and features:
-            g1_label, g1_feat = features[0][0], features[0][1]
-            # gene2 is either a single gene (classic behavior) or a '|'-joined merge set
-            # (MergeGene). The single-gene path is unchanged (real row keeps a mean); a
-            # multi-part spec becomes a synthetic boolean "M" (see `op` for union vs
-            # intersection), labelled by the members joined with that same operator.
-            resolved = [(i, name) for i, name in resolved_all if i >= 0]
-            # Drop members that resolved to the same gene (keep first occurrence).
-            seen, members = set(), []
-            for i, name in resolved:
-                if name.lower() not in seen:
-                    seen.add(name.lower())
-                    members.append((i, name))
-            gene2_resolved = [n for _, n in members]
-            primary_labels = {l.lower() for l, _, _ in features}
-            if members and not all(l.lower() in primary_labels for _, l in members):
-                is_merge = len(members) > 1
-                if is_merge:
-                    # Merge: boolean feature (no mean) over the members combined by `op`.
-                    mask = reduce_bool_masks([_dense(i) > 0 for i, _n in members], op)
-                    g2_label = merge_op_separator(op).join(n for _, n in members)
-                    custom = (gene2_label or '').strip()
-                    if custom and custom.lower() not in {l.lower() for l, *_ in features}:
-                        g2_label = custom  # user-named M; features still hold only primary rows here
-                    features.append((g2_label, mask.astype(float), False))
                 else:
-                    g2_idx, g2_label = members[0]
-                    features.append((g2_label, _dense(g2_idx), True))
-                pos1 = g1_feat > 0
-                pos2 = features[-1][1] > 0
-                features.append((f'{g1_label} | {g2_label}', (pos1 | pos2).astype(float), False))
-                features.append((f'{g1_label} & {g2_label}', (pos1 & pos2).astype(float), False))
+                    for grp in unique_groups:
+                        g_mask = g_vals == grp
+                        total_in_group = int(g_mask.sum())
+                        if total_in_group == 0:
+                            continue
+                        for ct in unique_ct:
+                            combo = g_mask & (ct_vals == ct)
+                            ct_n = int(combo.sum())
+                            if ct_n > 0:
+                                sub = feat[combo]
+                                mn = round(float(sub.mean()), 4) if want_mean else None
+                                pct = round(float((sub > 0).mean() * 100), 2)
+                                expr_n = int((sub > 0).sum())
+                            else:
+                                mn = 0.0 if want_mean else None
+                                pct, expr_n = 0.0, 0
+                            rows.append({
+                                'Gene': label, 'CellType': ct, 'Group': grp,
+                                'CellTypeNumber': ct_n, 'CellTotalNumber': total_in_group,
+                                'CellTypeRatio': round(ct_n / total_in_group * 100, 2) if total_in_group > 0 else 0.0,
+                                'GeneMeanExpression': mn, 'GeneExpressionPct': pct,
+                                'GeneExpressionNumber': expr_n,
+                            })
+
+            # Merge mode asks for the primary gene plus every member of the merge set,
+            # so this is the K>1 case that pays. Materialise once on first call and
+            # slice in memory after — a bare X[:, gi] here re-reads the whole matrix
+            # for every member gene (2.23x at five genes, see utils.in_memory_matrix).
+            _materialised: list = []
+
+            def _dense(gi):
+                if not _materialised:
+                    _materialised.append(in_memory_matrix(X))
+                col = _materialised[0][:, gi]
+                return col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+
+            # Ordered emission: primary gene rows → gene2/merge row → '|' row → '&' row
+            features = []  # (label, dense 1-D array, want_mean)
+            for gi, gn in zip(gene_indices, valid_genes):
+                if gi >= 0:
+                    features.append((gn, _dense(gi), True))
+
+            # Merge-member reporting. Declared here, before the `if`, because two return
+            # sites below must always carry these keys — including when the primary gene
+            # failed to resolve and the whole gene2 block is skipped.
+            op = normalize_gene2_op(gene2_op)
+            gene2_resolved: list[str] = []
+            gene2_unresolved: list[str] = []
+
+            gene2_name = (gene2 or '').strip()
+            parts = [p for p in (s.strip() for s in gene2_name.split('|')) if p] if gene2_name else []
+            # Resolved outside the `features` guard on purpose: when the primary gene fails
+            # to resolve, `features` is empty and the block below never runs — reporting here
+            # keeps that empty table from claiming "every merge member was fine". Names the
+            # user typed that matched nothing are surfaced to the UI, never silently dropped
+            # (deduped, order preserved).
+            resolved_all = resolve_gene_indices(var_names, parts) if parts else []
+            gene2_unresolved = list(dict.fromkeys(name for i, name in resolved_all if i < 0))
+            if gene2_name and features:
+                g1_label, g1_feat = features[0][0], features[0][1]
+                # gene2 is either a single gene (classic behavior) or a '|'-joined merge set
+                # (MergeGene). The single-gene path is unchanged (real row keeps a mean); a
+                # multi-part spec becomes a synthetic boolean "M" (see `op` for union vs
+                # intersection), labelled by the members joined with that same operator.
+                resolved = [(i, name) for i, name in resolved_all if i >= 0]
+                # Drop members that resolved to the same gene (keep first occurrence).
+                seen, members = set(), []
+                for i, name in resolved:
+                    if name.lower() not in seen:
+                        seen.add(name.lower())
+                        members.append((i, name))
+                gene2_resolved = [n for _, n in members]
+                primary_labels = {l.lower() for l, _, _ in features}
+                if members and not all(l.lower() in primary_labels for _, l in members):
+                    is_merge = len(members) > 1
+                    if is_merge:
+                        # Merge: boolean feature (no mean) over the members combined by `op`.
+                        mask = reduce_bool_masks([_dense(i) > 0 for i, _n in members], op)
+                        g2_label = merge_op_separator(op).join(n for _, n in members)
+                        custom = (gene2_label or '').strip()
+                        if custom and custom.lower() not in {l.lower() for l, *_ in features}:
+                            g2_label = custom  # user-named M; features still hold only primary rows here
+                        features.append((g2_label, mask.astype(float), False))
+                    else:
+                        g2_idx, g2_label = members[0]
+                        features.append((g2_label, _dense(g2_idx), True))
+                    pos1 = g1_feat > 0
+                    pos2 = features[-1][1] > 0
+                    features.append((f'{g1_label} | {g2_label}', (pos1 | pos2).astype(float), False))
+                    features.append((f'{g1_label} & {g2_label}', (pos1 & pos2).astype(float), False))
 
         for label, feat, want_mean in features:
             _emit(feat, label, want_mean)
@@ -526,59 +540,63 @@ def _get_raw_expression(real_path: str, genes_str: str,
 
     req_ct = {c.strip() for c in cell_types_str.split(',') if c.strip()}
 
-    try:
-        adata = get_adata(real_path)
-    except Exception as e:
-        return f'error\tFailed to read h5ad: {e}'
+    # The lock spans both ends: get_adata() opens and reads the file on a cache
+    # miss, and X[:, g] is a second read that also hands back a backed column.
+    # ExitStack rather than a plain `with` because the original code caught the
+    # open *alone* — anything after it still raises (500) instead of being
+    # relabelled 'Failed to read h5ad'.
+    with ExitStack() as _stack:
+        try:
+            adata = _stack.enter_context(locked_backed_adata(real_path))
+        except Exception as e:
+            return f'error\tFailed to read h5ad: {e}'
 
-    resolved = resolve_gene_indices(adata.var_names, genes)
-    valid = [(idx, name) for idx, name in resolved if idx >= 0]
-    if not valid:
-        return 'error\tNo valid genes found'
+        resolved = resolve_gene_indices(adata.var_names, genes)
+        valid = [(idx, name) for idx, name in resolved if idx >= 0]
+        if not valid:
+            return 'error\tNo valid genes found'
 
-    seen_idx = set()
-    deduped = []
-    for idx, name in valid:
-        if idx not in seen_idx:
-            seen_idx.add(idx)
-            deduped.append((idx, name))
+        seen_idx = set()
+        deduped = []
+        for idx, name in valid:
+            if idx not in seen_idx:
+                seen_idx.add(idx)
+                deduped.append((idx, name))
 
-    obs_cols = [c for c in OBS_COLUMNS if c in adata.obs.columns]
-    ct_col = 'CellType' if 'CellType' in adata.obs.columns else (obs_cols[0] if obs_cols else '')
-    if not ct_col:
-        return 'error\tNo CellType-like column found in obs'
+        obs_cols = [c for c in OBS_COLUMNS if c in adata.obs.columns]
+        ct_col = 'CellType' if 'CellType' in adata.obs.columns else (obs_cols[0] if obs_cols else '')
+        if not ct_col:
+            return 'error\tNo CellType-like column found in obs'
 
-    ct_vals = adata.obs[ct_col].values.astype(str)
+        ct_vals = adata.obs[ct_col].values.astype(str)
 
-    if req_ct:
-        valid_mask = np.isin(ct_vals, list(req_ct))
-        matching = set(ct_vals[valid_mask])
-        if not matching:
-            available = sorted(set(ct_vals))
-            return f'error\tNone of the specified cell types found\nAvailable: {", ".join(available[:20])}'
-    else:
-        valid_mask = np.ones(adata.n_obs, dtype=bool)
+        if req_ct:
+            valid_mask = np.isin(ct_vals, list(req_ct))
+            matching = set(ct_vals[valid_mask])
+            if not matching:
+                available = sorted(set(ct_vals))
+                return f'error\tNone of the specified cell types found\nAvailable: {", ".join(available[:20])}'
+        else:
+            valid_mask = np.ones(adata.n_obs, dtype=bool)
 
-    row_indices = np.where(valid_mask)[0]
-    total = len(row_indices)
-    if total > MAX_ROWS:
-        row_indices = row_indices[:MAX_ROWS]
-        truncated = True
-    else:
-        truncated = False
+        row_indices = np.where(valid_mask)[0]
+        total = len(row_indices)
+        if total > MAX_ROWS:
+            row_indices = row_indices[:MAX_ROWS]
+            truncated = True
+        else:
+            truncated = False
 
-    # Pre-extract obs index (cell barcodes)
-    obs_index = adata.obs.index.values.astype(str)
+        # Pre-extract obs index (cell barcodes)
+        obs_index = adata.obs.index.values.astype(str)
 
-    header_cols = ['Cell'] + list(obs_cols) + [name for _, name in deduped]
-    csv_lines = [','.join(header_cols)]
+        header_cols = ['Cell'] + list(obs_cols) + [name for _, name in deduped]
+        csv_lines = [','.join(header_cols)]
 
-    X = adata.X
-    expr_data = {}
-    for g_idx, g_name in deduped:
-        col = X[:, g_idx]
-        expr_data[g_name] = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+        by_index = extract_gene_columns(adata.X, [g_idx for g_idx, _ in deduped])
+        expr_data = {g_name: by_index[g_idx] for g_idx, g_name in deduped}
 
+    # Lock released — expr_data holds materialised arrays.
     for ri in row_indices:
         row_vals = [obs_index[ri]]
         for c in obs_cols:

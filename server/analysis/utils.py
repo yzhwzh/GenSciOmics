@@ -129,6 +129,41 @@ def resolve_gene_indices(var_names, genes: list[str]) -> list[tuple[int, str]]:
     return results
 
 
+def in_memory_matrix(X):
+    """Return an X that slices on either axis without touching HDF5 again.
+
+    `adata.X` in backed mode is a lazy `_CSRDataset`, not an array. Its fast path
+    needs a *slice* on the cell axis (anndata's `is_sparse_indexing_overridden`); a
+    column index is not a slice, so `X[:, i]` falls through to `to_memory()`, which
+    reads the whole matrix off disk — 934 MB on a 174k-cell dataset. Reading K
+    columns the naive way therefore reads that same matrix K times.
+
+    Materialising once and slicing in memory costs nothing at K=1 (measured 1.01x)
+    and wins from K=2 on. Measured on the Monkey 174k-cell dataset, 2026-09-11:
+    K=2 → 1.55x, K=3 → 1.88x, K=5 → 2.23x, K=7 → 2.45x.
+
+    Not backed (already a real matrix) → returned as-is.
+    """
+    return X.to_memory() if hasattr(X, 'to_memory') else X
+
+
+def extract_gene_columns(X, indices) -> dict:
+    """Dense 1-D expression vector per gene index, reading the matrix at most once.
+
+    Returns {index: np.ndarray}. Keyed by index, so a gene asked for twice reads its
+    column once. Negative indices (the "unresolved gene" marker) are skipped.
+    """
+    wanted = sorted({int(i) for i in indices if i is not None and i >= 0})
+    if not wanted:
+        return {}
+    source = in_memory_matrix(X)
+    out = {}
+    for gi in wanted:
+        col = source[:, gi]
+        out[gi] = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+    return out
+
+
 def normalize_gene2_op(op: str | None) -> str:
     """Normalise a Merge-gene combine operator to 'or' (union) or 'and' (intersection).
 

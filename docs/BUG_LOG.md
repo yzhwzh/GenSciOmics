@@ -673,7 +673,7 @@ if has_record and not (pmc_error and not info['methods']):
 
 ---
 
-## B28. Merge 合成基因的成员名被子串回退静默解析成别的基因 (2026-09-10，**后端未修复；UI 侧入口已封堵**)
+## B28. 基因名被子串回退静默解析成别的基因 (2026-09-10 首报，2026-09-11 修正可达性，**后端仍未修复；UI 侧全部入口已封堵**)
 
 ### 现象
 Barplot「共表达」的 Merge 模式下填 `COL1|COL1A2` 生成合成基因 M。数据集里并没有 `COL1`，但接口返回 `gene2_unresolved: []`、`gene2_resolved: ['COL1A1','COL1A2']`，前端**一条警告都不显示** —— M 实际是在用户从未指定的 `COL1A1` 上取的并集/交集。已实测复现（IPF 数据集，**直接调接口复现，非 UI 复现**，可达性见下）。
@@ -716,7 +716,7 @@ partial = [n for n in var_names if g.lower() in n.lower()]
 - 渲染逻辑由 vitest 组件测试用 mock 响应持续覆盖（`AggregateDetailTable.test.tsx` / `FisherTable.test.tsx`）；
 - 后端行为由 `test_gene2_op.py` 覆盖。
 
-即：**警告从"运行期防线"退化成了"API 契约 + 未来防线"**。若希望它重新承担 UI 上的实时职责，需回到候选修法 1（Merge 成员改为只认精确匹配），让手输的不存在基因重新变成可表达状态。
+即：**警告从"运行期防线"退化成了"API 契约 + 未来防线"**。若希望它重新承担 UI 上的实时职责，需回到候选修法 1（Merge 成员改为只认精确匹配），让手输的不存在基因重新变成可表达状态。**该修法已于 2026-09-11 落地，见下方补记 —— 但落点不是 Merge 选择器。**
 
 候选修法（择一）：
 1. Merge 成员要求精确（大小写不敏感）匹配，主基因路径保持不变 —— 改动最小，但会与 plots 的解析结果进一步分叉；
@@ -725,13 +725,77 @@ partial = [n for n in var_names if g.lower() in n.lower()]
 另需注意：`stats.py` 与 `plots.py` 的解析器本就不一致（前者只查 `var_names`，后者还查 `index`/`gene_ids`/`gene_symbols`/`feature_name` 列），去重行为也不同 —— 同一个 `gene2` 在图与表可能得到不同的成员集。修的时候应抽成一个共享解析器，否则图与表的警告会互相矛盾。
 
 ### 涉及文件
-- `server/analysis/utils.py`（`resolve_gene_indices`）
+- `server/analysis/utils.py`（`resolve_gene_indices`，**根因，未改**）
 - `server/analysis/stats.py` / `server/analysis/plots.py`（两条各自的解析路径）
+- `src/components/analysis/geneInput.ts`（新增，精确匹配守卫）
+- `src/components/analysis/BoxPlotContainer.tsx` / `ExpressionChartContainer.tsx`（3 处文本框接入）
+- `src/components/analysis/ExpressionChartContainer.tsx`（Merge 选择器，2026-09-10 已封）
+- `server/search.py`（新增 `rank_gene_matches`）/ `server/routes.py`（`handle_search_genes`）
 
 ### 关键教训
 - **新增的「已解析 / 未解析」契约会把既有的模糊匹配升级成静默错误。** 把宽松解析的结果当作"确认无误"回传给 UI，比不回传更危险。
 - 涉及基因名解析的功能，**只有精确匹配才能作为「已确认」的依据**；子串命中最多算「疑似」。B24/B26/B27 的教训是"失败不要伪装成成功"，这条是它的近亲：**猜测不要伪装成确认**。
 - **判定缺陷严重性必须实测可达性，不能只读代码。** 本次初判把「用户填 COL1 就会中招」当成结论写进日志，实测才发现回车选中的是 `COL10A1`、Create 项挤在末位第 17 个。**机制成立 ≠ 路径可达** —— 可达性只有把 UI 真跑一遍才量得出来，读代码永远量不出来。教训：先测可达性，再定严重级别，最后才写日志。
+
+### 2026-09-11 补记：真正的宽入口是三个**自由文本框**，不是 Merge 选择器
+
+前一轮只封了 Merge 选择器。今天逐行读代码，发现同一批「基因输入」里还有 **3 个纯文本输入框**，它们的下拉只是**提示**，不是约束：
+
+| 位置 | 文件:行 |
+|---|---|
+| Tab 2 Gene | `BoxPlotContainer.tsx:51-52` |
+| Tab 3 Gene | `ExpressionChartContainer.tsx:217-218` |
+| Tab 3 GENE2（single 模式） | `ExpressionChartContainer.tsx:249-250` |
+
+三处逐字相同：
+
+```jsx
+onKeyDown={(e) => { if (e.key === 'Enter' && geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); ... } }}
+onBlur={() => { if (geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); setGeneSearchInput('') } }}
+```
+
+`geneSearchInput.trim()` 是**用户打的原文**，从未与 `geneSuggestions` 比对过。`onBlur` 尤其宽：**不用按回车**，鼠标点到任何别处即提交。
+
+对照 2026-09-10 那轮的结论 —— 那次实测的是 `AsyncCreatableSelect`（必须点击候选项）。文本框不要求点击，所以「用户眼前有真选项，Create 被挤到末位」这层保护**在这里根本不成立**。这正是「机制成立 ≠ 路径可达」的反向教训：**可达性不能只测一次就外推到所有入口。**
+
+#### 实测（Lung IPF，33,694 基因，后端进程内直调）
+
+```
+COL1   -> COL16A1                    CD3    -> ABCD3
+A1     -> VWA1                       col1a1 -> COL1A1（大小写不同，正确命中）
+NOTAGENE -> 未找到
+```
+
+`CD3 → ABCD3` 最能说明问题：图上、表头写的都是 `ABCD3`，数值完全合理，读者只会觉得「CD3 表达怎么这么怪」。
+
+#### 修法（用户选定方案 A）
+
+新增 `src/components/analysis/geneInput.ts`：
+
+- `exactGeneMatch(typed, candidates)` —— 只认**忽略大小写后完全相等**，并返回**候选的拼写**（打 `egfr` 存 `EGFR`）。
+- `resolveGeneChoice(typed, listed, search)` —— 先查下拉；未命中再查一次服务端（下拉有 200ms 防抖，一个词一次打完时列表还停在上一拍，直接拒绝会误杀真基因）；仍不命中则 `reject`，**绝不回落成"那就用它"**。
+- `unknownGeneMessage(typed)` —— 提示文案的唯一来源，组件与测试共用。本轮就踩过这个坑：先写死 `/not a gene/i` 去匹配 "No gene named …"，断言空过。
+
+`commitGene` / `commitGene2` 接到上述三处，未命中时**保留用户输入**并显示提示，不再静默提交。Merge 选择器的 `isValidNewOption={() => false}` 保持不变。
+
+#### 连带发现：真实基因 `F2` / `T` 会被挤出自己的搜索结果
+
+`/api/search-genes` 先按字母序排序、再截断到 100 条。IPF 里有 2 个基因（`T`、`F2`）的名字包含于 >100 个其它基因名，按字母序排在 100 名之外 —— **它们不在自己的搜索结果里**（`F2` 是凝血因子 II，真实且常用）。
+
+修 A 之前：打 `F2` 回车 → 静默变成别的基因。修 A 之后：变成**选不了**。两个方向都不能接受，所以这不是可选项 —— 修 A 不带上它就是引入一个能力回归。
+
+`server/search.py` 新增 `rank_gene_matches()`：**精确命中排在截断之前**；`routes.py:279` 改用它。实测 IPF：`q=F2` → 首位 `F2`（原为 0 命中）、`q=T` → 首位 `T`、`q=CD3` → 26 项且无精确命中（提示正常出现）、`q=COL1A1` → 1 项精确。
+
+#### 验证
+
+- vitest **87 passed (12 files)**（本轮前 71）；`npx tsc --noEmit` 干净。
+- **变异验证**（两次，均被抓住）：把 `exactGeneMatch` 改回"永远提交原文" → **12 个用例失败**；去掉服务端兜底 → **5 个失败**，其中包含两个既有的「正常选中基因」用例 —— 证明兜底是承重的，不是装饰。
+- `server/tests/test_gene_search_rank.py` 9/9；其余后端脚本 66/0、9/0、31/0。
+- 顺带修正两处**恒真的既有断言**：`BoxPlotContainer.test.tsx` 原来用 `getByTestId('plot-image')` 判断「基因选中了」，而该元素只要有 `realPath` 就永远在 DOM 里 —— 改为断言 `placeholder`（它镜像 `selectedGene`，是唯一能区分"选中了"和"什么都没发生"的判据）。
+
+#### 仍未修复
+
+后端 `utils.py:124` 的子串回退**原样保留**：接口直连、手改 URL/bookmark、以及 Free Analysis 里 LLM 自行调工具这三条路径仍可触发。`test_gene2_op.py::test_known_partial_match_hazard` 继续钉住该现状 —— **修它时该用例应当失败并被改写，不是被删掉。**
 
 ---
 
@@ -874,4 +938,277 @@ AttributeError: module 'coverage' has no attribute 'types'
 
 ---
 
-*后续新缺陷按 B30、B31... 追加。*
+## B30. 「坏文件会让扫描线程永久空转」——原判定经实测**证否**；但查出一条真实的静默降级 (2026-09-11)
+
+### 缘起：一条我说错了两遍的结论
+
+起因是这句话：**「`scan_datasets()` 逐文件没有 try/except —— 一个坏文件会让整个扫描线程静默死掉（`main.py:42` 也没兜底），datasets 从此永久为空。」** 每个子句都经不起实测。先写在最前面，因为这条已经对用户复述过两次。
+
+### 实测：三个子句逐条证否
+
+1. **「没有 try/except」→ 循环体本身确实没有，但它调的每一个逐文件函数各自都有。**
+   `_read_obs_stats`(:165)、`resolve_bulk_table`(:280)、`_extract_path_fields`(:227)、`_get_annotation_info`(:77) 全部自带 `try/except`。损坏的 `.h5ad` 在 `_read_obs_stats` 内就被接住 —— 该守卫是 **B27 加的**，返回 `_read_failed: True` 占位值，并向 stderr 打一行 `Error reading obs stats from <path>`。守卫在正确的层级上，只是不在我以为的那一层。
+
+2. **「datasets 从此永久为空」→ `datasets.clear()` / `extend()` 写在函数末尾**，所以真有异常逃逸时列表**停在上一轮的值**，不是被清空成 `[]`。这不是疏漏，**这个写法本身就是故障原子性**。已用故障注入钉死（见下）。
+   启动期的「上一轮」确实是 `[]` —— 但见第 3 条。
+
+3. **「扫描线程死掉」→ 有两层兜底。** `scanner_loop`(:585) 每 30s 重扫一次且自带 `try/except` + traceback（`main.py:50` 起的是**另一个线程**）；`_initial_scan`(`main.py:42`) 即使整个挂掉，也只损失首次扫描，30s 后由循环线程补上。**「永久为空」不成立。**
+
+逐个失败模式实测（`/tmp/probe_scanner_escape.py`，五种全部 contained，无一逃逸）：
+
+| 注入的失败 | 扫描是否抛异常 |
+|---|---|
+| 损坏的 `.h5ad`（纯文本 / 截断） | 否 |
+| 符号链接自环（重新软链链错） | 否 |
+| 断链（指向不存在的目标） | 否 |
+| 目录符号链接成环 | 否 |
+| `mode 000` 的文件 | 否 |
+| 非法 UTF-8 的 bulk 表（csv） | 否 |
+
+残余的无守卫点只有 `resolve_h5ad` 里的 `real.stat()`（`Path.stat()` 不像 `exists()` 那样内部吞 `OSError`）。但 `exists()` 刚成功过，要触发只能是两次调用之间文件被删/被卸载的 TOCTOU 竞态。**没有找到现实的触发路径**，因此不构成一条可报的缺陷。
+
+### 但查出一条真实缺陷：读失败被洗成合法的「0 计数」行
+
+`_read_failed` 标记在离开 scanner 前被 `_strip_read_failed()`(:181) **剥掉**（`:361` / `:482`），接口层于是拿到一条计数全 0、与其他行毫无区别的记录。**前端因此无法区分「这个文件读不出来」与「这个数据集真的是 0 个病人 / 0 个细胞」**，唯一信号是后端 stderr 里的一行 —— 而用户看不到后端 stderr。
+
+这正是**用户最初那句「我有的数据有问题，修改之后，再链接过去，很容易就出 bug」**的另一半：坏文件不会让页面变空，而是让页面**安静地显示一行全 0 的数据**，看起来像一份合法的、只是比较空的数据集。与 B26/B27 同源 —— **失败不要伪装成成功**，只不过 B27 修好了「不要持久化」，没修「不要伪装成合法数据」。
+
+### 用户的实际症状，完整链路
+
+用户的原话是「**当我修改了原数据，然后前端显示一行全 0 的数据**」。把上面两条拼起来，每一步都有出处：
+
+| # | 环节 | 代码位置 | 结果 |
+|---|---|---|---|
+| 1 | 改数据 → 文件在一个窗口内读不出来 | `_read_obs_stats` :170 捕获 | 返回全 0 占位 |
+| 2 | 失败标记被抹掉 | `_strip_read_failed` :181 → :479 | 接口层看不到「这次失败了」 |
+| 3 | 状态被硬编码 | `status = 'ready'` :416（`if age_s < 60: pass` 是空壳） | **`status: 'ready'` + 全 0** |
+| 4 | 前端认为无需轮询 | `rows.some(r => r.status !== 'ready')` 为 false | **轮询永不启动** |
+| 5 | 渲染 | 绿色 Ready 徽标 + `0 / 0 / 0` | 看起来像合法但很空的数据集 |
+
+后端 ≤30s 后自愈，**但第 4 步让前端永远不回头问**，所以那行 0 会一直挂着到手动刷新。**第 3 步单独拿出来看是无害的，第 4 步也是；是它们相乘才让 0 永久驻留。**
+
+### 修复（2026-09-11）
+
+失败必须自带状态，不能靠"看起来是 0"来表达。改动很小，因为它只需要打断第 3 步 —— 第 4 步的轮询条件本来就写对了（`status !== 'ready'`），只是从来没被 `error` 触发过。
+
+- **`server/scanner.py`**：新增 `_row_status(obs_stats)`，读失败时返回 `'error'`。`resolve_h5ad` 与 `resolve_bulk_table` 两处出参状态改用它（`resolve_bulk_table` 原先同样硬编码 `'ready'`，是同一个 bug 的第二份拷贝）。`_read_failed` 本身仍不外泄。
+- **`server/scanner.py`**：`_read_obs_stats` 补一道守卫 —— 读成功但 `obs_columns` 为空时一并按读失败处理。HDF5 没有事务性读取，文件写到一半时 `open` 可能"成功"返回一个句柄而 obs 表仍为空：**不抛异常，只是 0 行 0 列**，于是照样是一行绿色 `Ready` 配 `0/0/0`。`_is_valid_cache_entry` 早就认定这种条目不可用，`status` 必须同意。实测 102 条缓存条目无一受影响（全部有 obs 列，`n_obs` 最小 35）。
+- 顺带删掉 `resolve_h5ad` 里一句**死代码**：`status = 'ready'` + `if age_s < 60: pass`（注释声称在处理"文件刚被修改、可能还在上传"）。它从未生效，却让读者以为这个 case 已经处理了 —— 也正因为如此，上面 `_row_status` 的参数才一直是个空契约。改为无参，`age_s` 一并删除。
+- **`src/pages/TissuePage.tsx`**：三态徽标（Ready / **Read failed** / Processing）；`error` 行的 Patient / Sample / Cells 三列显示 `—` 而非 `0`（**0 是一个测量值，对一个读不出来的文件我们并没有这个测量值**）；页脚把 `error` 与 `processing` 分开，不再把读失败叫成 "Processing..."；CSV 导出同样不落 0。行数统计 `errorRows` / `processingRows` 在组件内派生。
+- **`src/pages/SearchPage.tsx`**：**同一件事的第二个页面**。`server/search.py:94` 用 `**ds` 把整行扫描结果展开进每一条命中，所以读失败的数据集会带着 `status: 'error'` 和三个 0 抵达搜索页；表格照旧渲染 `0 / 0 / 0`，而 PMID 链接（`:175` 早写着 `disabled={row.status !== 'ready'}`）被灰掉却**没有任何解释**——读起来像"一个很小、但就是打不开"的数据集。改为同样的 `—` 占位 + `Read failed` 徽标。这是 review 查出来的，不在原计划里。
+- **`src/pages/TissuePage.tsx`（页脚计数口径）**：`errorRows` / `processingRows` 改为从 `displayRows` 派生。原来从 `rows` 派生，于是**看不见的行**（另一个 omics tab、或被过滤掉）也会触发"1 dataset(s) could not be read"。页脚就贴在表格下面，读起来是对表格的陈述，指的是表格里没有的东西。轮询仍然看全部 `rows`（`:119`），所以隐藏的失败照样自愈，只是不再从屏幕外喊。
+- **`src/api/types.ts`** 未改：`status` 本就是 `string`，无需扩联合类型。
+
+**端到端实测**（真实后端 :6001，非 mock）：埋入一个损坏的 `.h5ad` → 第 20s 扫描到，接口返回 `status=error patient=0 n_obs=0`（修复前这里是 `status=ready`）；把文件改回合法 h5ad → 第 24s 接口返回 `status=ready patient=2 n_obs=40`。**自愈是真的，只是修复前前端从不去看。**
+
+### 顺带发现
+
+- **`Path.rglob()` 在 Python 3.10 会静默吞掉 `OSError`。** 实测：一个 `mode 000` 的目录，其下的 `.h5ad` **不报错、不告警、直接消失**。权限问题因此表现为「数据集少了几条」，而非任何形式的失败。这是本次唯一一个**真正无信号的静默丢失**通路，比原来担心的那条严重。**已修**：`scan_datasets` 的遍历换成 `os.walk(data_dir, onerror=_report_walk_error)`，进不去的目录会往 stderr 写一行。等价性已实测：`Data/` 下无目录软链，`os.walk(followlinks=False)` 与 `rglob` 在同一份数据上给出**逐字节相同**的文件集合（96 = 96，差集为空）。测试 `[8]` 用 `mode 000` 目录锁住这条：可读目录照常入列、不可读目录确实扫不到（前置条件）、且必须出现在 stderr。
+- **就地覆写已入库的 `.h5ad` 会失败。** 写测试时踩到 `OSError: Unable to synchronously create file (unable to truncate a file which is already open)` —— 扫描后文件仍被共享 backed 句柄（`core.adata_cache`，B24 引入）持有。用户「改文件再重链」的实际工作流走的是**新路径**，所以不受影响；但就地改数据文件的任何操作都会撞上这一点。
+
+### 验证手段
+
+**后端** `server/tests/test_scanner_resilience.py`（自包含，无 pytest，失败退出码非 0）：**31 passed / 0 failed / 0 known gap**。
+B27 回归 `server/tests/test_scanner_obs_cache.py`：**9 / 0 通过**，未被本次改动破坏。
+真实数据全量扫描：**96 行，0 行非 ready**，与改动前一致。
+
+- 第 [6] 节用**故障注入**（monkeypatch `_extract_path_fields` 抛 `RuntimeError`）钉住原子性 —— 不是读代码断言「clear 在末尾所以安全」，而是真的制造一次逃逸。
+- **变异验证 ×2**：① 把 `datasets.clear()` 从函数末尾挪到开头，[6] 立刻失败并复现出原文担心的症状（`前 ['11111111','22222222'] → 后 []`），其余项目不受影响；② 把前端轮询条件改成忽略 `error` 行，**恰好**只有 `auto-recovers an unreadable row` 一条失败。两个断言都是承重的。
+- 另锁死：失败不落盘（B27 规则，查 `.scanner_cache.json` 里确实没有坏文件条目）、修复后下一轮认到真实数值（`n_obs=40`）。
+
+**前端** `npx tsc --noEmit -p tsconfig.app.json` 干净；`npx vitest run` **64 passed（9 files）**。新增 7 项：
+
+- `error` 行不得渲染成 `0 / Ready`（并断言三个 `—`）；`error` 行必须在 5s 轮询后自愈成 Ready + 真实计数。
+- 页脚必须称读失败为 "could not be read"，而不是 "Processing"。
+- 不在当前 tab 的读失败行**不得**出现在页脚警告里（切到它的 tab 才出现——同一份数据、同一个页脚，只有可见行变了，这是本项的阳性对照）。
+- CSV 导出里读失败行不得落 0（断言 Patient/Sample/CellTypes 三段恰为 `-`）。
+- 搜索页：读失败命中不得渲染成 0（断言三个 `—`）；可读命中照常显示真实计数（阳性对照，否则上面那条在"整列不渲染了"时也会通过）。
+
+**变异验证 ×5**（后三条是本轮 review 指出的"无守卫"项，逐一补上并证明其承重）：页脚删掉 "could not be read" → 2 项失败；CSV 三元还原 → 1 项失败；`errorRows` 改回作用于全部 `rows` → 1 项失败；SearchPage 还原 0 渲染 → 1 项失败。加上此前的轮询变异与 `datasets.clear()` 位移，共 5 处断言被证明是承重的，不是摆设。
+
+### 涉及文件
+- `server/scanner.py` —— `_row_status`、两处出参状态、`_read_obs_stats` 的 obs_columns 守卫、`os.walk` 替换 `rglob`、删死代码
+- `src/pages/TissuePage.tsx` —— 三态徽标、`—` 占位、页脚分流（含计数口径）、CSV
+- `src/pages/SearchPage.tsx` —— 同一漏洞的第二个界面：`—` 占位 + `Read failed` 徽标
+- `server/tests/test_scanner_resilience.py`（新增，未跟踪）、`src/pages/TissuePage.test.tsx`、`src/pages/SearchPage.test.tsx`（新增，未跟踪）
+
+### 关键教训
+- **不要拿「函数里没有 try/except」推断「会崩」。** 守卫可以在被调用方内部；本次四个被调函数全都有。判断容错性要看**失败实际在哪里被接住**，不是看某一段源码长什么样。
+- **「没有守卫」与「清空状态」要分开看。** 这里恰恰是：循环没有守卫，但 `clear()` 放在末尾让无守卫变得无害。**故障原子性来自赋值的位置，不来自 catch 的数量。**
+- **最危险的不是崩溃，是降级成一个看起来正常的值。** 崩溃会有人报，`0 patients / 0 cells` 不会 —— B26、B27、B29、B30 是同一条线的四次现身，每次换一层（网络缓存 / 持久缓存 / 浏览器缓存 / 接口契约）。
+- **一句话结论要先证伪再复述。** 这条我在没有实测的情况下说了两遍，用户又拿它回来问「修了吗」。写测试的成本远低于把错误结论写进缺陷库的成本。
+
+---
+
+## B31. 首页 Tissue Atlas：三个物种 tab 共用一份数据集映射，Mouse/Monkey 显示的是 Human 计数 (2026-09-11)
+
+### 现象
+用户报告：首页示意图切到 Monkey / Mouse，器官上显示的数值没有分物种，把人的数据也算进去了。（同源清理见 B30 的 search 页与 tissue 页。）
+
+### 根因
+`src/components/TissueAtlas.tsx` 的 `useEffect` 建映射时**完全没看 `d.species`**：
+
+```tsx
+for (const d of data) {
+  const t = d.tissue?.toLowerCase() || ''
+  if (!map[t]) map[t] = []
+  const e = map[t].find(x => x.name === d.disease)
+  if (e) e.count++; else map[t].push({ name: d.disease, count: 1 })
+}
+```
+
+一份**全物种**映射，三个 tab 共用（`liveDiseases = tissueDiseases[hoveredSlug]`）。而 `organShapes.ts` 里 Mouse / Monkey 的器官 slug 与 Human 的 tissue 名**逐字相同** —— `kidney` / `lung` / `liver` / `colon` / `spleen` / `heart` / `stomach` / `brain` —— 小写化后撞进同一个 key。切物种只换了身体轮廓，数值没换。
+
+### 实测影响（真实数据，非推演）
+96 条数据集 = **93 Human / 1 Mouse / 2 Monkey**。修复前切到 Mouse tab 悬停 Kidney（小鼠本无肾脏数据）：显示 `IgAN:1, Health:2, CKD:1` —— 4 条人类数据。因为 Human 占 97%，两个非 Human tab 上看到的**几乎全是人类数字**。
+
+修复后按物种归拢，同一份数据变为：
+- Mouse：仅 `ear: Health 1`，其余器官 "No datasets yet"
+- Monkey：`lung: Health 1`、`multi-organ: Multi-organ 1`
+
+### 修复
+映射加一层 species key（`SpeciesTissueMap` = `Record<species, Record<tissue, {name,count}[]>>`），取值改为 `tissueDiseases[species]?.[hoveredSlug]`。仍是**单次 fetch + 10s 轮询**，切 tab 不重新请求。
+
+### 验证
+新增 `src/components/TissueAtlas.test.tsx` —— 该组件此前**零覆盖**，`src/components/` 下此前没有任何测试文件。先 RED：`AssertionError: expected <span></span> to be null`，失败的正是「Mouse tab 上冒出了 Human 的 IgAN」。修复后 GREEN。
+**变异验证**：把 species 那一层摊平回扁平 map，两项测试**恰好**全失败 —— 守卫承重。
+全量 `npx vitest run` **66 passed（10 files）**，`tsc --noEmit -p tsconfig.app.json` 干净。
+
+### 涉及文件
+- `src/components/TissueAtlas.tsx` —— `SpeciesTissueMap` + 建映射 + 取值
+- `src/components/TissueAtlas.test.tsx`（新增）
+
+### 关键教训
+- **「撞名」在没有类型系统兜底的地方是静默的。** 三个物种的器官 slug 用同一套词，程序上完全合法，没有任何地方会报错 —— 只有把两个 tab 并排看一眼才会发现。**跨实体的 key 必须自带实体前缀**，这跟 B30 的「失败必须自带状态」是同一条：不要让两个不同的东西长得一样。
+- **占比悬殊会掩盖串号。** 93:1:2 之下，非 Human tab 显示的几乎全是 Human 数据，反而「看起来很合理」。如果三个物种数据量相当，一眼就能看出不对。
+
+---
+
+## B32. 分析页从 URL 直入时绕过「未就绪」检查，读不到的文件照样当数据加载 (2026-09-11)
+
+### 现象
+B30 修复后，Tissue 表的 PMID 链接已对未就绪的数据集置灰。但**直入 URL 仍然进得去**：手输地址、书签、浏览器后退、以及 `SearchPage` 之外任何拼出 `/analysis/:tissue/:disease/:pmid` 的地方。进去之后页面照常发起 `analysis-info` / `umap-data` / `plot` 等一系列请求，全部打在扫描器**已经判定读不了**的文件上。
+
+### 根因
+`src/pages/AnalysisPage.tsx` 的取数 effect **只看 `real_path` 在不在，完全没看 `status`**：
+
+```tsx
+findDataset(tissue, disease, pmid).then((ds) => {
+  if (ds?.real_path) {          // ← 未就绪的行同样有 real_path
+    setRealPath(ds.real_path)
+    …
+  } else setError('Dataset not found')
+})
+```
+
+`scanner.py` 对未就绪的行**照样返回 `real_path`**：
+- `status: 'error'`（读失败）→ `resolve_h5ad:493` 的 `_row_status(obs_stats)`，`real_path` 指向那个坏文件；
+- `status: 'importing'`（bulk 转换中）→ `resolve_bulk_table:349`，`real_path` 指向**尚未生成的**缓存 h5ad。
+
+两者都满足 `ds.real_path` 为真，于是守卫形同不存在。
+
+### 与 B30 的关系
+B30 堵的是**展示层**（表格把 0 印成 0），B32 是**同一个错误的第二个入口**：数据根本没到展示层，页面直接拿着 `real_path` 去要数据。同一个「错误值伪装成合法值」在这里表现为「错误数据集伪装成可加载数据集」。
+
+### 修复
+1. `findDataset` 回包先判 `ds.status !== 'ready'`，未就绪则**在设置 `realPath` 之前返回**，因此 `realPath` 保持 `''`，下游 `fetchAnalysisInfo` / `fetchUmapData` / 各 plot 的 effect 全部依赖 `realPath`，**一个请求都不会发出去**。
+2. 拒绝条件与表格的置灰条件**逐字对齐**（`status !== 'ready'`，不是 `!== 'error'`）—— 这样 `importing` 也一并拦住。两边一旦分叉，必有一边是错的。
+3. 错误页加 **Retry**：读失败是自愈的（扫描器每 30s 重扫），死胡同式的错误页逼用户手动刷新。retry 只递增 `attempt` 触发 effect 重跑；**不清 `error`**，于是重试期间错误页保持挂载，重试又失败时屏幕无任何闪动。
+4. 「找不到数据集」是**终结态**，不给 Retry —— 否则按钮点一辈子也不会变。
+
+### 验证
+新增 `src/pages/AnalysisPage.test.tsx`（5 项，子组件全部 mock 成 `null`，只测守卫）。RED 证据：`status: 'error'` 的数据集渲染出的是**正常分析界面**（DOM 里出现 `Back` / `IgAN` / `PMID:`），断言 `findByText(READ_FAILED_RE)` 失败。
+
+**变异验证 ×4，全部被捕获**：
+
+| 变异 | 结果 |
+|---|---|
+| 删掉 `status !== 'ready'` 守卫（改成 `if (false)`） | 3 failed / 2 passed |
+| Retry 按钮恒显示（`canRetry &&` → `true &&`） | 1 failed（「找不到数据集不给 Retry」） |
+| effect deps 去掉 `attempt` | 1 failed（「Retry 后能打开」） |
+| 未就绪时不再 `setCanRetry(true)` | 1 failed（同上） |
+
+全量 `npx vitest run` **71 passed（11 files）**，`npx tsc --noEmit` 干净。
+
+### 涉及文件
+- `src/pages/AnalysisPage.tsx` —— 守卫 + `canRetry` / `attempt` state + Retry 按钮 + 两条文案常量
+- `src/pages/AnalysisPage.test.tsx`（新增）
+
+### 关键教训
+- **入口有几个，守卫就得有几个。** 修 B30 时只封了 Tissue 表和 Search 页两个**展示**入口，却漏了这个**跳转**入口 —— 而跳转入口的危害更大：展示层顶多印错数字，跳转入口会让下游一连串请求全部打在坏文件上。修完一处务必把「还有谁能到达这里」问一遍。
+- **同一条不变量分散在两个文件里，就是迟早要分叉的信号。** 「未就绪不可进入」这条规则现在同时写在 `TissuePage.tsx`（置灰链接）和 `AnalysisPage.tsx`（守卫）里，靠本条目第 2 点的注释维持一致。真正干净的做法是把 `status !== 'ready'` 抽成一个共享谓词，一处定义两处引用。
+- **自愈的失败要配可重试的 UI。** `status: 'error'` 30 秒后会自己好，但一个只有「Go Back」的错误页会把它变成一个需要人工刷新的死胡同 —— 用户看到的现象就退化成「这个数据坏了」。错误信息里写上「后端每 30 秒重扫一次」比只说「读不了」有用得多。
+
+---
+
+## B33. 10 处分析取数绕过 per-file 锁：`get_adata()` 被当成「读元数据」用，实际每次都在裸读 HDF5 (2026-09-11)
+
+### 现象
+没有用户可见的稳定复现 —— 这正是它一直没被抓住的原因。它表现为**偶发**的请求挂起 / h5py 并发报错，用户看到的往往是「这个图加载不出来，刷新一下又好了」，与 B24 / B27 同源。
+
+### 根因
+`server/core/adata_cache.py` 的 `get_adata()` 文档字符串写得很明确：
+
+> *"Thread-safe cache, but **callers MUST serialise access themselves** (use `locked_backed_adata()`)."*
+
+而 8 个分析函数直接裸调 `get_adata()`，从未在锁内。实测（给 `h5py.Dataset.__getitem__` 打桩计数）说明了两件事：
+
+| 访问 | 实际 HDF5 读次数 |
+|---|---|
+| `read_h5ad(path, backed='r')`（即缓存未命中时的 `get_adata`） | **8** |
+| `adata.obs[...]` / `.var_names` / `.n_obs` / `adata.X`（只取句柄） | 0 |
+| `adata[:, i].X` / `X[:, i]` | **1~3** |
+| 其后的 `.toarray()` / `np.asarray(...)` | 0 |
+
+所以裸调 `get_adata()` 有**两处**都在锁外：(1) 缓存未命中时它自己开文件读 8 次；(2) 紧跟着的 `X[:, i]` 切片。讽刺的是，多数调用点看起来像「只是读元数据」，于是被理所当然地认为不需要锁。
+
+第二个容易踩的点：**`X = adata.X` 单独一行不读盘**，读发生在后面的 `X[:, i]`。所以把 `X = adata.X` 留在锁外等于让 backed 句柄逃逸 —— 锁必须一直覆盖到最后一个切片。
+
+### 修复
+8 个函数改为 `with locked_backed_adata(...) as adata:`，锁窗口**由实测的读盘点决定**，而不是整函数上锁：重型计算（matplotlib、Fisher、MU 检验、CSV 拼装）一律出块执行，与 `plots.py:941 _generate_marker_dotplot` 的既有范式一致。
+
+| 文件:函数 | 真正读盘的行 | 锁窗口 | 出块后的重型工作 |
+|---|---|---|---|
+| `plots.py:_generate_plot` | 63 | 37–70 | 72–185 matplotlib |
+| `plots.py:_generate_celltype_composition` | 230, 252, 280 | 209–283 | 284–351 matplotlib |
+| `plots.py:_generate_cell_ratio_plot` | 无（只读 obs） | 367–387 | 388–573 pandas/matplotlib |
+| `plots.py:_generate_umap_ratio_plots` | 无（只读 obs） | 586–619 | 621–898 seaborn/scipy |
+| `stats.py:_get_per_sample_table` | 75 | 29–79（列提取上提） | 81–106 聚合 |
+| `stats.py:_get_per_sample_mutest` | 173 | 138–174 | 176–238 MU 检验 |
+| `stats.py:_get_aggregate_table` | 387（经 394/431/439 调用） | 307–443 | 445–496 emit + Fisher |
+| `stats.py:_get_raw_expression` | 579 | 544–587 | 589–603 CSV 拼装 |
+| `expression.py:_get_expression_stats` | 80, 112, 136 | 36–81（列提取上提） | 83–160 三趟聚合 |
+
+两处顺带改动，都是为了「列必须在锁内落地」这条硬约束：
+- `stats._get_per_sample_table` / `expression._get_expression_stats` 原本在**每个循环里重复切片**同一个基因列（expression 里是 3 趟循环各切一次）。上提为 `dense_by_gene` 字典后，每个基因列在锁内只读一次 —— 既满足锁边界，又少读 2 次。
+- `stats._get_raw_expression` 原本只有 `get_adata` 一行在 `try` 内，函数其余部分抛错会直接 500。为**逐字保留这一语义**，用 `ExitStack` 把锁的进入点单独包在原来的窄 `try` 里，而不是把 `with` 套在整个函数上（那会把一个解析 bug 重新标记成 `Failed to read h5ad`）。
+
+### 死锁核查（非可重入锁，必须查）
+`locked_backed_adata` 用的是普通 `threading.Lock`。已确认 9 个函数**只被 `routes.py` 直接调用**，没有任何调用方已持锁，函数之间也互不调用 → 无嵌套、无死锁。（`grep` 结果：每个函数恰好一个调用点，全在 routes.py。）
+
+### 验证
+1. **后端自包含脚本全绿**：`test_scanner_obs_cache.py` 9/0、`test_scanner_resilience.py` 31/0、`test_gene2_op.py` 66/0。
+2. **A/B 等价性对拍**：把改动前后两个版本分别在独立进程里跑同一份真实数据（Lung IPF, 89326 cells），对 11 个函数取**全部返回值**，把 base64 PNG 换成「尺寸 + 像素 md5」后逐字节比较 —— **11 项中 8 项完全一致，3 项仅 boxplot 像素不同且尺寸相同**。
+3. **那 3 项是既有的不确定性，不是本次引入**：同一进程内连跑 3 次，原版与新版**各自都**给出 3 个不同的 boxplot 像素哈希，而 barplot 在两版上都是**同一个**哈希。定位到 `plots.py:121/532` 的 `sns.stripplot` —— 散点抖动走 numpy 全局 RNG（`np.random.seed(0)` 后即稳定）。**这条另记：boxplot 出图不可复现，任何基于图像比对的测试都不能用它做基准。**
+4. **HTTP 端到端**：改动前先在旧进程上抓 12 个端点的响应基线，重启后再打一遍 —— 9 个确定性端点**逐字节相同**。
+
+### 未覆盖（明确留白，不谎称已全覆盖）
+- `analysis/umap.py:21 _get_umap_data` 与 `analysis/expression.py` 同属一类，但它的两处基因切片在 `if color_by == 'Gene'` 的两个分支内部，锁窗口要跨分支重构，风险高于收益 —— **本次未改**，留待单独一轮。
+- `search.py:32 _get_genes` 是**事后才发现的第 11 处**，同样裸调 `get_adata()`。缓存未命中时它会走完整的 8 次 HDF5 读，随后读 `var_names`。修法同样是就地包一层 `locked_backed_adata`（3 行，返回值是已物化的 `set[str]`，锁窗口极小），但**不在本次「方案 A」范围内，未改**。触发表面：任何一次 `/api/search-genes` 冷缓存调用。
+- `core/adata_cache.py:69` 的 LRU 淘汰在 `_cache_lock` 下 `old_adata.file.close()`，不检查是否有别的线程正持该文件的 per-file 锁读同一个句柄。这是 per-file 锁**之外**的竞态，未修。
+- `_get_file_lock(path)` 以**传入的 path 字符串**为键。同一次请求链路里 routes 传的是同一个 `real_path` 字符串（锁有效），但若日后有调用方传符号链接路径或 `../` 变体，会拿到不同的锁、从而失去互斥 —— 未加规范化。
+
+### 涉及文件
+- `server/analysis/plots.py` —— 4 处加锁；移除已无用的 `get_adata` import
+- `server/analysis/stats.py` —— 3 处加锁 + `_get_raw_expression` 的 `ExitStack`；新增 `contextlib.ExitStack` import
+- `server/analysis/expression.py` —— 加锁 + 三趟循环的列上提
+
+### 关键教训
+- **「只是读元数据」是个危险的直觉。** 这 9 个函数里有 6 个的注释/写法都暗示自己在读小东西，但 `get_adata()` 本身在缓存未命中时就是要读 8 次 HDF5。**判断要不要加锁，要看被调用函数的契约，不要看调用点看起来有多轻。**
+- **锁的边界应该由测量决定，不是由审美决定。** 「整函数上锁」最省事但会把 matplotlib 和 Fisher 检验也串行化；「只锁 `adata = ...` 那一行」则完全没用。这次先给 `h5py.Dataset.__getitem__` 打桩数出真实读盘点，再定窗口 —— 每一处的边界都能指到具体某一行。
+- **`adata.X` 是句柄不是数据。** 任何「把 `X = adata.X` 放在锁外、切片放在锁内」的写法都是错的：句柄一旦逃逸，锁就失效了。
+- **副作用是意外收益。** expression.py 的三趟循环原本各切一次同样的列，上提到锁内后每个基因只读一次 —— 这次改动的收益不只是并发安全，还有少了 2/3 的列读取。
+
+---
+
+*后续新缺陷按 B34、B35... 追加。*

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import anndata
-from core.adata_cache import get_adata
+from core.adata_cache import locked_backed_adata
 
+from analysis.utils import extract_gene_columns
 from caches import LRUCache
 
 
@@ -33,52 +34,57 @@ def _get_expression_stats(real_path: Path, genes_str: str,
         return cached
 
     try:
-        adata = get_adata(str(real_path))
+        with locked_backed_adata(str(real_path)) as adata:
 
-        # Resolve gene indices
-        gene_indices = []
-        valid_genes = []
-        var_names = adata.var_names
-        for g in genes:
-            mask = [n.lower() == g.lower() for n in var_names]
-            if any(mask):
-                idx = mask.index(True)
-                gene_indices.append(idx)
-                valid_genes.append(str(var_names[idx]))
-            else:
-                partial = [n for n in var_names if g.lower() in n.lower()]
-                if partial:
-                    idx = list(var_names).index(partial[0])
+            # Resolve gene indices
+            gene_indices = []
+            valid_genes = []
+            var_names = adata.var_names
+            for g in genes:
+                mask = [n.lower() == g.lower() for n in var_names]
+                if any(mask):
+                    idx = mask.index(True)
                     gene_indices.append(idx)
                     valid_genes.append(str(var_names[idx]))
                 else:
-                    gene_indices.append(-1)
-                    valid_genes.append(g)
+                    partial = [n for n in var_names if g.lower() in n.lower()]
+                    if partial:
+                        idx = list(var_names).index(partial[0])
+                        gene_indices.append(idx)
+                        valid_genes.append(str(var_names[idx]))
+                    else:
+                        gene_indices.append(-1)
+                        valid_genes.append(g)
 
-        # Validate required columns
-        if group_by not in adata.obs.columns:
-            return {'error': f'Column {group_by} not in obs'}
-        # Condition column (for grouping in box plots)
-        cond_col = None
-        if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
-            cond_col = condition_col
+            # Validate required columns
+            if group_by not in adata.obs.columns:
+                return {'error': f'Column {group_by} not in obs'}
+            # Condition column (for grouping in box plots)
+            cond_col = None
+            if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
+                cond_col = condition_col
 
-        sample_vals = adata.obs[group_by].values
-        cond_vals = adata.obs[cond_col].values if cond_col else None
-        unique_samples = sorted(set(str(x) for x in sample_vals))
-        unique_conditions = sorted(set(str(x) for x in cond_vals)) if cond_col else ['All']
-        all_ct_values = adata.obs['CellType'].values if 'CellType' in adata.obs.columns else None
-        unique_ct = sorted(set(str(x) for x in all_ct_values)) if all_ct_values is not None else []
+            sample_vals = adata.obs[group_by].values
+            cond_vals = adata.obs[cond_col].values if cond_col else None
+            unique_samples = sorted(set(str(x) for x in sample_vals))
+            unique_conditions = sorted(set(str(x) for x in cond_vals)) if cond_col else ['All']
+            all_ct_values = adata.obs['CellType'].values if 'CellType' in adata.obs.columns else None
+            unique_ct = sorted(set(str(x) for x in all_ct_values)) if all_ct_values is not None else []
 
-        X = adata.X
+            # Every requested gene column is read once, here, while the file lock
+            # is held. Three aggregation passes below each need all of them, and
+            # X[:, gi] is a real HDF5 read against a handle that must not escape.
+            # extract_gene_columns materialises the matrix once for the whole set —
+            # a bare per-column loop re-reads it once per gene (see utils).
+            dense_by_gene = extract_gene_columns(adata.X, gene_indices)
+        # Lock released — the aggregation passes below touch no HDF5.
 
         # Per-sample stats (for box plots)
         by_sample: list[dict] = []
         for gi, gn in zip(gene_indices, valid_genes):
             if gi < 0:
                 continue
-            col = X[:, gi]
-            gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+            gene_expr = dense_by_gene[gi]
 
             for us in unique_samples:
                 s_mask = sample_vals == us
@@ -109,8 +115,7 @@ def _get_expression_stats(real_path: Path, genes_str: str,
             for gi, gn in zip(gene_indices, valid_genes):
                 if gi < 0:
                     continue
-                col = X[:, gi]
-                gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+                gene_expr = dense_by_gene[gi]
                 for ct in unique_ct:
                     ct_mask = all_ct_values == ct
                     sub_expr = gene_expr[ct_mask]
@@ -133,8 +138,7 @@ def _get_expression_stats(real_path: Path, genes_str: str,
             for gi, gn in zip(gene_indices, valid_genes):
                 if gi < 0:
                     continue
-                col = X[:, gi]
-                gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+                gene_expr = dense_by_gene[gi]
                 for us in unique_samples:
                     s_mask = sample_vals == us
                     condition = str(cond_vals[s_mask][0]) if cond_vals is not None else 'All'

@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
-from core.adata_cache import get_adata
 import seaborn as sns
 from matplotlib.ticker import AutoMinorLocator
 
@@ -35,39 +34,39 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
     """Generate a seaborn/matplotlib plot and return as base64 PNG."""
     try:
         # Read data
-        adata = get_adata(real_path)
+        with locked_backed_adata(str(real_path)) as adata:
 
-        # Validate columns
-        if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
+            # Validate columns
+            if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
+                return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
 
-        # Resolve gene index
-        var_names = adata.var_names
-        gene_idx = None
-        actual_gene = gene
-        for i, n in enumerate(var_names):
-            if n.lower() == gene.lower():
-                gene_idx = i
-                actual_gene = str(n)
-                break
-        if gene_idx is None:
-            # Try partial match
-            partial = [n for n in var_names if gene.lower() in n.lower()]
-            if partial:
-                gene_idx = list(var_names).index(partial[0])
-                actual_gene = str(var_names[gene_idx])
-            else:
-                return {'error': f'Gene "{gene}" not found'}
+            # Resolve gene index
+            var_names = adata.var_names
+            gene_idx = None
+            actual_gene = gene
+            for i, n in enumerate(var_names):
+                if n.lower() == gene.lower():
+                    gene_idx = i
+                    actual_gene = str(n)
+                    break
+            if gene_idx is None:
+                # Try partial match
+                partial = [n for n in var_names if gene.lower() in n.lower()]
+                if partial:
+                    gene_idx = list(var_names).index(partial[0])
+                    actual_gene = str(var_names[gene_idx])
+                else:
+                    return {'error': f'Gene "{gene}" not found'}
 
-        # Extract expression values
-        col = adata.X[:, gene_idx]
-        gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+            # Extract expression values
+            col = adata.X[:, gene_idx]
+            gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
 
-        sample_vals = adata.obs['Sample'].values
-        ct_vals = adata.obs['CellType'].values
-        cond_vals = None
-        if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
-            cond_vals = adata.obs[condition_col].values
+            sample_vals = adata.obs['Sample'].values
+            ct_vals = adata.obs['CellType'].values
+            cond_vals = None
+            if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
+                cond_vals = adata.obs[condition_col].values
 
         unique_ct = sorted(set(str(x) for x in ct_vals))
         unique_samples = sorted(set(str(x) for x in sample_vals))
@@ -207,80 +206,80 @@ def _generate_celltype_composition(real_path: str, gene: str,
     image so the UI can warn about member names that matched nothing instead of
     silently charting a smaller set than the user asked for."""
     try:
-        adata = get_adata(str(real_path))
+        with locked_backed_adata(str(real_path)) as adata:
 
-        def find_gene_idx(g):
-            idx_series = pd.Series(adata.var.index.astype(str))
-            matches = idx_series.str.lower() == g.lower()
-            if matches.any():
-                return int(matches.values.nonzero()[0][0])
-            for col in ['index', 'gene_ids', 'gene_symbols', 'feature_name']:
-                if col in adata.var.columns:
-                    matches = adata.var[col].astype(str).str.lower() == g.lower()
-                    if matches.any():
-                        return int(matches.values.nonzero()[0][0])
-            return None
+            def find_gene_idx(g):
+                idx_series = pd.Series(adata.var.index.astype(str))
+                matches = idx_series.str.lower() == g.lower()
+                if matches.any():
+                    return int(matches.values.nonzero()[0][0])
+                for col in ['index', 'gene_ids', 'gene_symbols', 'feature_name']:
+                    if col in adata.var.columns:
+                        matches = adata.var[col].astype(str).str.lower() == g.lower()
+                        if matches.any():
+                            return int(matches.values.nonzero()[0][0])
+                return None
 
-        g1_idx = find_gene_idx(gene)
-        if g1_idx is None:
-            return {'error': f'Gene "{gene}" not found'}
+            g1_idx = find_gene_idx(gene)
+            if g1_idx is None:
+                return {'error': f'Gene "{gene}" not found'}
 
-        ct_vals = adata.obs['CellType'].values
-        # Read only the needed gene columns (avoid full matrix)
-        g1_expr = adata[:, g1_idx].X
-        g1_expr = np.asarray(g1_expr.toarray() if hasattr(g1_expr, 'toarray') else g1_expr).flatten()
+            ct_vals = adata.obs['CellType'].values
+            # Read only the needed gene columns (avoid full matrix)
+            g1_expr = adata[:, g1_idx].X
+            g1_expr = np.asarray(g1_expr.toarray() if hasattr(g1_expr, 'toarray') else g1_expr).flatten()
 
-        has_g2 = bool(gene2.strip())
-        op = normalize_gene2_op(gene2_op)
-        g2_expr = None
-        g2_display = ''  # user-named tag for a merge set (fallback: members joined by sep)
-        gene2_resolved: list[str] = []
-        gene2_unresolved: list[str] = []
-        if has_g2:
-            # gene2 may be a '|'-separated merge set (MergeGene): resolve each member
-            # and combine their positive masks per `op` into g2_expr. A plain single
-            # gene keeps its raw continuous expression (unchanged behavior).
-            parts = [p for p in (s.strip() for s in gene2.split('|')) if p]
-            if len(parts) > 1:
-                masks = []
-                for part in parts:
-                    idx = find_gene_idx(part)
-                    if idx is None:
-                        gene2_unresolved.append(part)
-                        continue
-                    gene2_resolved.append(str(adata.var.index[idx]))
-                    col = adata[:, idx].X
-                    masks.append(np.asarray(
-                        col.toarray() if hasattr(col, 'toarray') else col).flatten() > 0)
-                # Dedupe (order preserved), matching stats — a repeated typo must not
-                # read as "未找到 NOPE、NOPE".
-                gene2_unresolved = list(dict.fromkeys(gene2_unresolved))
-                merged = reduce_bool_masks(masks, op)
-                if merged is not None:
-                    g2_expr = merged.astype(float)
-                    custom = (gene2_label or '').strip()
-                    if custom:
-                        g2_display = custom
-                    elif op == 'and' or gene2_unresolved:
-                        # AND must never be labelled with '|', and after a dropped member
-                        # the raw spec would name a gene that is not in the chart.
-                        g2_display = merge_op_separator(op).join(gene2_resolved)
-                    else:
-                        # Historical OR label: the raw spec, exactly what this function
-                        # returned before the 或/且 feature existed, so a client that sends
-                        # no gene2_op still gets a byte-identical chart.
-                        g2_display = gene2
-            else:
-                # Exactly one surviving part (including a degenerate 'A|' spec) or a
-                # plain single gene: resolve it by name, matching stats._get_aggregate_table.
-                g2_name = parts[0] if parts else gene2
-                g2_idx = find_gene_idx(g2_name)
-                if g2_idx is not None:
-                    gene2_resolved = [str(adata.var.index[g2_idx])]
-                    col = adata[:, g2_idx].X
-                    g2_expr = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten()
+            has_g2 = bool(gene2.strip())
+            op = normalize_gene2_op(gene2_op)
+            g2_expr = None
+            g2_display = ''  # user-named tag for a merge set (fallback: members joined by sep)
+            gene2_resolved: list[str] = []
+            gene2_unresolved: list[str] = []
+            if has_g2:
+                # gene2 may be a '|'-separated merge set (MergeGene): resolve each member
+                # and combine their positive masks per `op` into g2_expr. A plain single
+                # gene keeps its raw continuous expression (unchanged behavior).
+                parts = [p for p in (s.strip() for s in gene2.split('|')) if p]
+                if len(parts) > 1:
+                    masks = []
+                    for part in parts:
+                        idx = find_gene_idx(part)
+                        if idx is None:
+                            gene2_unresolved.append(part)
+                            continue
+                        gene2_resolved.append(str(adata.var.index[idx]))
+                        col = adata[:, idx].X
+                        masks.append(np.asarray(
+                            col.toarray() if hasattr(col, 'toarray') else col).flatten() > 0)
+                    # Dedupe (order preserved), matching stats — a repeated typo must not
+                    # read as "未找到 NOPE、NOPE".
+                    gene2_unresolved = list(dict.fromkeys(gene2_unresolved))
+                    merged = reduce_bool_masks(masks, op)
+                    if merged is not None:
+                        g2_expr = merged.astype(float)
+                        custom = (gene2_label or '').strip()
+                        if custom:
+                            g2_display = custom
+                        elif op == 'and' or gene2_unresolved:
+                            # AND must never be labelled with '|', and after a dropped member
+                            # the raw spec would name a gene that is not in the chart.
+                            g2_display = merge_op_separator(op).join(gene2_resolved)
+                        else:
+                            # Historical OR label: the raw spec, exactly what this function
+                            # returned before the 或/且 feature existed, so a client that sends
+                            # no gene2_op still gets a byte-identical chart.
+                            g2_display = gene2
                 else:
-                    gene2_unresolved = [g2_name]
+                    # Exactly one surviving part (including a degenerate 'A|' spec) or a
+                    # plain single gene: resolve it by name, matching stats._get_aggregate_table.
+                    g2_name = parts[0] if parts else gene2
+                    g2_idx = find_gene_idx(g2_name)
+                    if g2_idx is not None:
+                        gene2_resolved = [str(adata.var.index[g2_idx])]
+                        col = adata[:, g2_idx].X
+                        g2_expr = np.asarray(col.toarray() if hasattr(col, 'toarray') else col).flatten()
+                    else:
+                        gene2_unresolved = [g2_name]
         unique_ct = sorted(set(ct_vals))
         cat_colors, _ = get_palette(palette_name)
         palette = cat_colors[:len(unique_ct)] if len(cat_colors) >= len(unique_ct) else \
@@ -365,26 +364,26 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
     """Generate cell type ratio plots: stacked bar per sample + hypothesis test boxplot.
     Returns base64 PNGs for both plots."""
     try:
-        adata = get_adata(str(real_path))
+        with locked_backed_adata(str(real_path)) as adata:
 
-        if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
+            if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
+                return {'error': 'Required columns "Sample" and "CellType" not found in obs'}
 
-        # Condition column
-        cond_col = None
-        if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
-            cond_col = condition_col
+            # Condition column
+            cond_col = None
+            if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
+                cond_col = condition_col
 
-        # Detect condition column - try common names
-        if cond_col is None:
-            for candidate in ['Group', 'Disease', 'Condition', 'disease', 'group']:
-                if candidate in adata.obs.columns:
-                    cond_col = candidate
-                    break
+            # Detect condition column - try common names
+            if cond_col is None:
+                for candidate in ['Group', 'Disease', 'Condition', 'disease', 'group']:
+                    if candidate in adata.obs.columns:
+                        cond_col = candidate
+                        break
 
-        sample_vals = adata.obs['Sample'].values
-        ct_vals = adata.obs['CellType'].values
-        cond_vals = adata.obs[cond_col].values if cond_col else None
+            sample_vals = adata.obs['Sample'].values
+            ct_vals = adata.obs['CellType'].values
+            cond_vals = adata.obs[cond_col].values if cond_col else None
         # Compute cell type ratio per sample
         df = pd.DataFrame({
             'Sample': sample_vals, 'CellType': ct_vals,
@@ -584,39 +583,39 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
     """Generate all ratio plots for the UMAP tab: heatmap, cell count bar,
     group boxplot, and stats table. Returns base64 PNGs + JSON stats."""
     try:
-        adata = get_adata(str(real_path))
+        with locked_backed_adata(str(real_path)) as adata:
 
-        if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
-            return {'error': 'Required columns "Sample" and "CellType" not found'}
+            if 'Sample' not in adata.obs.columns or 'CellType' not in adata.obs.columns:
+                return {'error': 'Required columns "Sample" and "CellType" not found'}
 
-        # Determine group variable
-        if not group_var or group_var not in adata.obs.columns:
-            for candidate in ['Group', 'Disease', 'Condition', 'disease', 'group']:
-                if candidate in adata.obs.columns:
-                    group_var = candidate
-                    break
-            else:
-                group_var = ''
+            # Determine group variable
+            if not group_var or group_var not in adata.obs.columns:
+                for candidate in ['Group', 'Disease', 'Condition', 'disease', 'group']:
+                    if candidate in adata.obs.columns:
+                        group_var = candidate
+                        break
+                else:
+                    group_var = ''
 
-        # Get available group columns (categorical/object, exclude numeric/float)
-        all_group_cols = []
-        for col in adata.obs.columns:
-            if col in ('Sample', 'CellType', 'Patient'):
-                continue
-            try:
-                dtype = adata.obs[col].dtype
-                # Skip numeric/float columns
-                if dtype.name.startswith(('float', 'int', 'uint', 'complex', 'timedelta', 'datetime')):
+            # Get available group columns (categorical/object, exclude numeric/float)
+            all_group_cols = []
+            for col in adata.obs.columns:
+                if col in ('Sample', 'CellType', 'Patient'):
                     continue
-                # Only include columns with few unique values (categorical-like)
-                if dtype.name in ('category', 'object', 'string', 'bool') or adata.obs[col].nunique() < 30:
-                    all_group_cols.append(col)
-            except Exception:
-                pass
+                try:
+                    dtype = adata.obs[col].dtype
+                    # Skip numeric/float columns
+                    if dtype.name.startswith(('float', 'int', 'uint', 'complex', 'timedelta', 'datetime')):
+                        continue
+                    # Only include columns with few unique values (categorical-like)
+                    if dtype.name in ('category', 'object', 'string', 'bool') or adata.obs[col].nunique() < 30:
+                        all_group_cols.append(col)
+                except Exception:
+                    pass
 
-        sample_vals = adata.obs['Sample'].values
-        ct_vals = adata.obs['CellType'].values
-        group_vals = adata.obs[group_var].values if group_var else None
+            sample_vals = adata.obs['Sample'].values
+            ct_vals = adata.obs['CellType'].values
+            group_vals = adata.obs[group_var].values if group_var else None
 
         unique_ct = sorted(set(str(x) for x in ct_vals))
         unique_samples = sorted(set(str(x) for x in sample_vals))
@@ -984,7 +983,14 @@ def _generate_marker_dotplot(real_path: str, palette_name: str = 'default',
             if 'CellType' not in adata.obs.columns:
                 return {'error': 'CellType column not found in obs'}
 
-            # Materialise only needed gene columns (not full X) to minimise lock time
+            # This block exists to get X into memory so the file lock can be released
+            # before plotting — not to read less. Subsetting genes does NOT read less:
+            # AnnData's backed-CSR fast path needs a slice on the gene axis, so a list
+            # falls through to to_memory() and pulls the whole matrix (measured 934 MB
+            # whether needed_genes holds 1 gene or all 31,165). Subsetting cells does
+            # help, but only on its own — `adata[mask, :]` read 38 MB where the same
+            # call with a gene list read 934 MB. Measured 2026-09-11 on the Monkey
+            # 174k-cell dataset.
             needed_genes = list(set(g for genes in plot_dict.values() for g in genes))
 
             if group_filter and 'Group' in adata.obs.columns:

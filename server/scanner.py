@@ -165,6 +165,15 @@ def _read_obs_stats(real_path: Path, mtime: float, tabular: bool = False) -> dic
     try:
         with locked_backed_adata(str(real_path)) as adata:
             stats = _collect_obs_stats(adata, tabular)
+        # B30: a read that returns no obs columns did not really succeed. HDF5
+        # has no transactional read, so opening a file mid-write can return a
+        # valid-looking handle over a partially written obs table — no exception,
+        # just 0 rows. _is_valid_cache_entry already treats empty obs_columns as
+        # unusable; the status has to agree, or that row is served as a green
+        # 'ready' 0/0/0 and the poll never arms. No live dataset is affected
+        # (all 102 cached entries have obs columns, min n_obs 35).
+        if not stats.get('obs_columns'):
+            raise ValueError('read returned no obs columns — file likely incomplete')
         _obs_cache.set(key, stats)
         return stats
     except Exception as e:
@@ -188,6 +197,18 @@ def _strip_read_failed(stats: dict) -> dict:
 def _is_cacheable(stats: dict) -> bool:
     """True unless the stats came from a failed read (B27: 失败结果永不落盘)."""
     return not stats.get('_read_failed')
+
+
+def _row_status(obs_stats: dict) -> str:
+    """Row status, carrying a failed read out instead of laundering it (B30).
+
+    A failed read returns all-zero counts. Labelling that row 'ready' made it
+    indistinguishable from a dataset that genuinely holds 0 patients / 0 cells,
+    and the frontend only polls while `status !== 'ready'` — so the zeros could
+    never heal on their own, even though the next scan (<=30s) reads fine.
+    The failure has to be its own status, not "looks like zero".
+    """
+    return 'error' if obs_stats.get('_read_failed') else 'ready'
 
 
 def _is_valid_cache_entry(entry: dict) -> bool:
@@ -355,7 +376,7 @@ def resolve_bulk_table(path: Path, cache: dict | None = None) -> dict | None:
         'path': str(path),
         'real_path': str(dst),
         'size_mb': size_mb,
-        'status': 'ready',
+        'status': _row_status(obs_stats),
         'annotation_source': _get_annotation_info(pmid)[0],
         'marker_major': _get_annotation_info(pmid)[1],
         **_strip_read_failed(obs_stats),
@@ -404,17 +425,10 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
 
     stat = real.stat()
     size_mb = stat.st_size / (1024 * 1024)
-    age_s = time.time() - stat.st_mtime
 
     # Check if file is empty
     if stat.st_size == 0:
         return None
-
-    # Check if file is currently being written (modified within last 60s and growing)
-    # A simple heuristic: if modified very recently, it might still be uploading
-    status = 'ready'
-    if age_s < 60:
-        pass
 
     # ─── Persistent cache check ──────────────────────────────
     cache_key = str(path)  # use symlink path (not resolved), so different symlinks -> different cache entries
@@ -476,7 +490,7 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
         'path': str(path),
         'real_path': str(path),  # symlink path inside Data/ (not resolved target)
         'size_mb': round(size_mb, 1),
-        'status': status,
+        'status': _row_status(obs_stats),
         'annotation_source': _get_annotation_info(pmid)[0],
         'marker_major': _get_annotation_info(pmid)[1],
         **_strip_read_failed(obs_stats),
@@ -510,6 +524,18 @@ def resolve_h5ad(path: Path, cache: dict | None = None) -> dict | None:
     return result
 
 
+def _report_walk_error(err: OSError) -> None:
+    """Report a directory the scan could not enter (B30).
+
+    Path.rglob() swallows this in Python 3.10 — its internals are a bare
+    `except OSError: pass`, so a permission-denied directory simply contributes
+    nothing and the only symptom is a few datasets quietly missing from the list.
+    os.walk's onerror is the hook rglob does not offer.
+    """
+    print(f'[GenSci] Scan could not read {getattr(err, "filename", "?")}: {err}',
+          file=sys.stderr)
+
+
 def scan_datasets():
     """Scan DATA_DIRS for .h5ad and raw bulk tables, build the dataset list.
 
@@ -524,21 +550,27 @@ def scan_datasets():
     for data_dir in DATA_DIRS:
         if not data_dir.is_dir():
             continue
-        for f in data_dir.rglob('*'):
-            if not f.is_file():
-                continue
+        # os.walk rather than Path.rglob(): rglob cannot report a directory it
+        # failed to enter, so a permission problem would drop data silently.
+        # Traversal is otherwise identical — os.walk(followlinks=False) yields
+        # the same files as rglob here (Data/ contains file symlinks only).
+        for dirpath, dirnames, filenames in os.walk(data_dir, onerror=_report_walk_error):
             # Import cache holds generated .h5ad handled via resolve_bulk_table
-            if BULK_CACHE_DIR_NAME in f.parts:
-                continue
-            suffix = f.suffix.lower()
-            if suffix == '.h5ad':
-                info = resolve_h5ad(f, cache)
-            elif suffix in BULK_EXTENSIONS:
-                info = resolve_bulk_table(f, cache)
-            else:
-                continue
-            if info:
-                found.append(info)
+            dirnames[:] = [d for d in dirnames if d != BULK_CACHE_DIR_NAME]
+            for name in filenames:
+                f = Path(dirpath) / name
+                # Broken symlinks are listed by os.walk but are not files.
+                if not f.is_file():
+                    continue
+                suffix = f.suffix.lower()
+                if suffix == '.h5ad':
+                    info = resolve_h5ad(f, cache)
+                elif suffix in BULK_EXTENSIONS:
+                    info = resolve_bulk_table(f, cache)
+                else:
+                    continue
+                if info:
+                    found.append(info)
     # DATA_DIRS contains Data/ plus its Mouse/Monkey subdirs, so the same file
     # can be reached twice — dedupe by source path to avoid duplicate rows.
     deduped, seen = [], set()

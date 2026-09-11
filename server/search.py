@@ -38,6 +38,25 @@ def _get_genes(real_path: Path, mtime: float) -> set:
         return set()
 
 
+def rank_gene_matches(all_genes, query: str, limit: int = 100) -> list[str]:
+    """Genes whose name contains `query`, exact matches first, capped at `limit`.
+
+    The exact match has to rank above the cap, not merely appear in the match
+    set. Short real gene names are substrings of a great many others: in the
+    Lung IPF dataset (33,694 genes) "F2" and "T" each sit inside >100 gene names
+    and sort alphabetically past position 100, so truncating first dropped them
+    from their own search result. The gene box only accepts a candidate spelled
+    exactly (geneInput.ts, BUG_LOG B28), so a dropped gene became unselectable
+    rather than silently wrong — better, but still a hole.
+
+    See server/tests/test_gene_search_rank.py.
+    """
+    q = str(query or '').lower()
+    exact = sorted(g for g in all_genes if g.lower() == q)
+    rest = sorted(g for g in all_genes if q in g.lower() and g.lower() != q)
+    return (exact + rest)[:limit]
+
+
 def _clear_search_cache():
     """Clear the search result cache (called by scanner when datasets change)."""
     _search_result_cache.clear()

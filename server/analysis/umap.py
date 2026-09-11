@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import anndata
-from core.adata_cache import get_adata
+from core.adata_cache import get_adata, locked_backed_adata
 
 def _get_umap_data(real_path: Path, color_by: str = 'CellType',
                    max_points: int = 50000, gene: str = '',
@@ -55,9 +55,13 @@ def _get_umap_data(real_path: Path, color_by: str = 'CellType',
             # ─── Single gene mode ───────────────────────────────
             if gene1_idx >= 0 and not gene2:
                 color_type = 'continuous'
-                X = adata.X
-                col = X[:, gene1_idx]
-                gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
+                # X[:, i] is a real HDF5 read against the shared backed handle, so it
+                # has to happen under the per-file lock — the handle returned by a bare
+                # get_adata() carries none (see adata_cache docstring). Only the read
+                # belongs inside; the colour loops below are pure Python/numpy.
+                with locked_backed_adata(str(real_path)) as _locked:
+                    _col = _locked.X[:, gene1_idx]
+                    gene_expr = _col.toarray().flatten() if hasattr(_col, 'toarray') else np.array(_col).flatten()
                 points = []
                 sampled_expr_vals = []
                 for i in indices:
@@ -92,11 +96,14 @@ def _get_umap_data(real_path: Path, color_by: str = 'CellType',
                 gene2_idx, gene2_name = _resolve_gene(gene2)
                 if gene2_idx >= 0:
                     color_type = 'dual_gene'
-                    X = adata.X
-                    col1 = X[:, gene1_idx]
-                    col2 = X[:, gene2_idx]
-                    expr1 = col1.toarray().flatten() if hasattr(col1, 'toarray') else np.array(col1).flatten()
-                    expr2 = col2.toarray().flatten() if hasattr(col2, 'toarray') else np.array(col2).flatten()
+                    # Both columns under one lock: they are two reads against the same
+                    # handle, and re-acquiring in between would only open a gap.
+                    with locked_backed_adata(str(real_path)) as _locked:
+                        _X = _locked.X
+                        col1 = _X[:, gene1_idx]
+                        col2 = _X[:, gene2_idx]
+                        expr1 = col1.toarray().flatten() if hasattr(col1, 'toarray') else np.array(col1).flatten()
+                        expr2 = col2.toarray().flatten() if hasattr(col2, 'toarray') else np.array(col2).flatten()
 
                     # Compute per-gene max for normalization
                     sampled1 = [float(expr1[i]) for i in indices]
