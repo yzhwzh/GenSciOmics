@@ -8,10 +8,20 @@ export default function ChatPanel({
   messages,
   loading,
   error,
+  status,
 }: {
   messages: ChatMessage[]
   loading: boolean
   error: string | null
+  /**
+   * What the backend says it is doing right now, from the SSE `status` event
+   * (`server/agent/__init__.py:288` sends "思考中…" while a tool runs).
+   * LiteratureTab has populated this on every send since it was written —
+   * "Searching..." before the request, the server's message during it — but
+   * nothing ever rendered it, so it fell through to the placeholder below.
+   * Optional: FreeAnalysisTab has no status channel and the tests omit it.
+   */
+  status?: string | null
 }) {
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -50,7 +60,7 @@ export default function ChatPanel({
       {loading && (
         <div className="flex items-center gap-2 text-text-muted px-1">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span className="text-[10px]">Analyzing...</span>
+          <span className="text-[10px]">{status || 'Analyzing...'}</span>
         </div>
       )}
 

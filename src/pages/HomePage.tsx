@@ -5,16 +5,19 @@ import TissueAtlas from '../components/TissueAtlas'
 import UpdateLog from '../components/UpdateLog'
 import OnlineUsers from '../components/OnlineUsers'
 import StatsTable from '../components/StatsTable'
-import { apiFetch } from '../api/client'
+import { fetchDatasetsFresh } from '../api/datasets'
 
 export default function HomePage() {
   const [stats, setStats] = useState({ organs: 0, diseases: 0, datasets: 0 })
 
   useEffect(() => {
-    apiFetch<any[]>('/api/datasets').then((data) => {
-      if (!Array.isArray(data)) return
-      const tissues = new Set(data.map((d: any) => d.tissue?.toLowerCase()))
-      const diseases = new Set(data.map((d: any) => d.disease))
+    // fetchDatasetsFresh, not fetchDatasets: this one-shot count should reflect
+    // the datasets the scanner has just picked up, and the cached variant would
+    // hold a stale number for its whole TTL. The .catch() below still covers a
+    // malformed body the same way the Array.isArray guard used to.
+    fetchDatasetsFresh().then((data) => {
+      const tissues = new Set(data.map((d) => d.tissue?.toLowerCase()))
+      const diseases = new Set(data.map((d) => d.disease))
       setStats({
         organs: tissues.size,
         diseases: diseases.size,

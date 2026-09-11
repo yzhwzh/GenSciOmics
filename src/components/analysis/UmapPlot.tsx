@@ -77,8 +77,12 @@ export default function UmapPlot({
     const isContinuous = data.color_type === 'continuous'
     const pointCount = data.points.length
 
-    let scatterData: unknown
-    let encodeOpt: Record<string, string> | undefined = undefined
+    // All three branches below build the same shape from the same inputs — only
+    // the comments differ, and the dual-gene one carries a 4th value for the
+    // tooltip. Collapsing them is a separate change; typing the result here is
+    // what removes the `as any` that used to hide the redundancy. `value` is a
+    // UMAP point, optionally followed by expression values: [x, y, expr1, expr2?].
+    let scatterData: { value: number[]; itemStyle?: { color: string } }[]
 
     if (isDualGene) {
       // Dual-gene: per-point RGB colors, preserve 4 values for tooltip
@@ -100,7 +104,9 @@ export default function UmapPlot({
     }
 
     const opt: echarts.EChartsOption = {
-      visualMap: { show: false } as any,
+      // No visualMap: every point already carries its own colour in itemStyle,
+      // so the continuous legend ECharts would otherwise derive is unused. The
+      // `{show: false} as any` that stood here was a no-op hiding a cast.
       backgroundColor: 'transparent',
       grid: { left: 35, right: 10, top: 10, bottom: 25 },
       xAxis: {
@@ -130,8 +136,7 @@ export default function UmapPlot({
       },
       series: [{
         type: 'scatter',
-        data: scatterData as any,
-        encode: encodeOpt,
+        data: scatterData,
         symbolSize: pointCount > 50000 ? 1.5 : pointCount > 20000 ? 2 : pointCount > 5000 ? 2.5 : 3,
         animation: false,
       }],

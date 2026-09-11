@@ -11,7 +11,6 @@ export default function LLMConfigPanel({
   onChange: (c: LLMConfig) => void
 }) {
   const [fetchedModels, setFetchedModels] = useState<FetchedModel[] | null>(null)
-  const [fetching, setFetching] = useState(false)
 
   useEffect(() => {
     if (!config.baseUrl) {
@@ -19,7 +18,6 @@ export default function LLMConfigPanel({
       return
     }
     let cancelled = false
-    setFetching(true)
     fetch('/api/llm/fetch-models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -30,11 +28,10 @@ export default function LLMConfigPanel({
         if (!cancelled) {
           const models = data.models || []
           setFetchedModels(models.length > 0 ? models : null)
-          setFetching(false)
         }
       })
       .catch(() => {
-        if (!cancelled) { setFetchedModels(null); setFetching(false) }
+        if (!cancelled) setFetchedModels(null)
       })
     return () => { cancelled = true }
   }, [config.baseUrl, config.apiKey])

@@ -158,7 +158,7 @@ export default function ToolResultsPanel({ messages, loading }: Props) {
                 ))}
 
                 {/* Result summary for non-shell results */}
-                {item.name !== 'shell' && (item.result as any) ? (
+                {item.name !== 'shell' && item.result ? (
                   <div className="text-[10px] text-text-muted mt-0.5">
                     {typeof item.result === 'object'
                       ? Object.entries(item.result as Record<string, unknown>)

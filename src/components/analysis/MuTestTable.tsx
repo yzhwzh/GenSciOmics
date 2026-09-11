@@ -30,7 +30,7 @@ export default function MuTestTable({
     cachedFetch<MutestResult>(`/api/per-sample-mutest?${params}`)
       .then(d => {
         if (d.pairs) setData(d)
-        else console.error('MU test error:', (d as any).error)
+        else console.error('MU test error:', d.error)
       }).catch(e => console.error(e))
       .finally(() => setLoading(false))
   }, [realPath, gene, minCells, conditionCol])

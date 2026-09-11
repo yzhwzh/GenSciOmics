@@ -64,7 +64,10 @@ const selectStyles: StylesConfig<Option, true> = {
 
 export default function UmapTabContent({
   realPath, umapData, umapLoading, colorBy, onColorByChange, geneName, onGeneNameChange, geneName2, onGeneName2Change, palette, onPaletteChange,
-  markerMajor,
+  // markerMajor is accepted but not read: AnalysisPage loads it from
+  // DatasetInfo.marker_major and passes it here, and it stops there. Kept in the
+  // props type rather than deleted so the plumbing is visible — either the
+  // marker-gene overlay was never finished, or this prop should be dropped.
 }: {
   realPath: string; umapData: UmapData | null; umapLoading: boolean; colorBy: string; onColorByChange: (v: string) => void; geneName: string; onGeneNameChange: (v: string) => void; geneName2: string; onGeneName2Change: (v: string) => void; palette: string; onPaletteChange: (v: string) => void
   markerMajor?: Record<string, string[]> | null
@@ -96,7 +99,7 @@ export default function UmapTabContent({
     fetchUmapRatioPlots(realPath, 'Group', palette)
       .then(d => {
         if (cancelled) return
-        if ('error' in d) { setError(String((d as any).error)); setPlotData(null) }
+        if ('error' in d) { setError(String(d.error)); setPlotData(null) }
         else { setPlotData(d) }
       }).catch(e => { if (!cancelled) { setError(e.message); setPlotData(null) } })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -166,10 +169,10 @@ export default function UmapTabContent({
 
   const filteredMatrix = pairwise && pairFilter && pairFilter.size > 0
     ? pairwise.pairs
-        .map((p, i) => ({ pair: p, row: (pairwise as any).matrix[i] }))
+        .map((p, i) => ({ pair: p, row: pairwise.matrix[i] }))
         .filter(({ pair }) => pairFilter.has(pair))
         .map(({ row }) => row)
-    : (pairwise as any)?.matrix ?? []
+    : pairwise?.matrix ?? []
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -292,7 +295,7 @@ export default function UmapTabContent({
                       {filteredPairs.map((pair, pi) => (
                         <tr key={pair} className="border-t border-border-light hover:bg-surface-raised even:bg-surface-muted/30">
                           <td className="px-1.5 py-0.5 text-left font-medium text-text-secondary whitespace-nowrap">{pair.replace('_vs_', ' vs ')}</td>
-                          {filteredMatrix[pi]?.slice(0, 20).map((pVal: any, ci: number) => {
+                          {filteredMatrix[pi]?.slice(0, 20).map((pVal, ci) => {
                             const sig = pVal !== null && pVal <= 0.05
                             const valStr = pVal === null ? '-' : pVal < 0.001 ? '<0.001' : pVal.toFixed(4)
                             return (

@@ -340,7 +340,7 @@ export default function LiteratureTab({ context }: { context: string }) {
 
           {/* Chat area */}
           <div className={hasChat ? 'flex-1 min-h-0' : 'hidden'}>
-            <ChatPanel messages={messages} loading={loading} error={error} />
+            <ChatPanel messages={messages} loading={loading} error={error} status={statusMsg} />
           </div>
         </div>
 
