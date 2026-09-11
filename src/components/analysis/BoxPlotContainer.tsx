@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchGenes } from '../../api/analysis'
+import { resolveGeneChoice, unknownGeneMessage } from './geneInput'
 import { PALETTE_OPTIONS } from '../../api/types'
 import PlotImage from './PlotImage'
 import DetailTable from './DetailTable'
@@ -15,10 +16,34 @@ export default function BoxPlotContainer({ realPath }: { realPath: string }) {
   const [geneSearchInput, setGeneSearchInput] = useState('')
   const [geneSuggestions, setGeneSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  // Set when the typed text is not a gene in this dataset. The box has to say
+  // so: silently committing the raw text is what let the backend resolve a
+  // typed prefix into an unrelated gene. See geneInput.ts / BUG_LOG B28.
+  const [geneInputError, setGeneInputError] = useState('')
   const [conditionCol, setConditionCol] = useState('Group')
   const [minCells, setMinCells] = useState(10)
   const [palette, setPalette] = useState('default')
   const [tableTab, setTableTab] = useState<'detail' | 'mutest'>('detail')
+
+  // Asynchronous because the dropdown lags the typing by a 200ms debounce, so a
+  // real gene typed in one go is often not listed yet — geneInput.ts asks the
+  // server before refusing. resolveGeneChoice never rejects, so dropping the
+  // promise at the two call sites below cannot surface as an unhandled rejection.
+  const commitGene = useCallback(async (typed: string) => {
+    const choice = await resolveGeneChoice(typed, geneSuggestions, (q) => searchGenes(realPath, q))
+    if (choice.kind === 'commit') {
+      setSelectedGene(choice.gene)
+      setGeneSearchInput('')
+      setGeneInputError('')
+      setShowSuggestions(false)
+    } else if (choice.kind === 'reject') {
+      // Leave the text in the box and show what did match, so the reader can
+      // pick one instead of getting a wrong gene that looks like a right one.
+      setGeneSuggestions(choice.suggestions)
+      setGeneInputError(choice.typed)
+      setShowSuggestions(true)
+    }
+  }, [geneSuggestions, realPath])
 
   useEffect(() => { try { sessionStorage.setItem('gensci_boxplot_gene', selectedGene) } catch { /* ignore */ } }, [selectedGene])
 
@@ -46,12 +71,15 @@ export default function BoxPlotContainer({ realPath }: { realPath: string }) {
           <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Gene</label>
           <div className="relative" ref={geneSearchRef}>
             <input type="text" value={geneSearchInput}
-              onChange={(e) => { setGeneSearchInput(e.target.value); setShowSuggestions(false) }}
+              onChange={(e) => { setGeneSearchInput(e.target.value); setGeneInputError(''); setShowSuggestions(false) }}
               onFocus={() => { if (geneSuggestions.length) setShowSuggestions(true) }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); setGeneSearchInput(''); setShowSuggestions(false) } }}
-              onBlur={() => { if (geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); setGeneSearchInput('') } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && geneSearchInput.trim()) commitGene(geneSearchInput) }}
+              onBlur={() => commitGene(geneSearchInput)}
               placeholder={selectedGene || 'Search...'}
               className="w-full text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand font-medium" />
+            {geneInputError && (
+              <div className="text-[10px] text-error mt-1">{unknownGeneMessage(geneInputError)}</div>
+            )}
             {showSuggestions && geneSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {geneSuggestions.map(g => (

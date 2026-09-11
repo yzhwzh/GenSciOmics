@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { ExternalLink, Loader2, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, ExternalLink, Loader2, Search, XCircle } from 'lucide-react'
 import { searchDatasets } from '../api/search'
 import Header from '../components/Header'
 import { useTableFilter } from '../hooks/useTableFilter'
@@ -15,6 +15,14 @@ const MATCH_LABELS: Record<string, { label: string; color: string }> = {
   sample_type: { label: 'Sample Type', color: 'bg-teal-100 text-teal-700' },
   celltype: { label: 'CellType', color: 'bg-orange-100 text-orange-700' },
 }
+
+// B30 on the search surface. The backend spreads the whole scanner row into
+// every hit, so a dataset whose read failed arrives here with status 'error' and
+// all-zero counts. The row below used to print those zeros — the same
+// "looks like a legitimately tiny dataset" claim the tissue table was fixed for.
+const READ_FAILED_HINT =
+  'Could not read this data file — it may be mid-edit or corrupt. Retrying automatically.'
+const UNREADABLE = <span className="text-text-muted" title={READ_FAILED_HINT}>—</span>
 
 export default function SearchPage() {
   const [searchParams] = useSearchParams()
@@ -182,10 +190,15 @@ export default function SearchPage() {
                         {row.pmid}
                         {row.status === 'ready' && <ExternalLink className="w-3 h-3" />}
                       </button>
+                      {row.status === 'error' && (
+                        <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-error bg-error-bg px-2 py-0.5 rounded-full" title={READ_FAILED_HINT}>
+                          <AlertTriangle className="w-3 h-3" /> Read failed
+                        </span>
+                      )}
                     </td>
-                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.patient_count ?? '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.sample_count ?? '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.celltype_count ?? '-'}</td>
+                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (row.patient_count ?? '-')}</td>
+                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (row.sample_count ?? '-')}</td>
+                    <td className="py-3 px-4 text-sm text-text-secondary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (row.celltype_count ?? '-')}</td>
                     <td className="py-2.5 px-4 text-xs text-text-secondary leading-snug break-words max-w-[240px]" title={row.group_dist}>
                       {row.group_dist || '-'}
                     </td>

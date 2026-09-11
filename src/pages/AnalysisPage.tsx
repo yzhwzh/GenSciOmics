@@ -13,6 +13,13 @@ import {
 } from '../components/analysis'
 import type { AnalysisInfo, UmapData } from '../api/types'
 
+// Shown when the scanner could not read the file behind this dataset. Both
+// messages name the recovery, because both recover on their own: the scanner
+// re-reads every 30s and the Retry button below re-runs the lookup.
+const READ_FAILED =
+  'Could not read this data file — it may be mid-edit or corrupt. The backend re-scans every 30 seconds; try again in a moment.'
+const IMPORTING = 'This dataset is still being imported. Try again in a moment.'
+
 export default function AnalysisPage() {
   const { tissue, disease, pmid } = useParams()
   const navigate = useNavigate()
@@ -21,6 +28,10 @@ export default function AnalysisPage() {
   const [omicsType, setOmicsType] = useState('')
   const [markerMajor, setMarkerMajor] = useState<Record<string, string[]> | null>(null)
   const [error, setError] = useState('')
+  // A failed read heals on its own once the scanner re-reads the file, so the
+  // error screen has to be re-runnable rather than a dead end.
+  const [canRetry, setCanRetry] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const [info, setInfo] = useState<AnalysisInfo | null>(null)
   const [infoLoading, setInfoLoading] = useState(true)
   const [umapData, setUmapData] = useState<UmapData | null>(null)
@@ -59,16 +70,38 @@ export default function AnalysisPage() {
         { label: 'Free Analysis', icon: Brain },
       ]
 
+  // Re-runs the lookup without unmounting. `error` is deliberately not cleared
+  // here: the error screen stays up while the retry is in flight, so a failed
+  // retry is a no-op on screen instead of a flash of an empty analysis page.
+  const retry = useCallback(() => setAttempt((a) => a + 1), [])
+
   useEffect(() => {
     if (!tissue || !disease || !pmid) return
     findDataset(tissue, disease, pmid).then((ds) => {
+      // The tissue table disables the link for anything not 'ready', but a
+      // hand-typed URL, a bookmark or the back button still lands here — and
+      // this used to take real_path and load regardless. Every request below
+      // (analysis-info, UMAP, plots) would then read a file the scanner has
+      // already said it cannot read, and present the resulting zeros as data.
+      // The refusal mirrors the link's exactly; if they ever disagree, one of
+      // the two is wrong.
+      if (ds && ds.status !== 'ready') {
+        setError(ds.status === 'error' ? READ_FAILED : IMPORTING)
+        setCanRetry(true)
+        return
+      }
       if (ds?.real_path) {
+        setError('')
+        setCanRetry(false)
         setRealPath(ds.real_path)
         setOmicsType(ds.omics_type ?? '')
         setMarkerMajor(ds.marker_major ?? null)
-      } else setError('Dataset not found')
+      } else {
+        setError('Dataset not found')
+        setCanRetry(false)
+      }
     })
-  }, [tissue, disease, pmid])
+  }, [tissue, disease, pmid, attempt])
 
   // Clamp activeTab when switching between omics types (tabular has only 3 tabs)
   useEffect(() => {
@@ -103,9 +136,14 @@ export default function AnalysisPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-brand-bg flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md px-6">
           <p className="text-error text-sm mb-3">{error}</p>
-          <button onClick={() => navigate(-1)} className="text-sm text-brand hover:underline">Go Back</button>
+          <div className="flex items-center justify-center gap-5">
+            {canRetry && (
+              <button onClick={retry} className="text-sm text-brand hover:underline">Retry</button>
+            )}
+            <button onClick={() => navigate(-1)} className="text-sm text-brand hover:underline">Go Back</button>
+          </div>
         </div>
       </div>
     )

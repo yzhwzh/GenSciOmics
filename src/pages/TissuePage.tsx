@@ -10,6 +10,13 @@ import type { DatasetInfo } from '../api/types'
 
 type OmicsTab = 'single-cell' | 'bulk-rna' | 'proteomics' | 'metabolomics' | 'literature'
 
+// B30: a row whose .h5ad could not be read comes back with all-zero counts. 0 is
+// a measurement, so printing it asserts something we do not know — show "—" and
+// say why. The backend retries every scan, so this clears on its own.
+const READ_FAILED_HINT =
+  'Could not read this data file — it may be mid-edit or corrupt. Retrying automatically.'
+const UNREADABLE = <span className="text-text-muted" title={READ_FAILED_HINT}>—</span>
+
 const OMICS_TABS: { key: OmicsTab; label: string; icon: typeof Dna }[] = [
   { key: 'single-cell', label: 'Single Cell', icon: Microscope },
   { key: 'bulk-rna', label: 'Bulk RNA', icon: Dna },
@@ -146,11 +153,17 @@ export default function TissuePage() {
     if (!isTabular) headers.push('Annotation Source')
     const csvRows = [headers.join(',')]
     for (const r of omicsRows) {
+      // Same rule as the table: a failed read has no counts to report, and a
+      // literal 0 survives into whatever downstream analysis reads this CSV.
+      const unreadable = r.status === 'error'
       const row = [
         r.species ?? 'Human', `"${r.disease}"`, r.pmid,
         r.size_mb && r.size_mb > 1000 ? `${(r.size_mb / 1024).toFixed(1)} GB` : `${r.size_mb} MB`,
-        r.status, r.patient_count ?? '-', r.sample_count ?? '-',
-        isTabular ? (r.n_vars ?? '-') : (r.celltype_count ?? '-'), `"${r.group_dist || '-'}"`,
+        r.status,
+        unreadable ? '-' : (r.patient_count ?? '-'),
+        unreadable ? '-' : (r.sample_count ?? '-'),
+        unreadable ? '-' : (isTabular ? (r.n_vars ?? '-') : (r.celltype_count ?? '-')),
+        `"${r.group_dist || '-'}"`,
       ]
       if (!isTabular) row.push(r.annotation_source || 'Paper')
       csvRows.push(row.join(','))
@@ -164,6 +177,18 @@ export default function TissuePage() {
 
   const displayRows = hasActiveFilters ? filteredRows : omicsRows
   const diseases = [...new Set(rows.map((r) => r.disease))]
+  // 'error' is a read failure the backend will retry on its next scan (~30s);
+  // 'importing' (and any future pending state) is genuine in-progress work.
+  // Keeping them apart matters: the footer used to call every non-ready row
+  // "Processing...", which is a false claim about an unreadable file.
+  //
+  // Counted over displayRows, not rows: the footer sits directly under the
+  // table and reads as a statement about it. Deriving from `rows` let a row the
+  // reader cannot see — another omics tab, or one filtered out — produce a
+  // warning with no visible referent. The poll below still watches all `rows`,
+  // so a hidden failure keeps healing; it just stops shouting from off-screen.
+  const errorRows = displayRows.filter((r) => r.status === 'error')
+  const processingRows = displayRows.filter((r) => r.status !== 'ready' && r.status !== 'error')
 
   // Literature tab content component
 
@@ -336,15 +361,19 @@ export default function TissuePage() {
                         <span className="inline-flex items-center gap-1 text-xs text-success bg-success-bg px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-success" /> Ready
                         </span>
+                      ) : row.status === 'error' ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-error bg-error-bg px-2 py-0.5 rounded-full" title={READ_FAILED_HINT}>
+                          <AlertTriangle className="w-3 h-3" /> Read failed
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs text-warning bg-warning-bg px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" /> Processing
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.patient_count ?? '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.sample_count ?? '-'}</td>
-                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{isTabular ? (row.n_vars ?? '-') : (row.celltype_count ?? '-')}</td>
+                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (row.patient_count ?? '-')}</td>
+                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (row.sample_count ?? '-')}</td>
+                    <td className="py-3 px-4 text-sm text-text-primary text-right tabular-nums">{row.status === 'error' ? UNREADABLE : (isTabular ? (row.n_vars ?? '-') : (row.celltype_count ?? '-'))}</td>
                     <td className="py-2.5 px-4 text-xs text-text-secondary leading-snug break-words" title={row.group_dist}>{row.group_dist || '-'}</td>
                     <td className="py-3 px-4 text-sm text-text-secondary">{isTabular ? (row.data_type || '-') : (row.tissue_obs || '-')}</td>
                     {!isTabular && (
@@ -361,16 +390,25 @@ export default function TissuePage() {
             we don't know the count at all, so the tally is withheld. */}
         <div className={`mt-4 flex items-center gap-4 text-xs text-text-muted ${loadError ? 'invisible' : ''}`}>
           <span>{rows.length} dataset(s)</span>
-          {rows.some((r) => r.status !== 'ready') && (
-            pollError ? (
-              <span className="text-warning flex items-center gap-1" title={pollError}>
-                <AlertTriangle className="w-3.5 h-3.5" /> Status refresh failing ({pollError}) — counts may be stale
-              </span>
-            ) : (
-              <span className="text-warning flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" /> Processing...
-              </span>
-            )
+          {(errorRows.length > 0 || processingRows.length > 0 || pollError !== null) && (
+            <>
+              {errorRows.length > 0 && (
+                <span className="text-error flex items-center gap-1" title={READ_FAILED_HINT}>
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {errorRows.length} dataset(s) could not be read — retrying automatically
+                </span>
+              )}
+              {processingRows.length > 0 && !pollError && (
+                <span className="text-warning flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" /> Processing...
+                </span>
+              )}
+              {pollError && (
+                <span className="text-warning flex items-center gap-1" title={pollError}>
+                  <AlertTriangle className="w-3.5 h-3.5" /> Status refresh failing ({pollError}) — counts may be stale
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>

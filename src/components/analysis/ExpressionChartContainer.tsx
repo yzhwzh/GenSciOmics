@@ -10,6 +10,7 @@ import ZoomableImage from './ZoomableImage'
 import AsyncCreatableSelect from 'react-select/async-creatable'
 import type { StylesConfig } from 'react-select'
 import { MERGE_OP_KEY, deriveG2Op, readStoredOp } from './mergeOp'
+import { resolveGeneChoice, unknownGeneMessage } from './geneInput'
 
 interface Option {
   value: string
@@ -75,6 +76,10 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   const [geneSearchInput, setGeneSearchInput] = useState('')
   const [geneSuggestions, setGeneSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  // Set when the typed text is not a gene in this dataset. The box has to say
+  // so: silently committing the raw text is what let the backend resolve a
+  // typed prefix into an unrelated gene. See geneInput.ts / BUG_LOG B28.
+  const [geneInputError, setGeneInputError] = useState('')
   const [conditionCol, setConditionCol] = useState('Group')
   const [palette, setPalette] = useState('default')
   const [tableTab, setTableTab] = useState<'aggregate' | 'fisher'>('aggregate')
@@ -84,6 +89,8 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
   const [gene2Input, setGene2Input] = useState('')
   const [gene2Suggestions, setGene2Suggestions] = useState<string[]>([])
   const [showGene2Suggestions, setShowGene2Suggestions] = useState(false)
+  // Same guard as the Gene box above — see geneInput.ts / BUG_LOG B28.
+  const [gene2InputError, setGene2InputError] = useState('')
   const [gene2Mode, setGene2Mode] = useState<'single' | 'merge'>('single')
   const [mergeGenes, setMergeGenes] = useState<Option[]>([])  // editable chips (staging — does NOT drive backend)
   const [mergeRun, setMergeRun] = useState<Option[]>([])      // applied members — the only thing that drives backend (Run)
@@ -204,6 +211,40 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // Asynchronous because the dropdown lags the typing by a 200ms debounce, so a
+  // real gene typed in one go is often not listed yet — geneInput.ts asks the
+  // server before refusing. resolveGeneChoice never rejects, so dropping the
+  // promise at the call sites below cannot surface as an unhandled rejection.
+  const commitGene = useCallback(async (typed: string) => {
+    const choice = await resolveGeneChoice(typed, geneSuggestions, (q) => searchGenes(realPath, q))
+    if (choice.kind === 'commit') {
+      setSelectedGene(choice.gene)
+      setGeneSearchInput('')
+      setGeneInputError('')
+      setShowSuggestions(false)
+    } else if (choice.kind === 'reject') {
+      // Leave the text in the box and show what did match, so the reader can
+      // pick one instead of getting a wrong gene that looks like a right one.
+      setGeneSuggestions(choice.suggestions)
+      setGeneInputError(choice.typed)
+      setShowSuggestions(true)
+    }
+  }, [geneSuggestions, realPath])
+
+  const commitGene2 = useCallback(async (typed: string) => {
+    const choice = await resolveGeneChoice(typed, gene2Suggestions, (q) => searchGenes(realPath, q))
+    if (choice.kind === 'commit') {
+      setSelectedGene2(choice.gene)
+      setGene2Input('')
+      setGene2InputError('')
+      setShowGene2Suggestions(false)
+    } else if (choice.kind === 'reject') {
+      setGene2Suggestions(choice.suggestions)
+      setGene2InputError(choice.typed)
+      setShowGene2Suggestions(true)
+    }
+  }, [gene2Suggestions, realPath])
+
   return (
     <div className="h-full flex">
       {/* Left Control Panel */}
@@ -212,12 +253,15 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
           <label className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Gene</label>
           <div className="relative" ref={geneSearchRef}>
             <input type="text" value={geneSearchInput}
-              onChange={(e) => { setGeneSearchInput(e.target.value); setShowSuggestions(false) }}
+              onChange={(e) => { setGeneSearchInput(e.target.value); setGeneInputError(''); setShowSuggestions(false) }}
               onFocus={() => { if (geneSuggestions.length) setShowSuggestions(true) }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); setGeneSearchInput(''); setShowSuggestions(false) } }}
-              onBlur={() => { if (geneSearchInput.trim()) { setSelectedGene(geneSearchInput.trim()); setGeneSearchInput('') } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && geneSearchInput.trim()) commitGene(geneSearchInput) }}
+              onBlur={() => commitGene(geneSearchInput)}
               placeholder={selectedGene || 'Search...'}
               className="w-full text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand font-medium" />
+            {geneInputError && (
+              <div className="text-[10px] text-error mt-1">{unknownGeneMessage(geneInputError)}</div>
+            )}
             {showSuggestions && geneSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {geneSuggestions.map(g => (
@@ -244,12 +288,15 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
             <>
               <div className="relative" ref={gene2Ref}>
                 <input type="text" value={gene2Input}
-                  onChange={(e) => { setGene2Input(e.target.value); setShowGene2Suggestions(false) }}
+                  onChange={(e) => { setGene2Input(e.target.value); setGene2InputError(''); setShowGene2Suggestions(false) }}
                   onFocus={() => { if (gene2Suggestions.length) setShowGene2Suggestions(true) }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input(''); setShowGene2Suggestions(false) } }}
-                  onBlur={() => { if (gene2Input.trim()) { setSelectedGene2(gene2Input.trim()); setGene2Input('') } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && gene2Input.trim()) commitGene2(gene2Input) }}
+                  onBlur={() => commitGene2(gene2Input)}
                   placeholder={selectedGene2 || 'Optional...'}
                   className="w-full text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand" />
+                {gene2InputError && (
+                  <div className="text-[10px] text-error mt-1">{unknownGeneMessage(gene2InputError)}</div>
+                )}
                 {showGene2Suggestions && gene2Suggestions.length > 0 && (
                   <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                     {gene2Suggestions.map(g => (

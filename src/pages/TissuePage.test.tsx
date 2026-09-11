@@ -196,14 +196,120 @@ describe('TissuePage — load failure vs. genuinely empty tissue', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(0) })
       expect(screen.queryAllByText(/Processing/).length).toBeGreaterThan(0)
 
-      // ...and a tick must actually repaint Processing -> Ready. This is the
-      // symptom that was reported: with a cached fetch the tick returned the
-      // same array reference, React bailed out, and the badge never moved.
+      // ...and a tick must actually repaint Processing -> Ready.
+      //
+      // Scope, stated honestly: this guards the wiring — that a tick reaches
+      // setRows and the badge re-renders from it. It does NOT reproduce the
+      // original caching bug, which needed the poll to hand React the *same
+      // array reference* as current state so it bailed out. mockResolvedValue
+      // returns one fixed array that differs from the load array, so no bailout
+      // can occur here. Reference freshness rests entirely on apiFetch calling
+      // res.json() per request, and nothing in this suite pins that down.
       await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
       expect(screen.queryAllByText(/Processing/).length).toBe(0)
       expect(screen.queryAllByText(/may be stale/i).length).toBe(0)
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  // B30: when the source data is edited, the read can fail for a window and the
+  // backend serves that row with all-zero counts. Printing those zeros next to a
+  // green "Ready" badge makes a failed read look like a legitimately tiny dataset
+  // — and because the poll only arms on `status !== 'ready'`, the zeros could
+  // never heal on their own. 0 is a measurement; it must not be shown for a row
+  // we could not read.
+  it('renders an unreadable row as a failure rather than as 0 patients / Ready', async () => {
+    fetchDatasetsMock.mockResolvedValue([
+      dataset({ status: 'error', patient_count: 0, sample_count: 0, celltype_count: 0, n_obs: 0, group_dist: '' }),
+    ] as never)
+
+    render(<TissuePage />)
+
+    await screen.findByText(/Read failed/i)
+    expect(screen.queryByText('Ready')).toBeNull()
+    expect(screen.queryByText('0')).toBeNull()
+    expect(screen.queryAllByText('—').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('auto-recovers an unreadable row once the backend can read it again', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchDatasetsMock.mockResolvedValue([
+        dataset({ status: 'error', patient_count: 0, sample_count: 0, celltype_count: 0 }),
+      ] as never)
+      // The next scan reads fine — same file, read succeeded.
+      fetchDatasetsFreshMock.mockResolvedValue([dataset()] as never)
+
+      render(<TissuePage />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.queryAllByText(/Read failed/i).length).toBeGreaterThan(0)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(screen.queryAllByText(/Read failed/i).length).toBe(0)
+      expect(screen.queryAllByText(/Ready/).length).toBeGreaterThan(0)
+      expect(screen.queryAllByText('3').length).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // The footer split is a deliverable, and mutation testing showed nothing
+  // guarded it: deleting the "could not be read" span and relabelling error rows
+  // "Processing…" again passed every other test in this file.
+  it('calls an unreadable row unreadable in the footer, not "Processing"', async () => {
+    fetchDatasetsMock.mockResolvedValue([dataset({ status: 'error', patient_count: 0 })] as never)
+
+    render(<TissuePage />)
+
+    await screen.findByText(/could not be read/i)
+    // The old footer said this about every non-ready row, including unreadable ones.
+    expect(screen.queryByText(/Processing/)).toBeNull()
+  })
+
+  // Counting over `rows` instead of what the table actually shows produced a
+  // warning about a row the reader cannot see. The tab switch is the positive
+  // control: same data, same footer, only the visible rows change.
+  it('does not warn about an unreadable row that is not in the visible tab', async () => {
+    fetchDatasetsMock.mockResolvedValue([
+      dataset({ omics_type: 'BulkRNA', status: 'error', pmid: '11111111', patient_count: 0 }),
+      dataset({ omics_type: 'scRNA', status: 'ready' }),
+    ] as never)
+
+    render(<TissuePage />)
+    await screen.findByText('33936064')
+
+    // Single Cell tab is active: the unreadable row is a Bulk RNA one.
+    expect(screen.queryByText(/could not be read/i)).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /Bulk RNA/i }))
+    await screen.findByText(/could not be read/i)
+  })
+
+  // A literal 0 in the CSV survives into whatever downstream reads it, long
+  // after the row has healed on screen. Mutation testing: reverting the
+  // ternaries passed the whole suite.
+  it('writes no zeros for an unreadable row in the CSV export', async () => {
+    const captured: { blob: Blob | null } = { blob: null }
+    URL.createObjectURL = vi.fn((b: Blob) => { captured.blob = b; return 'blob:mock' })
+    URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      fetchDatasetsMock.mockResolvedValue([
+        dataset({ status: 'error', patient_count: 0, sample_count: 0, celltype_count: 0, group_dist: '' }),
+      ] as never)
+
+      render(<TissuePage />)
+      await screen.findByText(/Read failed/i)
+      await userEvent.click(screen.getByRole('button', { name: /CSV/i }))
+
+      const text = await captured.blob!.text()
+      const fields = text.split('\n').find((l) => l.includes('33936064'))!.split(',')
+      // Patient / Sample / CellTypes carry no measurement for this row.
+      expect(fields.slice(5, 8)).toEqual(['-', '-', '-'])
+    } finally {
+      clickSpy.mockRestore()
     }
   })
 

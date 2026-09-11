@@ -9,6 +9,9 @@ interface TissueDiseaseMap {
   [tissue: string]: { name: string; count: number }[]
 }
 
+/** species → tissue → diseases. The leading key is load-bearing: see the effect. */
+type SpeciesTissueMap = Record<string, TissueDiseaseMap>
+
 const SPECIES_BG: Record<string, string> = {
   Human: '/shape-body.png',
   Mouse: '/assets/mouse_female.svg',
@@ -26,7 +29,7 @@ export default function TissueAtlas() {
   const navigate = useNavigate()
   const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  const [tissueDiseases, setTissueDiseases] = useState<TissueDiseaseMap>({})
+  const [tissueDiseases, setTissueDiseases] = useState<SpeciesTissueMap>({})
   const [species, setSpecies] = useState('Human')
 
   const organShapes = getOrganShapes(species)
@@ -36,12 +39,20 @@ export default function TissueAtlas() {
     const loadData = () => {
       fetchDatasets().then((data: DatasetInfo[]) => {
         if (!Array.isArray(data)) return
-        const map: TissueDiseaseMap = {}
+        // Keyed by species, and it has to be: the three tabs share this one map,
+        // and Mouse/Monkey organ slugs are the very same words as the Human
+        // tissue names (kidney, lung, liver, colon…). Lowercasing collapsed them
+        // onto one key, so those tabs were reporting Human counts — with 93 of
+        // 96 datasets Human, nearly all of what they showed was Human.
+        const map: SpeciesTissueMap = {}
         for (const d of data) {
+          const sp = d.species || 'Human'
           const t = d.tissue?.toLowerCase() || ''
-          if (!map[t]) map[t] = []
-          const e = map[t].find(x => x.name === d.disease)
-          if (e) e.count++; else map[t].push({ name: d.disease, count: 1 })
+          if (!map[sp]) map[sp] = {}
+          const byTissue = map[sp]
+          if (!byTissue[t]) byTissue[t] = []
+          const e = byTissue[t].find(x => x.name === d.disease)
+          if (e) e.count++; else byTissue[t].push({ name: d.disease, count: 1 })
         }
         setTissueDiseases(map)
       }).catch(() => {})
@@ -52,7 +63,7 @@ export default function TissueAtlas() {
   }, [])
 
   const hovered = hoveredSlug ? organShapes.find(o => o.slug === hoveredSlug) : null
-  const liveDiseases = hoveredSlug ? (tissueDiseases[hoveredSlug] ?? []) : []
+  const liveDiseases = hoveredSlug ? (tissueDiseases[species]?.[hoveredSlug] ?? []) : []
 
   return (
     <section>
