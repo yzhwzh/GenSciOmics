@@ -11,6 +11,8 @@ import AsyncCreatableSelect from 'react-select/async-creatable'
 import type { StylesConfig } from 'react-select'
 import { MERGE_OP_KEY, deriveG2Op, readStoredOp } from './mergeOp'
 import { resolveGeneChoice, unknownGeneMessage } from './geneInput'
+import { useStoredGene, AGG_GENE_KEY } from './useStoredGene'
+import ResolvedGeneNotice from './ResolvedGeneNotice'
 
 interface Option {
   value: string
@@ -70,9 +72,15 @@ const selectStyles: StylesConfig<Option, true> = {
 export default function ExpressionChartContainer({ realPath }: { realPath: string }) {
   const geneSearchRef = useRef<HTMLDivElement>(null)
   const [metric, setMetric] = useState<'mean_expression' | 'expression_pct'>('expression_pct')
-  const [selectedGene, setSelectedGene] = useState(() => {
-    try { return sessionStorage.getItem('gensci_agg_gene') ?? 'FAP' } catch { return 'FAP' }
-  })
+  // Remembered per dataset: a gene chosen on another dataset is not restored
+  // here. See useStoredGene.ts / BUG_LOG B34.
+  const [selectedGene, setSelectedGene] = useStoredGene(AGG_GENE_KEY, realPath, 'FAP')
+  // The gene the backend actually plotted for the request behind the chart on
+  // screen, paired with what was asked for at the time.
+  const [resolvedGene, setResolvedGene] = useState<{ asked: string; resolved: string } | null>(null)
+  const handleResolvedGene = useCallback((resolved: string) => {
+    setResolvedGene(resolved ? { asked: selectedGene, resolved } : null)
+  }, [selectedGene])
   const [geneSearchInput, setGeneSearchInput] = useState('')
   const [geneSuggestions, setGeneSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -148,7 +156,6 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
     }
   }, [realPath])
 
-  useEffect(() => { try { sessionStorage.setItem('gensci_agg_gene', selectedGene) } catch { /* ignore */ } }, [selectedGene])
   // Persist the APPLIED operator, mirroring gensci_agg_gene: switching 或/且 and then
   // reloading without pressing Run must not silently remember an uncommitted choice.
   useEffect(() => { try { sessionStorage.setItem(MERGE_OP_KEY, mergeRunOp) } catch { /* ignore */ } }, [mergeRunOp])
@@ -229,7 +236,11 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
       setGeneInputError(choice.typed)
       setShowSuggestions(true)
     }
-  }, [geneSuggestions, realPath])
+    // setSelectedGene is useStoredGene's `select`, a useCallback with an empty
+    // dependency list — a stable identity the linter cannot verify through a
+    // custom hook. Listing it changes no behaviour and keeps the rule silent
+    // so that a real missing dependency stands out when one appears.
+  }, [geneSuggestions, realPath, setSelectedGene])
 
   const commitGene2 = useCallback(async (typed: string) => {
     const choice = await resolveGeneChoice(typed, gene2Suggestions, (q) => searchGenes(realPath, q))
@@ -262,6 +273,7 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
             {geneInputError && (
               <div className="text-[10px] text-error mt-1">{unknownGeneMessage(geneInputError)}</div>
             )}
+            <ResolvedGeneNotice asked={selectedGene} resolution={resolvedGene} />
             {showSuggestions && geneSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {geneSuggestions.map(g => (
@@ -417,7 +429,7 @@ export default function ExpressionChartContainer({ realPath }: { realPath: strin
       <div className="flex-1 flex flex-col min-w-0 p-2 gap-2">
         <div className="flex-1 flex gap-2 min-h-0">
           <div className="flex-1 bg-surface rounded-md shadow-card overflow-hidden min-w-0">
-            <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="barplot" palette={palette} />
+            <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="barplot" palette={palette} onResolvedGene={handleResolvedGene} />
           </div>
           {(compositionImg || compLoading) && (
             <div className="w-[45%] bg-surface rounded-md shadow-card overflow-hidden shrink-0 flex flex-col">

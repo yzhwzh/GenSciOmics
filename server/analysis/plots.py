@@ -162,7 +162,10 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
         ax.set_xticklabels(ax.get_xticklabels(), fontsize=fs_lbl,
                            rotation=45 if n_ct > 8 else 0, ha='right' if n_ct > 8 else 'center')
         ax.set_ylabel(ylabel, fontsize=max(11, int(12 * fs)), weight='bold')
-        ax.set_title(gene, fontsize=max(11, int(12 * fs)), weight='bold')
+        # actual_gene, not the raw input: an unknown token is resolved by
+        # substring above, so titling with `gene` labelled an ABCD3 plot "CD3".
+        # That is the one place the substitution was actively asserted.
+        ax.set_title(actual_gene, fontsize=max(11, int(12 * fs)), weight='bold')
         ax.set_xlabel(None)
         ax.grid(False)
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
@@ -181,7 +184,12 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
                     facecolor='white', edgecolor='none')
         plt.close(fig)
         img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        return {'image': img_b64, 'width': fig_w, 'height': fig_h}
+        # The var name actually plotted, so the UI can warn when the substring
+        # fallback above picked a different gene than the one asked for. A
+        # `str`, unlike _generate_celltype_composition's `gene2_resolved`, which
+        # is a list of the gene2 member set.
+        return {'image': img_b64, 'width': fig_w, 'height': fig_h,
+                'gene_resolved': actual_gene}
 
     except Exception as e:
         print(f'[GenSci] Plot generation error: {e}', file=sys.stderr)
@@ -202,25 +210,45 @@ def _generate_celltype_composition(real_path: str, gene: str,
     `gene2_label` overrides the member set's display tag used in the group labels
     (fallback: the member names joined by that operator's separator).
 
-    The returned dict reports `gene2_resolved` / `gene2_unresolved` alongside the
-    image so the UI can warn about member names that matched nothing instead of
-    silently charting a smaller set than the user asked for."""
+    The returned dict reports `gene_resolved` (the name the primary gene matched
+    on — see `find_gene`) plus `gene2_resolved` / `gene2_unresolved`, so a client
+    can tell what was charted rather than assuming it was the request."""
     try:
         with locked_backed_adata(str(real_path)) as adata:
 
-            def find_gene_idx(g):
+            def find_gene(g) -> tuple[int | None, str | None]:
+                """(index, matched name) — (None, None) when nothing matches.
+
+                Exact, case-insensitive only: unlike `_generate_plot` there is no
+                substring fallback here, so the name returned differs from the
+                request only in case.
+
+                The name reported is the one that actually matched, which is not
+                always `adata.var.index[i]`: a symbol can match an alias column
+                (gene_symbols, feature_name, gene_ids) whose row label is an
+                Ensembl id. Echoing the row label there would name a gene the
+                user never typed, and since the frontend warns when this differs
+                from what was asked, it would fire a false warning for a gene
+                that matched perfectly. gene2 keeps reporting var.index exactly
+                as before — the two names in one response can differ for one row.
+                """
                 idx_series = pd.Series(adata.var.index.astype(str))
                 matches = idx_series.str.lower() == g.lower()
                 if matches.any():
-                    return int(matches.values.nonzero()[0][0])
+                    i = int(matches.values.nonzero()[0][0])
+                    return i, str(adata.var.index[i])
                 for col in ['index', 'gene_ids', 'gene_symbols', 'feature_name']:
                     if col in adata.var.columns:
                         matches = adata.var[col].astype(str).str.lower() == g.lower()
                         if matches.any():
-                            return int(matches.values.nonzero()[0][0])
-                return None
+                            i = int(matches.values.nonzero()[0][0])
+                            # .iloc, not [i]: Series.__getitem__ is label-based on
+                            # an integer index (KeyError / silently wrong row) and
+                            # deprecated-positional on an object one.
+                            return i, str(adata.var[col].iloc[i])
+                return None, None
 
-            g1_idx = find_gene_idx(gene)
+            g1_idx, gene_resolved = find_gene(gene)
             if g1_idx is None:
                 return {'error': f'Gene "{gene}" not found'}
 
@@ -243,7 +271,7 @@ def _generate_celltype_composition(real_path: str, gene: str,
                 if len(parts) > 1:
                     masks = []
                     for part in parts:
-                        idx = find_gene_idx(part)
+                        idx = find_gene(part)[0]
                         if idx is None:
                             gene2_unresolved.append(part)
                             continue
@@ -273,7 +301,7 @@ def _generate_celltype_composition(real_path: str, gene: str,
                     # Exactly one surviving part (including a degenerate 'A|' spec) or a
                     # plain single gene: resolve it by name, matching stats._get_aggregate_table.
                     g2_name = parts[0] if parts else gene2
-                    g2_idx = find_gene_idx(g2_name)
+                    g2_idx = find_gene(g2_name)[0]
                     if g2_idx is not None:
                         gene2_resolved = [str(adata.var.index[g2_idx])]
                         col = adata[:, g2_idx].X
@@ -350,6 +378,7 @@ def _generate_celltype_composition(real_path: str, gene: str,
         plt.close(fig)
 
         return {'image': f'data:image/png;base64,{b64}',
+                'gene_resolved': gene_resolved,
                 'gene2_resolved': gene2_resolved,
                 'gene2_unresolved': gene2_unresolved}
     except Exception as e:

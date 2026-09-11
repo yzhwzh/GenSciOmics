@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkAnalysisTab from './BulkAnalysisTab'
 import { searchGenes, fetchBulkBoxplot, fetchBulkAxes } from '../../api/analysis'
+import { resolvedGeneMessage } from './geneInput'
+import { BULK_GENE_KEY, storedGeneKey } from './useStoredGene'
 
 // Mock API layer — BulkAnalysisTab fetches on mount
 vi.mock('../../api/analysis', () => ({
@@ -196,5 +198,63 @@ describe('BulkAnalysisTab — sessionStorage persistence (same pattern as scRNA)
     await user.click(screen.getByRole('button', { name: '疾病' }))
     expect(combos()).toHaveLength(4) // selector restored...
     expect(combos()[0]).toHaveValue('All') // ...back to the all-disease default
+  })
+})
+
+/**
+ * Regression — BUG_LOG B34. Two things the gene box never did: scope its
+ * remembered value to one dataset, and report a gene the backend substituted.
+ *
+ * The second matters more here than on the scRNA tabs. Their gene boxes go
+ * through resolveGeneChoice, which refuses a name the dataset does not hold, so
+ * a substitution there has to come from a stale stored value. This box has no
+ * such guard — selectGene takes whatever was typed (:272) — so typing `COL1`
+ * against TCGA really does chart COL10A1, and this line is the only thing that
+ * says so.
+ */
+describe('BulkAnalysisTab — the remembered gene, and the one actually plotted', () => {
+  afterEach(() => {
+    try { sessionStorage.clear() } catch { /* ignore */ }
+    vi.mocked(fetchBulkAxes).mockImplementation(() =>
+      Promise.resolve({ diseases: ['RA', 'COPD'], tissueColumn: null }))
+    vi.mocked(fetchBulkBoxplot).mockImplementation(() => Promise.resolve({}))
+  })
+
+  const geneInput = () => screen.getAllByRole('textbox')[0]
+
+  it('ignores a gene stored under the old unscoped key', async () => {
+    try { sessionStorage.setItem('gensci_bulk_gene', 'CD3') } catch { /* ignore */ }
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    expect(geneInput()).toHaveAttribute('placeholder', 'TP53')
+  })
+
+  it('restores a gene stored for this dataset', async () => {
+    try { sessionStorage.setItem(storedGeneKey(BULK_GENE_KEY, '/test/path'), 'EGFR') } catch { /* ignore */ }
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    expect(geneInput()).toHaveAttribute('placeholder', 'EGFR')
+  })
+
+  it('says which gene it plotted when the backend substituted another', async () => {
+    vi.mocked(fetchBulkBoxplot).mockImplementation(() =>
+      Promise.resolve({ image: 'aGk=', gene_resolved: 'COL10A1' }))
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    // Read from the same helper the notice renders, so a reworded message cannot
+    // leave this assertion quietly matching nothing.
+    expect(await screen.findByText(resolvedGeneMessage('TP53', 'COL10A1'))).toBeInTheDocument()
+  })
+
+  it('stays silent when the backend plotted the gene that was asked for', async () => {
+    vi.mocked(fetchBulkBoxplot).mockImplementation(() =>
+      Promise.resolve({ image: 'aGk=', gene_resolved: 'TP53' }))
+    render(<BulkAnalysisTab realPath="/test/path" />)
+    await screen.findByText('No results')
+
+    expect(screen.queryByText(resolvedGeneMessage('TP53', 'COL10A1'))).toBeNull()
   })
 })

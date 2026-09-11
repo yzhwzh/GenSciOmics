@@ -28,6 +28,27 @@ export function unknownGeneMessage(typed: string): string {
   return `No gene named “${typed}” in this dataset`
 }
 
+/**
+ * What a box says when the backend plotted a different gene than the one asked
+ * for — or '' when it used the gene as given.
+ *
+ * The guard above only covers a gene the user *types*. A gene restored from
+ * storage, or typed into a box that has no guard (UMAP's), reaches the backend
+ * unchecked, where the same substring fallback resolves it to something else
+ * and returns an ordinary-looking plot. This line is the only place that tells
+ * the reader which gene they are actually looking at.
+ *
+ * `resolved` is `undefined` for responses cached before the backend reported
+ * the field, which is "the backend did not say", not "the backend substituted".
+ * A pure case difference ("egfr" -> "EGFR") is the box working correctly, and
+ * warning about it would teach the reader to skip the line that matters.
+ */
+export function resolvedGeneMessage(typed: string, resolved?: string): string {
+  if (!resolved) return ''
+  if (typed.trim().toLowerCase() === resolved.toLowerCase()) return ''
+  return `“${typed}” matched nothing here — showing “${resolved}” instead`
+}
+
 /** What the caller should do with what the user typed. */
 export type GeneChoice =
   | { kind: 'commit'; gene: string }
@@ -73,7 +94,8 @@ export async function resolveGeneChoice(
   try {
     fresh = await search(text)
   } catch {
-    fresh = []
+    // A failed lookup is not a licence to commit: `fresh` stays empty and the
+    // exact-match check below rejects, rather than falling through to a guess.
   }
 
   const hit = exactGeneMatch(text, fresh)

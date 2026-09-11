@@ -1,18 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchGenes } from '../../api/analysis'
 import { resolveGeneChoice, unknownGeneMessage } from './geneInput'
+import { useStoredGene, BOXPLOT_GENE_KEY } from './useStoredGene'
 import { PALETTE_OPTIONS } from '../../api/types'
 import PlotImage from './PlotImage'
 import DetailTable from './DetailTable'
 import MuTestTable from './MuTestTable'
 import RawDataDownload from './RawDataDownload'
+import ResolvedGeneNotice from './ResolvedGeneNotice'
 
 export default function BoxPlotContainer({ realPath }: { realPath: string }) {
   const geneSearchRef = useRef<HTMLDivElement>(null)
   const [metric, setMetric] = useState<'expression_pct' | 'mean_expression'>('expression_pct')
-  const [selectedGene, setSelectedGene] = useState(() => {
-    try { return sessionStorage.getItem('gensci_boxplot_gene') ?? 'FAP' } catch { return 'FAP' }
-  })
+  // Remembered per dataset: a gene chosen on another dataset is not restored
+  // here. See useStoredGene.ts / BUG_LOG B34.
+  const [selectedGene, setSelectedGene] = useStoredGene(BOXPLOT_GENE_KEY, realPath, 'FAP')
+  // The gene the backend actually plotted for the request behind the chart on
+  // screen, paired with what was asked for at the time.
+  const [resolvedGene, setResolvedGene] = useState<{ asked: string; resolved: string } | null>(null)
+  const handleResolvedGene = useCallback((resolved: string) => {
+    setResolvedGene(resolved ? { asked: selectedGene, resolved } : null)
+  }, [selectedGene])
   const [geneSearchInput, setGeneSearchInput] = useState('')
   const [geneSuggestions, setGeneSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -43,9 +51,12 @@ export default function BoxPlotContainer({ realPath }: { realPath: string }) {
       setGeneInputError(choice.typed)
       setShowSuggestions(true)
     }
-  }, [geneSuggestions, realPath])
-
-  useEffect(() => { try { sessionStorage.setItem('gensci_boxplot_gene', selectedGene) } catch { /* ignore */ } }, [selectedGene])
+    // setSelectedGene is useStoredGene's `select`, a useCallback with an empty
+    // dependency list, so its identity never changes and listing it here costs
+    // no extra renders. The linter cannot see that through a custom hook, so
+    // omitting it would leave a standing warning in which the next genuine
+    // missing dependency would go unnoticed.
+  }, [geneSuggestions, realPath, setSelectedGene])
 
   useEffect(() => {
     if (!realPath || geneSearchInput.length < 1) { setGeneSuggestions([]); return }
@@ -80,6 +91,7 @@ export default function BoxPlotContainer({ realPath }: { realPath: string }) {
             {geneInputError && (
               <div className="text-[10px] text-error mt-1">{unknownGeneMessage(geneInputError)}</div>
             )}
+            <ResolvedGeneNotice asked={selectedGene} resolution={resolvedGene} />
             {showSuggestions && geneSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-full">
                 {geneSuggestions.map(g => (
@@ -133,7 +145,7 @@ export default function BoxPlotContainer({ realPath }: { realPath: string }) {
       {/* Main: Chart + Table */}
       <div className="flex-1 flex flex-col min-w-0 p-2 gap-2">
         <div className="flex-1 bg-surface rounded-md shadow-card overflow-hidden min-h-0">
-          <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="boxplot" minCells={minCells} palette={palette} />
+          <PlotImage realPath={realPath} gene={selectedGene} conditionCol={conditionCol} metric={metric} plotType="boxplot" minCells={minCells} palette={palette} onResolvedGene={handleResolvedGene} />
         </div>
         <div className="shrink-0 flex flex-col" style={{ flexBasis: '35%', minHeight: 140 }}>
           <div className="flex items-center gap-1 mb-1">

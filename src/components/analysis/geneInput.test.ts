@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { exactGeneMatch, resolveGeneChoice, unknownGeneMessage } from './geneInput'
+import { exactGeneMatch, resolveGeneChoice, unknownGeneMessage, resolvedGeneMessage } from './geneInput'
 
 /**
  * The three gene boxes are plain text inputs whose dropdown is a hint, not a
@@ -91,5 +91,38 @@ describe('unknownGeneMessage', () => {
   // hunting for which box they mistyped.
   it('names the token that was rejected', () => {
     expect(unknownGeneMessage('CD3')).toContain('CD3')
+  })
+})
+
+/**
+ * The rejection above is the frontend's own guard, and it only covers the path
+ * where the user *types* the box. A gene restored from storage — or typed into
+ * a box that has no guard, like UMAP's — reaches the backend unchecked, where
+ * the same substring fallback quietly returns a different gene. The plot then
+ * looks completely normal. This is the only thing that tells the reader which
+ * gene they are actually looking at.
+ */
+describe('resolvedGeneMessage', () => {
+  it('warns with both names when the backend substituted another gene', () => {
+    const msg = resolvedGeneMessage('CD3', 'ABCD3')
+    expect(msg).toContain('CD3')
+    expect(msg).toContain('ABCD3')
+  })
+
+  it('stays quiet when the backend used the gene as typed', () => {
+    expect(resolvedGeneMessage('EGFR', 'EGFR')).toBe('')
+  })
+
+  // Typing "egfr" and being shown "EGFR" is the box doing its job — warning
+  // about it would train the reader to ignore the line that matters.
+  it('stays quiet when only the letter case differs', () => {
+    expect(resolvedGeneMessage('egfr', 'EGFR')).toBe('')
+  })
+
+  // Responses cached before this field existed have no gene_resolved at all.
+  // Absent means "backend did not say", not "backend substituted".
+  it('stays quiet when the response predates the field', () => {
+    expect(resolvedGeneMessage('EGFR', undefined)).toBe('')
+    expect(resolvedGeneMessage('EGFR', '')).toBe('')
   })
 })

@@ -11,6 +11,7 @@ import {
   FreeAnalysisTab,
   BulkAnalysisTab,
 } from '../components/analysis'
+import { useStoredGene, UMAP_GENE_KEY, UMAP_GENE2_KEY } from '../components/analysis/useStoredGene'
 import type { AnalysisInfo, UmapData } from '../api/types'
 
 // Shown when the scanner could not read the file behind this dataset. Both
@@ -38,20 +39,18 @@ export default function AnalysisPage() {
   const [umapLoading, setUmapLoading] = useState(false)
 
   const [colorBy, setColorBy] = useState('CellType')
-  const [geneName, setGeneName] = useState(() => {
-    try { return sessionStorage.getItem('gensci_gene_name') ?? '' } catch { return '' }
-  })
-  const [geneName2, setGeneName2] = useState(() => {
-    try { return sessionStorage.getItem('gensci_gene_name2') ?? '' } catch { return '' }
-  })
+  // Both start out empty because realPath is not known yet — an empty gene is
+  // the "nothing chosen" state here, not a dataset's remembered pick. The hook
+  // reads the real value once the path arrives, and will not write before then.
+  // See useStoredGene.ts / BUG_LOG B34.
+  const [geneName, setGeneName] = useStoredGene(UMAP_GENE_KEY, realPath, '')
+  const [geneName2, setGeneName2] = useStoredGene(UMAP_GENE2_KEY, realPath, '')
   const [umapPalette, setUmapPalette] = useState('default')
   const [activeTab, setActiveTab] = useState(() => {
     try { const s = sessionStorage.getItem('gensci_active_tab'); return s ? parseInt(s, 10) : 0 } catch { return 0 }
   })
 
   useEffect(() => { try { sessionStorage.setItem('gensci_active_tab', String(activeTab)) } catch { /* ignore */ } }, [activeTab])
-  useEffect(() => { try { sessionStorage.setItem('gensci_gene_name', geneName) } catch { /* ignore */ } }, [geneName])
-  useEffect(() => { try { sessionStorage.setItem('gensci_gene_name2', geneName2) } catch { /* ignore */ } }, [geneName2])
 
   const isBulk = omicsType === 'BulkRNA'
   const isProtein = omicsType === 'Protein'
@@ -128,10 +127,13 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     if (!realPath || activeTab !== 1) return
-    let cancelled = false
+    // No cleanup: there used to be a `cancelled` flag here, but nothing ever
+    // read it — the fetch sets state through fetchUmap regardless, so it
+    // promised a cancellation guard that did not exist. realPath is listed
+    // because the guard above reads it; fetchUmap already closes over it, so
+    // they change together and this cannot cause a second fetch.
     fetchUmap()
-    return () => { cancelled = true }
-  }, [fetchUmap, activeTab])
+  }, [fetchUmap, activeTab, realPath])
 
   if (error) {
     return (

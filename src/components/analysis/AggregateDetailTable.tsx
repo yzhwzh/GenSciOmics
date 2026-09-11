@@ -71,7 +71,7 @@ export default function AggregateDetailTable({
   if (loading) return <div className="flex items-center justify-center py-4 text-xs text-text-muted"><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</div>
   if (!data?.rows.length) return <div>{warning}<div className="text-xs text-text-muted py-4 text-center">No data</div></div>
 
-  const { rows, groups } = data
+  const { groups } = data
   const activeRows = filteredRows as unknown as AggregateRow[]
   const cellTypes = [...new Set(activeRows.map(r => r.CellType))]
   const genes = [...new Set(activeRows.map(r => r.Gene))]

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BoxPlotContainer from './BoxPlotContainer'
 import { unknownGeneMessage } from './geneInput'
+import { BOXPLOT_GENE_KEY, storedGeneKey } from './useStoredGene'
 
 // Mock child components
 vi.mock('./PlotImage', () => ({ default: () => <div data-testid="plot-image">Plot</div> }))
@@ -119,5 +120,40 @@ describe('BoxPlotContainer — Gene Input', () => {
     // cannot leave this assertion quietly matching nothing.
     expect(await screen.findByText(unknownGeneMessage('NOTAGENE'))).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('FAP')).not.toBeNull()
+  })
+})
+
+/**
+ * Regression — BUG_LOG B34. The gene box remembered one gene for the whole app
+ * rather than one per dataset, so a value written by an older build (before B28
+ * guarded the commit path) was read straight back and plotted: "CD3" is not in
+ * the dataset, and the backend resolved it by substring into ABCD3. Reached
+ * through the placeholder, because that is the only thing here that reflects
+ * which gene was actually selected.
+ */
+describe('BoxPlotContainer — the remembered gene belongs to one dataset', () => {
+  beforeEach(() => { try { sessionStorage.clear() } catch { /* ignore */ } })
+  afterEach(() => { try { sessionStorage.clear() } catch { /* ignore */ } })
+
+  it('ignores a gene stored under the old unscoped key', () => {
+    try { sessionStorage.setItem(BOXPLOT_GENE_KEY, 'CD3') } catch { /* ignore */ }
+    render(<BoxPlotContainer realPath="/test/path.h5ad" />)
+    expect(screen.queryByPlaceholderText('CD3')).toBeNull()
+    expect(screen.getByPlaceholderText('FAP')).toBeInTheDocument()
+  })
+
+  it('restores a gene stored for this dataset', () => {
+    try { sessionStorage.setItem(storedGeneKey(BOXPLOT_GENE_KEY, '/test/path.h5ad'), 'EGFR') } catch { /* ignore */ }
+    render(<BoxPlotContainer realPath="/test/path.h5ad" />)
+    expect(screen.getByPlaceholderText('EGFR')).toBeInTheDocument()
+  })
+
+  // The leak that needed no stale data at all: pick a gene on dataset A, open
+  // dataset B, and B used to restore A's gene and plot it unprompted.
+  it("does not restore a gene stored for another dataset", () => {
+    try { sessionStorage.setItem(storedGeneKey(BOXPLOT_GENE_KEY, '/other/dataset.h5ad'), 'EGFR') } catch { /* ignore */ }
+    render(<BoxPlotContainer realPath="/test/path.h5ad" />)
+    expect(screen.queryByPlaceholderText('EGFR')).toBeNull()
+    expect(screen.getByPlaceholderText('FAP')).toBeInTheDocument()
   })
 })

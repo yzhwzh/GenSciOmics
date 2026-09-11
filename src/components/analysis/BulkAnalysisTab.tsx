@@ -5,6 +5,8 @@ import FilterDropdown from '../FilterDropdown'
 import { searchGenes, fetchBulkBoxplot, fetchBulkVolcano, fetchBulkDe, fetchBulkAxes, fetchBulkGroups } from '../../api/analysis'
 import { PALETTE_OPTIONS, type BulkDeRow } from '../../api/types'
 import ZoomableImage from './ZoomableImage'
+import { useStoredGene, BULK_GENE_KEY } from './useStoredGene'
+import ResolvedGeneNotice from './ResolvedGeneNotice'
 
 function fmtP(v: number | null): string {
   if (v === null) return 'NA'
@@ -61,7 +63,11 @@ function GroupPicker({
 // the full gene list is still loaded so the filter dropdown works across all genes.
 const DISPLAY_LIMIT = 100
 
-export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { realPath: string; omicsType?: string }) {
+// omicsType is accepted but not read — AnalysisPage passes the dataset's
+// omics_type and the component never consults it, so a Protein dataset and a
+// BulkRNA one render identically here. Kept in the props type so the call site
+// keeps compiling; remove it outright if that really is the intent.
+export default function BulkAnalysisTab({ realPath }: { realPath: string; omicsType?: string }) {
   // Shared controls (selections persisted to sessionStorage — same pattern as scRNA boxplot/agg gene)
   // Boxplot has its own Disease selector (default All); the volcano card has an independent one.
   const [boxplotDisease, setBoxplotDisease] = useState(() => {
@@ -72,9 +78,12 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   })
   const [diseases, setDiseases] = useState<string[]>([])
   const [groupOptions, setGroupOptions] = useState<string[]>([])
-  const [gene, setGene] = useState(() => {
-    try { return sessionStorage.getItem('gensci_bulk_gene') ?? 'TP53' } catch { return 'TP53' }
-  })
+  // Remembered per dataset, unlike the eight keys below. See useStoredGene.ts /
+  // BUG_LOG B34.
+  const [gene, setGene] = useStoredGene(BULK_GENE_KEY, realPath, 'TP53')
+  // The gene the backend actually plotted for the request behind the chart on
+  // screen, paired with what was asked for at the time.
+  const [geneResolution, setGeneResolution] = useState<{ asked: string; resolved: string } | null>(null)
   const [palette, setPalette] = useState(() => {
     try { return sessionStorage.getItem('gensci_bulk_palette') ?? 'default' } catch { return 'default' }
   })
@@ -135,7 +144,6 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   const allRows = filteredRows as unknown as BulkDeRow[]
   const displayRows = hasActiveFilters ? allRows : allRows.slice(0, DISPLAY_LIMIT)
 
-  useEffect(() => { try { sessionStorage.setItem('gensci_bulk_gene', gene) } catch { /* ignore */ } }, [gene])
   useEffect(() => {
     try {
       sessionStorage.setItem('gensci_bulk_disease', boxplotDisease)
@@ -181,7 +189,11 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
   // Boxplot
   useEffect(() => {
     if (!realPath || !gene) return
-    setBoxplotLoading(true); setBoxplotErr(''); setBoxplotSrc(null)
+    // Same stale-response guard as PlotImage: this effect re-runs on every gene,
+    // disease, palette and group change, so a slower earlier render can land after
+    // a faster later one and leave the old image paired with the old resolution.
+    let stale = false
+    setBoxplotLoading(true); setBoxplotErr(''); setBoxplotSrc(null); setGeneResolution(null)
     // Show-groups subset: send `groups` only when it is a strict subset — when all
     // groups are shown the param is omitted so the backend keeps every group (and
     // the existing all-groups cache entry is still hit).
@@ -199,12 +211,26 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
       axisCol,
     )
       .then((d) => {
+        if (stale) return
         if (d.error) setBoxplotErr(d.error)
-        else if (d.image) setBoxplotSrc(`data:image/png;base64,${d.image}`)
+        else if (d.image) {
+          setBoxplotSrc(`data:image/png;base64,${d.image}`)
+          // `gene` here is the gene this request was made with, so the pair stays
+          // consistent even if the box changed while the request was in flight.
+          setGeneResolution(d.gene_resolved ? { asked: gene, resolved: d.gene_resolved } : null)
+        }
       })
-      .catch((e) => setBoxplotErr(e instanceof Error ? e.message : String(e)))
-      .finally(() => setBoxplotLoading(false))
-  }, [realPath, gene, boxplotDisease, palette, targetGroup, xFactor, tissueColumn, hiddenGroups, groupOptions])
+      .catch((e) => {
+        if (stale) return
+        setBoxplotErr(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => { if (!stale) setBoxplotLoading(false) })
+    return () => { stale = true }
+    // tissueMode is derived (`xFactor === 'Tissue' && tissueColumn != null`,
+    // line 110), so both of its inputs are already listed and adding it cannot
+    // cause an extra fetch — but the linter reads a component-scope identifier,
+    // not a derivation, and a standing warning is a warning nobody reads.
+  }, [realPath, gene, boxplotDisease, palette, targetGroup, xFactor, tissueColumn, hiddenGroups, groupOptions, tissueMode])
 
   // Volcano
   useEffect(() => {
@@ -232,7 +258,7 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
         else {
           setRows(d.genes ?? [])
           setMeta({ n_total: d.n_total, n_tumor: d.n_tumor, n_normal: d.n_normal })
-          setGroupInfo({ case_group: (d as any).case_group, control_group: (d as any).control_group })
+          setGroupInfo({ case_group: d.case_group, control_group: d.control_group })
         }
       })
       .catch((e) => { setDeErr(e.message); setRows([]) })
@@ -292,6 +318,7 @@ export default function BulkAnalysisTab({ realPath, omicsType = 'BulkRNA' }: { r
                 onBlur={() => { if (geneInput.trim()) selectGene(geneInput.trim()) }}
                 placeholder={gene || 'Search...'}
                 className="w-[140px] text-xs border border-border-light rounded-sm px-2 py-1.5 bg-surface text-text-primary outline-none focus:border-brand font-medium" />
+              <ResolvedGeneNotice asked={gene} resolution={geneResolution} />
               {showSuggestions && geneSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 mt-0.5 bg-surface border border-border-light rounded-md shadow-overlay z-20 max-h-[180px] overflow-y-auto w-[220px]">
                   {geneSuggestions.map((g) => (

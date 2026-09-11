@@ -292,7 +292,8 @@ def _render_group_boxplot(real_path: str, expr, group_vals, actual_gene: str,
                 facecolor='white')
     plt.close(fig)
     img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-    return {'image': img_b64, 'width': fig_w, 'height': fig_h}
+    return {'image': img_b64, 'width': fig_w, 'height': fig_h,
+            'gene_resolved': actual_gene}
 
 
 def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
@@ -312,7 +313,10 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
     groups restricts which Group samples are plotted — group mode recomputes
     the shown subset (x-axis + brackets); panel mode hides the hue boxes +
     legend entries for unselected groups.
-    Returns {'image': base64, 'width', 'height'} or {'error': str}.
+    Returns {'image': base64, 'width', 'height', 'gene_resolved': str} or
+    {'error': str}. `gene_resolved` is the var name actually plotted — `_resolve_gene`
+    falls back to a substring match, so an unknown token silently charts a
+    different gene and the UI needs to be able to say so.
     """
     try:
         with locked_backed_adata(real_path) as adata:
@@ -417,7 +421,8 @@ def bulk_boxplot(real_path: str, gene: str, disease: str | None = None,
                     facecolor='white')
         plt.close(fig)
         img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        return {'image': img_b64, 'width': fig_w, 'height': 5}
+        return {'image': img_b64, 'width': fig_w, 'height': 5,
+                'gene_resolved': actual_gene}
     except Exception as e:
         print(f'[GenSci] bulk_boxplot error: {e}', file=sys.stderr)
         return {'error': str(e)}

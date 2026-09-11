@@ -169,6 +169,26 @@ export interface MutestResult {
   pairs: string[]
   mean_matrix: (number | null)[][]
   pct_matrix: (number | null)[][]
+  /** Present instead of the matrices when the request could not be answered. */
+  error?: string
+}
+
+/**
+ * The p-value grid the UMAP tab shows under "Cell Type Ratio by Group".
+ *
+ * Deliberately NOT `MutestResult`: `/api/umap-ratio-plots` builds it in
+ * `server/analysis/plots.py:899` as `{pairs, cell_types, matrix}`, whereas
+ * `/api/per-sample-mutest` returns `mean_matrix`/`pct_matrix`. The two payloads
+ * share `pairs` and `cell_types` and nothing else. Typing this as
+ * `MutestResult` (as it was) made `pairwise.matrix` invisible to the compiler,
+ * which is why the four reads below it were written as `as any` — and why
+ * renaming either field on the backend would have failed silently instead of
+ * at the type check.
+ */
+export interface PairwisePValues {
+  pairs: string[]
+  cell_types: string[]
+  matrix: (number | null)[][]
 }
 
 export interface AggregateRow {
@@ -217,6 +237,16 @@ export interface PlotResult {
   error?: string
   width?: number
   height?: number
+  /**
+   * The var name the backend actually plotted for the primary gene.
+   *
+   * It can differ from what was asked for: an unknown token is resolved by
+   * substring (server/analysis/utils.py:124), so "CD3" quietly plots "ABCD3".
+   * The plot looks ordinary either way, so this is what lets the UI say which
+   * gene the reader is really looking at. Optional — responses cached before
+   * the backend reported it are still valid, and mean "not stated".
+   */
+  gene_resolved?: string
   /** Merge members that resolved to real var names (post-dedup). */
   gene2_resolved?: string[]
   /** Merge members the user typed that matched nothing — surfaced as a warning. */
@@ -242,10 +272,12 @@ export interface UmapRatioPlots {
   stacked_bar: string
   cell_count_bar: string
   ratio_boxplot: string
-  pairwise?: MutestResult
+  pairwise?: PairwisePValues
   n_cell_types?: number
   n_samples?: number
   low_cell_pct?: number
+  /** Set instead of the plots when the dataset could not be read. */
+  error?: string
 }
 
 export interface SearchMatch {

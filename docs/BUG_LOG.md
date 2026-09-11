@@ -673,7 +673,7 @@ if has_record and not (pmc_error and not info['methods']):
 
 ---
 
-## B28. 基因名被子串回退静默解析成别的基因 (2026-09-10 首报，2026-09-11 修正可达性，**后端仍未修复；UI 侧全部入口已封堵**)
+## B28. 基因名被子串回退静默解析成别的基因 (2026-09-10 首报，2026-09-11 修正可达性，**后端仍未修复；UI 侧只封了「手输」这一条入口** —— 原标题的「全部入口已封堵」与实测不符，2026-09-11 二次修正，见 B34)
 
 ### 现象
 Barplot「共表达」的 Merge 模式下填 `COL1|COL1A2` 生成合成基因 M。数据集里并没有 `COL1`，但接口返回 `gene2_unresolved: []`、`gene2_resolved: ['COL1A1','COL1A2']`，前端**一条警告都不显示** —— M 实际是在用户从未指定的 `COL1A1` 上取的并集/交集。已实测复现（IPF 数据集，**直接调接口复现，非 UI 复现**，可达性见下）。
@@ -796,6 +796,18 @@ NOTAGENE -> 未找到
 #### 仍未修复
 
 后端 `utils.py:124` 的子串回退**原样保留**：接口直连、手改 URL/bookmark、以及 Free Analysis 里 LLM 自行调工具这三条路径仍可触发。`test_gene2_op.py::test_known_partial_match_hazard` 继续钉住该现状 —— **修它时该用例应当失败并被改写，不是被删掉。**
+
+#### 2026-09-11 三次修正：上面的「全部入口已封堵」是错的
+
+`resolveGeneChoice` 只挡住了用户**当场打字**这一条路径。同样能决定「往后端发哪个基因」的还有两条，都没接它：
+
+| 路径 | 位置 | 状态 |
+|---|---|---|
+| 手输文本框（前面那轮封的） | 3 处 `commitGene`/`commitGene2` | 已封 |
+| **从 sessionStorage 恢复** | 5 个基因键的读取点 | **从未封** —— 见 B34 |
+| **UMAP / Bulk 的提交** | `UmapPlot.tsx:184-187`（裸 `onChange`，每次击键即提交）、`BulkAnalysisTab.tsx:263 selectGene` | **从未封** |
+
+恢复路径尤其致命：用户上次输入过的 `CD3` 一直躺在 `sessionStorage` 里，每次打开对应 tab 都被原样读回并**自动取数、自动出图**，用户没有任何机会看到那句 `No gene named "CD3"` —— 因为那句话只在提交时才会出现。B34 就是这个。
 
 ---
 
@@ -1211,4 +1223,143 @@ B30 堵的是**展示层**（表格把 0 印成 0），B32 是**同一个错误�
 
 ---
 
-*后续新缺陷按 B34、B35... 追加。*
+## B34. 持久化的基因选择跨数据集泄漏；后端把「实际画了哪个基因」藏起来 (2026-09-11)
+
+### 现象
+
+用户原话：
+
+> 好像有个bug耶，当我第一次在Boxplot页面输入CD3 然后显示No gene named "CD3" in this dataset，但我切到Barplot，GENE已经默认是CD3了，并且还有图
+
+BoxPlot tab 输入 `CD3` → 正确出现 `No gene named "CD3" in this dataset`；切到 BarPlot tab → **GENE 框里已经是 `CD3`，而且图已经画好了**。
+
+### 根因（三层，缺一层都解释不了现象）
+
+1. **CD3 是怎么进 `gensci_agg_gene` 的 —— 不是 BoxPlot 泄漏过去的。**
+   两个组件分处不同挂载位（`AnalysisPage.tsx:205` / `:213`），键不同，无 prop 共享。决定性证据：`git log -S "gensci_agg_gene" -- src/components/analysis/BoxPlotContainer.tsx` **为空** —— BoxPlot 从未写过 BarPlot 的键。CD3 在用户切过去之前就已经在存储里了，两件事是先后关系，不是因果。
+   真正的写入者是 B28 修复（`2a51c2d`）**之前**的旧 bundle：`2a51c2d^:ExpressionChartContainer.tsx:217-218` 里 `setSelectedGene(geneSearchInput.trim())`，无条件把原文提交。用户此前在 BarPlot 打过一次 `CD3`，就永久留下了这个值。
+
+2. **B28 的守卫只加在「提交」路径上，「恢复」路径从未校验。**
+   `ExpressionChartContainer.tsx:74` 把它原样读回来，直接进 `PlotImage` 的 `gene` prop，随即取数。
+
+3. **后端把未知 token 按子串回退解析，并且从不回传它实际用了哪个基因。**
+   `analysis/utils.py:124`（`plots.py` 内有一份同样的内联实现，`bulk.py` 的 `_resolve_gene` 同形）。实测 Lung IPF（33,694 基因）：
+
+   ```
+   CD3  → ABCD3        COL1 → COL16A1        A1 → VWA1
+   ```
+
+   `ABCD3` 是真实基因，图、表、数值全部自洽 —— 看的人没有任何办法发现。
+
+**第 4 条独立可达，与脏值无关**（这才是本轮修的主因）：**这 5 个基因键都不按数据集作用域。** 在数据集 A 选好基因 → 打开缺该基因的数据集 B → B 原样恢复、立刻取数、静默画成别的基因。任何用户切一次数据集就会碰上。
+
+### 修复
+
+分三层，对应上面 1/2/3。
+
+#### 存储层：键带上数据集路径
+
+新增 `src/components/analysis/useStoredGene.ts`，键形如 `` `${baseKey}::${realPath}` ``，与既有先例 `gensci_free_msgs_${realPath}`（`FreeAnalysisTab.tsx:37`）同形。5 个消费方全部改用：
+
+| 键 | 消费方 |
+|---|---|
+| `gensci_boxplot_gene` | `BoxPlotContainer.tsx` |
+| `gensci_agg_gene` | `ExpressionChartContainer.tsx` |
+| `gensci_gene_name` / `gensci_gene_name2` | `AnalysisPage.tsx`（UMAP 双基因） |
+| `gensci_bulk_gene` | `BulkAnalysisTab.tsx` |
+
+**旧的不带作用域的键一律不再读取** —— 存量脏值（包括用户那个 `CD3`）自然失效，不做迁移。迁移只会把污染搬进新键。
+
+两个必须写下来的设计点，都是「只改键名」会踩的坑：
+
+- **必须加「先认领槽位、再允许写入」的闸门。** `AnalysisPage` 换数据集时**不重新挂载子组件**（`realPath` 由 `[tissue,disease,pmid,attempt]` 的 effect 刷新，`AnalysisPage.tsx:77-103`），容器实例存活。此时写 effect 会带着**上一个数据集**的基因、按**新**路径写入新键 —— 把 A 的基因写进 B 的槽位。这比原缺陷更糟：原缺陷是「读到旧值」，这是「主动写入错误值」。
+  闸门比对的是 **`storedGeneKey(baseKey, realPath)` 这个完整槽位，不是 `realPath`** —— 只比对路径的话，同一个数据集换框（baseKey 变）不会重新认领，旧框的基因会被写进新框的槽位，正是这个 hook 存在的意义所在。
+  诚实交代可达性：**常规点路径走不到这个竞态** —— 进入分析页的路由来自 `TissuePage.tsx:348` / `SearchPage.tsx:182`，都是不同 route，`AnalysisPage` 会先卸载。真正能触发的只有**在同一 route 下回退/前进**（两个相邻的分析页 URL 之间）。也就是说闸门是**防御性的**，不是当前线上必然触发的。仍然加，原因有二：它是三行状态、不是架构；且「这一层不再可能出错」比「这一层今天恰好没错」更适合作为长期不变量。
+- **UMAP 的基因初值在 `realPath` 还是 `''` 时就读了。** 若写 effect 在路径未知时落盘，会用 `''` 把存储**清空**。同一个闸门正好挡住（认领前不写）。
+
+两点合起来意味着读/写必须成对且带状态 —— 所以在 4 个组件里各抄一遍是错的，抽成了 hook。
+
+#### 展示层：后端回传它实际画的基因
+
+`/api/plot`、`/api/composition-plot`、`/api/bulk/boxplot` 三个端点成功返回时新增 `gene_resolved`，前端在 Gene 框下方出一行警告：
+
+```
+⚠ "CD3" matched nothing here — showing "ABCD3" instead
+```
+
+- `resolvedGeneMessage(typed, resolved)`（`geneInput.ts`）是文案唯一来源；**纯大小写差异（`egfr` → `EGFR`）不出警告**，否则会教用户忽略这条真正重要的行。
+- `gene_resolved` **可选**：`cachedFetch` 可能命中改动前缓存的响应（无该字段）。缺失 = 「后端没说」，前端一律按 `?? ''` 容错，不当作「发生了替换」。
+- 警告状态存成 **`{asked, resolved}` 对**，渲染前校验 `resolution.asked === selectedGene`。只存 `resolved` 的话，`selectedGene` 一改，上一张图的结论会挂在新基因下面闪一帧错误警告。
+- **`PlotImage` / Bulk 的取数加了「丢弃过期响应」的闸门**（这是代码评审抓出来的，不在初版方案里）。每次 `/api/plot` 是一次真实的 matplotlib 渲染，冷缓存要数秒；连点两个基因时，**先发的慢请求可能后到**，把旧图盖在新基因下面。而这个 `{asked, resolved}` 配对守卫会**因为 `asked` 对不上而选择沉默** —— 于是屏幕上是 COL1 的图、基因框写着 TP53、唯一能说明这件事的那行字被自己的守卫抑制掉了，正好是本缺陷的症状被自己的修复复现一遍。加 `let stale = false` + 清理函数，过期响应**整体丢弃**（图与它的结论一起），这个洞才真正关上。
+- **composition 那条 fetch 不参与驱动警告**：它走的是 **exact-only** 解析 —— 同一个 `CD3` 在主图里被换成 `ABCD3`、在 composition 里直接报错。让它参与，会把主图刚设好的警告清掉。
+- `plots.py:165` 的 `ax.set_title(gene, …)` 一并改为 `actual_gene`。改标题会**改变已有图的像素**（输入与规范名不同的场合），这是有意为之：给一张 ABCD3 的图打上 `CD3` 的标题，正好和新增的警告行自相矛盾。
+
+#### 解析层：**不动**
+
+子串回退原样保留（B28 已决定）。本轮只加回显，**不统一解析** —— 改动解析语义的风险高于本次修的缺陷，与 gene2_op 那轮「只统一标签、不统一解析」的决定一致。
+
+### 验证
+
+1. **TDD 顺序**：先跑出 RED 再实现。RED 两次：前端 `Failed to resolve import "./useStoredGene"` + `resolvedGeneMessage is not a function`；后端 `PASS 10 / FAIL 8`（8 个失败全是缺 `gene_resolved` 字段）。
+2. **前端**：`npx vitest run` **112 passed (14 files)**（本轮前 103）；`npx tsc --noEmit` 干净。
+   - `useStoredGene.test.ts`（新增 9 例）：旧裸键不被采用、A 数据集的基因在 B 下读不到、`realPath` 变化时采用 B **且不把 A 的值写进 B 的键**、路径未知期间不写入、`resolvedGeneMessage` 的四种输入。
+   - `ResolvedGeneNotice.test.tsx`（新增 5 例）：**全部在测「该不该开口」**，包括「结论属于一个已经离开基因框的基因 → 沉默」这条守卫，以及「后端回显为空（改动前的缓存响应）→ 沉默」。本条是代码评审抓出来的：守卫是这个组件存在的全部理由，却一度没有测试。
+   - `BoxPlotContainer.test.tsx` 新增 3 例、`BulkAnalysisTab.test.tsx` 新增 4 例（含「后端画的正是所要求的基因时保持静默」—— 防止警告变成恒显）。
+3. **后端自包含脚本** `server/tests/test_gene_resolved_echo.py`：**22 / 0**。合成数据集 var.index 含 `ABCD3` 而**不含** `CD3`；另有第二个 fixture（`var.index` 是 Ensembl、符号在 `gene_symbols` 列）覆盖别名分支 —— 这是评审指出的**唯一新增逻辑行却零覆盖**的地方，加上它之后才暴露出上面的 `.iloc` 缺陷。其中两条专抓「只改了一个 return」：`bulk_boxplot` 的 panel 模式与 group 模式（group 分支是 `return _render_group_boxplot(...)` **直通**，只改顶层 return 的话，单疾病数据集——永远走 group 分支——拿不到字段，多疾病数据集能拿到，形成一个只在部分数据集上出现的缺口）。
+4. **既有后端脚本不回归**：`test_gene2_op.py` 66/0、`test_gene_column_extraction.py` 26/0、`test_gene_search_rank.py` 9/9。composition 里把 `find_gene_idx` 重构为返回 `(idx, name)` 的 `find_gene` 后 gene2 语义逐字未变，由这 66 例背书。
+5. **HTTP 端到端**（重启后端后实测）：
+
+   ```
+   GET /api/plot?…&gene=CD3&plot_type=boxplot  → gene_resolved: "ABCD3"   ← 用户报的那一例
+   GET /api/plot?…&gene=CD3&plot_type=barplot  → gene_resolved: "ABCD3"
+   GET /api/composition-plot?…&gene=ABCD3      → gene_resolved: "ABCD3"
+   GET /api/bulk-boxplot?…&gene=COL1           → gene_resolved: "COL10A1"
+   GET /api/bulk-boxplot?…&gene=TP53           → gene_resolved: "TP53"
+   （端点名是 `/api/bulk-boxplot`，不是 `/api/bulk/boxplot`）
+   ```
+
+   `gene_resolved` 与输入不同的那三条，正是过去静默出图的场合。
+
+### 未覆盖（明确留白）
+
+- **UMAP 与 Bulk 的提交路径仍不设防**（本轮只修恢复路径）。Bulk 的静默替换会因回显而变得可见；**UMAP 不会** —— `/api/umap-data` 不在本轮回显范围内，其散点仍可能按别的基因着色。**这是本轮最大的已知缺口。**
+- **解析逻辑分散在 7 处且行为不一致。** 初稿写的「4 处」是照着函数名数的，`grep -n "in n.lower()" server/analysis/*.py` 实测是 **6 份逐字相同的子串回退**（`utils.py:124`、`plots.py:54`、`bulk.py:50`、`expression.py:50`、`stats.py:53`、`stats.py:321`）加 `umap.py:49` 一个变体。行为分两类：多数是「精确→子串」，`plots._generate_celltype_composition`（`plots.py:235-243`）是**仅精确**。因此 BoxPlot tab 与 BarPlot tab 的 composition 图对 `CD3` 的判定依旧不一致（一个画图、一个报错）。**本轮只加回显，不统一。**
+- **本轮自己引入过一个更隐蔽的错误（代码评审抓出，已修）：别名列取行写成了 `adata.var[col][i]`。** 那是 `Series.__getitem__`，收到整数键时**按标签**解释：pandas 2.x 只发 `FutureWarning`（当前行为仍按位置，结果碰巧正确），pandas 3.x 无条件按标签 —— 对 str 索引就是 `KeyError`，被外层 `except` 吞成 `{'error': ...}`，**整个 composition 端点在这类数据集上全挂**。只有 39/93 个数据集带别名列（`41740941.ACR.h5ad` 一个文件里就有 7,535 行是这样），随手一测碰不到。
+  正确写法是 `.iloc[i]`，已改。**但要说清它今天为什么测不出来**：`anndata` 读写时会把整数 var index 强制转成字符串（`Transforming to str index`），所以「整数索引」这个形状**在 `.h5ad` 里根本不存在**，评审最初推演的 KeyError 路径实际不可达。今天唯一可观测的差异就是这个 `FutureWarning` —— 测试因此断言「不发出位置式取用的告警」，而不是断言返回值（两种写法返回值相同）。**变异验证**：改成 `[i]` → 该用例失败；改回 `.iloc` → 通过。
+  教训：**返回值相同的两种写法，只能靠副作用（告警/异常/日志）区分。** 测不出来 ≠ 没差别，要先回答「哪个可观测信号能区分它们」。
+- **`_generate_celltype_composition` 的回显取的是「命中的那个值」，不是 `adata.var.index[g1_idx]`。** 该函数除 `var.index` 外还会匹配 `gene_ids`/`gene_symbols`/`feature_name` 列，而命中这些列时行标签可能是 Ensembl ID —— 顺着行标签回显会报出一个用户从没打过的名字，而前端「resolved ≠ asked 就警告」的规则会把一次**完全正确的命中**报成警告。与 `_generate_plot` 以 `var.index` 为准的写法**有意不一致**，因为后者只有一条解析路径。
+  由此带来一处**同一响应内两个名字不同**：请求同一个基因，作为主基因时回别名、作为 gene2 成员时回 `var.index`（`plots.py:269/297` 未动，保持原契约）。这是有意的折中 —— 统一成任意一边都会错（统一成行标签 = 对别名数据集产生假警告；统一成别名 = 改 gene2 的既有契约）。**该字段目前没有任何前端消费方**（composition 那条 fetch 不驱动警告行），所以这个不一致只影响 API 消费者。
+- **Bulk 其余 8 个已持久化选项**（disease / palette / xFactor / hiddenGroups 等）仍未按数据集作用域，本轮只处理基因键。
+- `ExpressionChartContainer` —— **用户报的现象就发生在这里** —— 至今没有组件测试。本轮把恢复路径的回归测试加在了 `BoxPlotContainer.test.tsx`（它有现成的 mock 设施），该缺口**未关闭**。
+- **`npm run lint` 根本跑不了：仓库里没有 `eslint.config.*` 也没有 `.eslintrc*`**（ESLint 10.5.0 直接 exit 2）。这是既有问题，但对本轮有直接后果：`react-hooks/exhaustive-deps` **从未运行过**，而它正是唯一能挡住「往 `PlotImage` 传一个非稳定 `onResolvedGene`」的规则 —— 那种写法会导致每次渲染都重新取数。当前三个调用方的 `useCallback` 都是稳定的，但没有任何机制保证以后也是。CLAUDE.md 把 `npm run lint` 列为常规命令，实际上它一直是个空操作。
+- `PlotImage` 自身仍无测试文件，`onResolvedGene` 的协议（请求开始时回 `''`、成功时回 `gene_resolved`、失败时不调用）由调用方测试间接覆盖，未直接验证。
+- **存储无界增长**：每个访问过的数据集 × 5 个基因框各写一个键，且即使用户从未选过也会把默认值（`FAP`/`TP53`）写进去；旧的不带作用域的键也从不清理。`sessionStorage` 满时 `setItem` 抛 `QuotaExceededError`，而 `catch {}` 会**静默**把持久化关掉 —— 用户看到的是「基因框又不记得我的选择了」，日志里什么都没有。
+- 警告行渲染在 `div.relative` 内（它就是下拉建议的定位锚点），所以**建议下拉会盖住警告行**。纯视觉问题，未改。
+- 本轮**没有浏览器端到端验证**：Playwright 的 chrome 可执行文件不在标准位置，未安装。上面第 5 条是 `curl` 级别的端点验证 + 组件级测试，不等价于真跑一遍 UI。
+- `docs/BUG_LOG.md` 的「附录：修复清单总览」**只到 B18**，B19–B33 全缺；B33 标题里「10 处」与正文「8 次」两处失真；`core/adata_cache.py:69` 的 LRU 淘汰竞态 —— 均未处理。
+
+### 涉及文件
+
+- `src/components/analysis/useStoredGene.ts`（新增）+ `.test.ts`
+- `src/components/analysis/ResolvedGeneNotice.tsx`（新增）+ `.test.tsx`
+- `src/components/analysis/geneInput.ts`（+ `resolvedGeneMessage`）/ `.test.ts`
+- `src/components/analysis/PlotImage.tsx`（`onResolvedGene` 回调）
+- `src/components/analysis/{BoxPlotContainer,ExpressionChartContainer,BulkAnalysisTab}.tsx`、`src/pages/AnalysisPage.tsx`
+- `src/api/types.ts`（`PlotResult.gene_resolved?`）
+- `server/analysis/plots.py`（`_generate_plot`、`_generate_celltype_composition`）
+- `server/analysis/bulk.py`（`_render_group_boxplot`、`bulk_boxplot` 两处 return + docstring）
+- `server/tests/test_gene_resolved_echo.py`（新增）
+- `server/routes.py` **未改** —— 三个 handler 都是把 dict 原样 `_json` 出去，新增键天然透传。注意 `_plot_cache` 是**进程内** LRU，**必须重启后端**才会清掉不带新字段的旧条目。
+
+### 关键教训
+
+- **守卫加在「入口」上是不够的，只要还有第二个决定「发什么请求」的地方。** B28 封的是「用户打字」这条入口，而真正决定发哪个基因的还有「从存储恢复」和「UMAP/Bulk 的裸 onChange」。**数入口要数列举状态来源，不是数列输入框。**
+- **持久化状态必须和它所描述的对象同作用域。** 一个全局键存一个数据集相关的值，等于默认「所有数据集共享同一套基因」—— 这个假设从未成立过。
+- **加作用域时，要问「谁还会写这个键」。** `AnalysisPage` 不重新挂载这一点，让「只改键名」从「修复」变成「引入新的写坏路径」。**改存储的作用域 = 改一个分布式状态机**，读和写必须一起看。
+- **静默替换和「未找到」一样危险，因为前者更可信。** `CD3 → ABCD3` 出的是真实基因、真实数值、正常图表；`NOTAGENE` 至少会报错。**能让用户怀疑的前提是他知道自己看的不是自己要的东西** —— 这就是为什么 `gene_resolved` 必须回传，而不是顺手把子串回退关掉。
+- **「不确定就沉默」会把不确定本身藏起来。** `{asked, resolved}` 配对守卫的本意是不显示错误警告，但它同时也**抑制掉了「屏幕上的图不知是谁的」这条信息** —— 一旦有过期响应抵达，用户得到的是错误的图 + 空白的警告行。**守卫的沉默必须建立在「没有歧义」之上，而不是「有歧义所以不说」之上**；过期的答案要走并发控制（丢弃），不能走展示逻辑（沉默）。（本条由代码评审发现，不在初版方案里。）
+- **本轮没有真跑一遍浏览器。** 记在这里，免得下一轮把「curl 通过 + 组件测试通过」误当成「UI 验过了」。
+
+---
+
+*后续新缺陷按 B35、B36... 追加。*
