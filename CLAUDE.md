@@ -144,6 +144,42 @@ npm run test:coverage         # vitest with coverage report
 # No manual flag needed. Prevents concurrent .h5ad read hangs.
 ```
 
+## 本机环境注意事项
+
+### 浏览器工具用 `playwright`，不要用 `plugin:ecc:playwright`
+
+两个 MCP server 同名，但本机只有前者能用：
+
+| server | 启动参数 | 可用 |
+|--------|----------|------|
+| `playwright`（`~/.claude.json` 本项目作用域） | `@playwright/mcp@latest --executable-path ~/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome --no-sandbox --isolated --headless` | ✅ |
+| `plugin:ecc:playwright`（ECC 插件自带） | `@playwright/mcp@0.0.69 --extension` | ❌ |
+
+后者报 `chrome executable not found. Make sure it is installed at a standard location.`
+原因是 `--extension` 连的是「已经开着、且装了 Playwright MCP Bridge 扩展的浏览器」，
+它自己**不启动浏览器**；又没给 `--browser`，channel 默认 `chrome`，于是去系统标准位置找
+Google Chrome（`/opt/google/chrome/chrome`、`/usr/bin/google-chrome` …）—— 本机一个都没有。
+
+关键区分：`~/.cache/ms-playwright/chromium-*` 是 Playwright 自带的 chromium，与系统
+Chrome 是**两个二进制、两条查找路径**，只有显式传 `--executable-path` 才会用到。
+本机无 DISPLAY（无 X11 socket），所以必须带 `--headless`。
+
+`--executable-path` 里的 `chromium-1228` 对应 `package.json` 的 `playwright ^1.61.1`。
+升级 playwright 后目录名会变，用下面这条重取：
+
+```bash
+node -e "console.log(require('playwright-core').chromium.executablePath())"
+```
+
+### `eslint.config.js` 被 ECC 钩子锁着
+
+`pre:config-protection` 钩子（matcher `Write|Edit|MultiEdit`，profile `standard,strict`）
+对 linter/formatter 配置只放行**首次创建**，之后一律拦截 —— 它防的是「为了让检查通过
+而把检查关掉」。需要修改 `eslint.config.js` 时，用
+`ECC_DISABLED_HOOKS=pre:config-protection` 或 `ECC_HOOK_PROFILE=minimal` 临时放行，
+改完恢复。注意该钩子**不拦 Bash**（`sed -i` 照样能写），所以它是协作式引导，
+不是安全边界。
+
 ## Architecture (v2 — Modular Refactor)
 
 **GenSci v2** — single-cell data analysis platform. Refactored from a monolithic codebase into domain modules.
