@@ -8,6 +8,7 @@ import sys
 import urllib.request
 
 from config import HTTP_PROXY
+from supplementary import parse_supplementary, supplementary_note
 
 
 # Cache: key = pmid, value = dict
@@ -39,6 +40,7 @@ def _fetch_abstract(pmid: str) -> dict:
     ]
 
     pmcid = None
+    epmc_hit = False  # EuropePMC 是否真的返回了记录（区别于「查了但没查到」）
     for url in candidates:
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'GenSci/1.0'})
@@ -65,22 +67,31 @@ def _fetch_abstract(pmid: str) -> dict:
                     'doi': r.get('doi', ''),
                     'methods': '',
                     'results': '',
+                    # 补充材料清单占位。真正的内容要等全文 XML 拿到后才填，
+                    # 但这两个键必须先存在 —— 否则「查过、确实没有」和
+                    # 「这个字段这个版本还没有」在返回值上无法区分。
+                    'supplementary': [],
+                    'supplementary_note': '',
                 }
                 pmcid = r.get('pmcid', '')
                 if pmcid:
                     info['pmcid'] = pmcid
+                epmc_hit = True
                 break
         except Exception:
             continue
 
     # PMC full text — best-effort, short timeout
     pmc_error = False
+    xml_text = ''
+    xml_ok = False  # 全文 XML 是否真的拿到了（决定补充材料是「没有」还是「没查成」）
     if pmcid:
         try:
             url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id={pmcid}&retmode=xml'
             req = urllib.request.Request(url, headers={'User-Agent': 'GenSci/1.0'})
             resp = _proxy_opener.open(req, timeout=10)
             xml_text = resp.read().decode('utf-8')
+            xml_ok = True
 
             def _extract_sec(xml: str, title: str, max_len: int = 5000) -> str:
                 """Extract text from a <sec> with given title."""
@@ -143,6 +154,20 @@ def _fetch_abstract(pmid: str) -> dict:
         except Exception as pmc_err:
             pmc_error = True
             print(f'[GenSci] PMC fetch error: {pmc_err}', file=sys.stderr)
+
+    # ── 补充材料清单 ─────────────────────────────────────────
+    # 零额外网络成本：XML 上面为了提取 Methods 已经下载过了，这里只是
+    # 把同一份再解析一遍，挑出 <supplementary-material>。
+    # 清单本身只是「有没有」；附件内容要另走 /api/supplementary-table 按需取。
+    if epmc_hit:
+        try:
+            items = parse_supplementary(xml_text) if xml_ok else []
+        except Exception as supp_err:
+            # 解析失败不该毁掉整条记录（methods 还是好的），但也不能装作没有
+            items = []
+            print(f'[GenSci] supplementary parse error: {supp_err}', file=sys.stderr)
+        info['supplementary'] = items
+        info['supplementary_note'] = supplementary_note(bool(pmcid), xml_ok, len(items))
 
     # 只缓存"有记录/已完整"的结果：若整次抓取为空(网络/代理瞬时失败)或 PMC 全文抓取出错，
     # 不写缓存、下次请求重试——否则一次瞬时故障会让该 PMID 永久返回空(需重启服务才恢复)。

@@ -53,6 +53,12 @@ BULK_META_COLUMNS = {
 # Cached .h5ad lives at <source_dir>/.bulk_cache/<stem>.h5ad
 BULK_CACHE_DIR_NAME = '.bulk_cache'
 
+# ─── Supplementary material cache ────────────────────────────
+# PMC 的补充材料包只能整包下载（25–37 MB），没有单文件接口，
+# 所以要留一个磁盘缓存：第一次点开某篇的附件要下整包，之后秒开。
+SUPP_CACHE_DIR = PROJECT_ROOT / '.supp_cache'
+SUPP_CACHE_MAX_MB = 500  # 超过就按 mtime 淘汰最旧的包 —— 102 个数据集全点一遍是 3 GB
+
 # ─── Event log ────────────────────────────────────────────────
 EVENT_LOG_MAX = 100
 LOG_FILE = PROJECT_ROOT / 'GenSci.log'

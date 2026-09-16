@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react'
 import { formatNumber } from '../../api/client'
+import SampleInfoSection from './SampleInfoSection'
 import type { AnalysisInfo } from '../../api/types'
 
 export default function InfoPanel({
@@ -51,6 +52,18 @@ export default function InfoPanel({
           <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Methods</h3>
           <div className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap">{abstract.methods}</div>
         </div>
+      )}
+
+      {/* 补充材料。
+          注意判空的是 `undefined` 而不是空数组 —— 后端只在真的查过之后才写这个
+          字段（非 PubMed 数据集整个不写）。「没查」和「查了没有」在这里必须分开，
+          前者整块不显示，后者要显示一句「确实没有」。 */}
+      {abstract.supplementary !== undefined && (
+        <SampleInfoSection
+          items={abstract.supplementary}
+          note={abstract.supplementary_note ?? ''}
+          pmcid={abstract.pmcid}
+        />
       )}
 
       <div>

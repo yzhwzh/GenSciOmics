@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   LLMConfig,
   ChatResponse,
+  SupplementaryTable,
 } from './types'
 
 // ─── Vite HMR reload protection during active SSE streams ──────
@@ -41,7 +42,9 @@ export function _leaveSSE() { _sseActiveCount = Math.max(0, _sseActiveCount - 1)
 // 与 OnlineUsers 心跳的临时 randomUUID 无关（后者只用于在线计数去重）。
 const USER_KEY = 'gensci_user_id'
 let _cachedUserId: string | null = null
-function getClientUserId(): string {
+// 导出给 src/api/drug.ts 用：后端拿 user_id 隔离 agent 记忆目录
+// （server/memory/<user_id>/），两个页面各生成一份 ID 会让同一个人的记忆分裂成两份。
+export function getClientUserId(): string {
   if (_cachedUserId) return _cachedUserId
   try {
     const existing = localStorage.getItem(USER_KEY)
@@ -55,6 +58,28 @@ function getClientUserId(): string {
 
 export async function fetchAnalysisInfo(pmid: string, realPath: string): Promise<AnalysisInfo> {
   return apiFetch<AnalysisInfo>(`/api/analysis-info?pmid=${pmid}&real_path=${encodeURIComponent(realPath)}`)
+}
+
+/**
+ * 取出某个补充材料附件的内容并解析成表格。
+ *
+ * **这是给用户按钮用的，不要在渲染路径里调用** —— 后端要下整个附件包
+ * （实测 PMC8085501 是 6.7 MB / 24 s，Tabula Sapiens 那篇 37 MB），
+ * 只在用户点了「查看」之后才该发生。下过一次会落盘缓存，之后的调用是毫秒级。
+ *
+ * 用 apiFetch 而非 cachedFetch：失败（限流、坏文件）不该被 TTL 缓存住，
+ * 否则用户重试一次拿到的还是同一个错误。
+ */
+export async function fetchSupplementaryTable(pmcid: string, name: string): Promise<SupplementaryTable> {
+  return apiFetch<SupplementaryTable>(
+    `/api/supplementary-table?pmcid=${encodeURIComponent(pmcid)}&name=${encodeURIComponent(name)}`,
+    undefined,
+    // apiFetch 默认 60 s，而这个接口要下整包：实测 6.7 MB 用 24 s，
+    // 37 MB 那篇按 1 MB/s 就要 37 s，慢一点就超时了 —— 而超时后用户只看到
+    // 一句失败，不知道后端其实还在下。后端自己的下载超时是 300 s，
+    // 这里给到一致的上限，让客户端的耐心不比服务端短。
+    300_000,
+  )
 }
 
 export async function fetchUmapData(
