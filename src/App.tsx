@@ -5,6 +5,7 @@ import DatasetPage from './pages/DatasetPage'
 import TissuePage from './pages/TissuePage'
 import AnalysisPage from './pages/AnalysisPage'
 import SearchPage from './pages/SearchPage'
+import DrugDiscoveryPage from './pages/DrugDiscoveryPage'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/tissue/:slug" element={<TissuePage />} />
         <Route path="/analysis/:tissue/:disease/:pmid" element={<AnalysisPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/drug-discovery" element={<DrugDiscoveryPage />} />
       </Routes>
     </ErrorBoundary>
   )

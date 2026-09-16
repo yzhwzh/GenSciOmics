@@ -7,13 +7,9 @@ import SkillDetailModal from './SkillDetailModal'
 import DragHandle from './DragHandle'
 import { sendLiteratureMessageStreaming } from '../../api/analysis'
 import type { ChatMessage, LLMConfig, ToolResult, SkillDef } from '../../api/types'
+import { DEFAULT_LLM_CONFIG } from '../../api/types'
 
-const DEFAULT_CONFIG: LLMConfig = {
-  model: 'Qwen3.5-397B-A17B-FP8-Thinking',
-  apiKey: 'sk-fdQEp3ZkOOxz50BVJWbhGaHzHHIiBztLPtBTDyxFwbPMLcfo',
-  baseUrl: 'http://llm-gateway.ai.dgtmeta.com/v1',
-  temperature: 0.7,
-}
+const DEFAULT_CONFIG: LLMConfig = DEFAULT_LLM_CONFIG
 
 function loadConfig(): LLMConfig {
   try {

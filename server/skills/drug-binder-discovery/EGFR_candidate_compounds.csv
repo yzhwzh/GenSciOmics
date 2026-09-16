@@ -1,0 +1,11 @@
+Rank,Compound_Name,ChEMBL_ID,Evidence_Tier,IC50_nM,pChEMBL,SMILES,Source,Drug_Likeness,SA_Score,PAINS_Alerts,Recommendation
+1,Gefitinib,CHEMBL939,T1 (Clinical),40,7.40,COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1,ChEMBL/FDA,Approved,3.26,0,已上市 NSCLC 药物
+2,Osimertinib,CHEMBL3353410,T1 (Clinical),0.45,9.35,C=CC(=O)Nc1cc(Nc2nccc(-c3cn(C)c4ccccc34)n2)c(OC)cc1N(C)CCN(C)C,ChEMBL/FDA,Approved,4.01,0,第三代 T790M 抑制剂
+3,Afatinib,CHEMBL1173655,T1 (Clinical),1,9.00,CN(C)C/C=C/C(=O)Nc1cc2c(Nc3ccc(F)c(Cl)c3)ncnc2cc1O[C@H]1CCOC1,ChEMBL/FDA,Approved,3.85,0,不可逆抑制剂
+4,Compound A,CHEMBL304271,T2 (High Activity),0.45,9.35,CCN(CC)CC(O)CNC(=O)c1cc(C)c(/C=C2\C(=O)Nc3ncnc(Nc4ccc(F)c(Cl)c4)c32)[nH]1,ChEMBL,Lead-like,3.50,0,最高活性候选
+5,Compound B,CHEMBL67057,T2 (High Activity),4.5,8.35,Cc1cc(C(=O)N2CCOCC2)[nH]c1/C=C1\C(=O)Nc2ncnc(Nc3ccc4c(ccn4Cc4ccccc4)c3)c21,ChEMBL,Lead-like,3.75,0,高活性喹唑啉
+6,Compound C,CHEMBL69629,T2 (High Activity),6.5,8.19,Cc1cc(C(=O)NCCN2CCOCC2)[nH]c1/C=C1\C(=O)Nc2ncnc(Nc3ccc(F)c(Cl)c3)c21,ChEMBL,Lead-like,3.40,0,可合成性高
+7,Analog 1,CHEMBL14699,T3 (Analog),~,~,COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCN1CCOCC1,ChEMBL Similarity,Lead-like,3.10,0,Gefitinib 缩短侧链
+8,Analog 2,CHEMBL4165375,T3 (Analog),~,~,Fc1ccc(Nc2ncnc3cc(OCCCN4CCOCC4)c(OCCCN4CCOCC4)cc23)cc1Cl,ChEMBL Similarity,Lead-like,3.60,0,双吗啉改善溶解度
+9,Analog 3,CHEMBL4283673,T3 (Analog),~,~,CN(C)C/C=C/C(=O)Nc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1O[C@H]1CCOC1,ChEMBL Similarity,Lead-like,3.90,0,Afatinib 位置异构
+10,Analog 4,CHEMBL299672,T3 (Analog),~,~,COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCCC1,ChEMBL Similarity,Lead-like,3.20,0,吡咯烷代谢稳定

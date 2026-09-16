@@ -20,6 +20,7 @@ MAX_TOOL_ITERATIONS = 50
 OMICS_SKILL_FILTERS = {
     'BulkRNA': ['bulk-*', 'statistical-analysis'],
     'Protein': ['proteomics-*', 'protein-*', 'statistical-analysis'],
+    'Drug': ['drug-*'],
 }
 DEFAULT_SKILL_FILTER = ['single-*', 'statistical-analysis']
 
@@ -235,6 +236,125 @@ def process_chat_streaming(messages, real_path, api_key, model=DEFAULT_MODEL,
         skills_filter=skills_filter,
     ):
         yield {'event': event['event'], 'data': json.dumps(event['data'], ensure_ascii=False, default=str)}
+
+
+def _sse(event: str, data) -> dict:
+    """统一出口 —— 与 process_chat_streaming 一致，data 序列化成 JSON 字符串。"""
+    return {'event': event, 'data': json.dumps(data, ensure_ascii=False, default=str)}
+
+
+def process_drug_pipeline_streaming(query, stage_ids, api_key,
+                                    model=DEFAULT_MODEL,
+                                    base_url=DEFAULT_BASE_URL,
+                                    temperature=DEFAULT_TEMPERATURE,
+                                    real_path='',
+                                    user_id=''):
+    """药物发现流水线 —— 按 order 逐阶段串行，每阶段一次完整 ReAct 循环。
+
+    为什么复用 agent.process_chat_streaming 而不另写循环：
+      它已经是被真实 LLM 验证过的那一个，而 `_init_mcp_tools()` 每次调用都会跑、
+      `add_tool()` 按 name **替换**而非追加（core/tool.py:21-24），所以按阶段重复
+      调用是幂等的，不会堆出重复的工具 schema。本函数只做它不做的三件事：
+
+      1. 每阶段换一份 skills_filter（阶段锁定）。
+      2. 把上一阶段的**最终回复**（不是原始工具输出）截断后带进下一阶段。
+      3. 给每个 SSE 事件打 stage_id，并用 stage_start / stage_done 标记推进。
+
+    阶段锁定的强度要说清楚：skills_filter 只过滤**系统提示词里列出的 skill**，
+    `get_openai_tools()` 仍返回全量工具（agent/__init__.py:256-258）。
+    所以它是引导而非沙箱 —— LLM 仍可能调用本阶段外的工具，但主路径被引导到本阶段。
+
+    real_path 可以为空：药物页默认不挂数据集，prompt.py:270 有 `if real_path:` 守卫。
+    """
+    import time as _time
+    from agent import process_chat_streaming as _stream
+    from drug_stages import resolve_stages, skills_filter_for, build_stage_message
+
+    stages, unknown = resolve_stages(stage_ids)
+    if unknown:
+        yield _sse('error', {'error': f'未知阶段 id: {", ".join(unknown)}'})
+        return
+    if not stages:
+        yield _sse('error', {'error': '至少需要选择一个阶段'})
+        return
+    if not (query or '').strip():
+        yield _sse('error', {'error': 'query 不能为空'})
+        return
+
+    # [(阶段 label, 该阶段最终回复文本)] —— 只带结论，不带过程
+    prior_summaries: list[tuple[str, str]] = []
+    total = len(stages)
+    aborted = False
+
+    for idx, stage in enumerate(stages, start=1):
+        yield _sse('stage_start', {
+            'stage_id': stage['id'], 'order': stage['order'],
+            'label': stage['label'], 'index': idx, 'total': total,
+        })
+
+        message = build_stage_message(stage, query, prior_summaries)
+        final_text = ''
+        saw_done = False
+        error_msg = ''
+        _t0 = _time.time()
+
+        for event in _stream(
+            messages=[{'role': 'user', 'content': message}],
+            real_path=real_path, api_key=api_key,
+            model=model, base_url=base_url, temperature=temperature,
+            user_id=user_id,
+            max_iterations=MAX_TOOL_ITERATIONS,
+            skills_filter=skills_filter_for(stage),
+        ):
+            ev, data = event['event'], event['data']
+
+            # 内层的 done 是「这一阶段结束了」，不是「整条流水线结束了」——不外发。
+            if ev == 'done':
+                saw_done = True
+                continue
+
+            if ev == 'error':
+                error_msg = (data or {}).get('error', '未知错误')
+
+            # turn_complete 带着该轮的完整文本；循环正常结束时最后一条就是报告。
+            # 覆盖而非拼接：中间轮的叙述不该进摘要，只要最终那份。
+            if ev == 'turn_complete' and (data or {}).get('content'):
+                final_text = data['content'].strip()
+
+            payload = dict(data) if isinstance(data, dict) else {'raw': data}
+            payload['stage_id'] = stage['id']
+            yield _sse(ev, payload)
+
+            if error_msg:
+                break
+
+        elapsed_ms = int((_time.time() - _t0) * 1000)
+
+        # 内层只有在出错或尚未迭代完时才不 emit done。没见到 done 就一定出了事，
+        # 不能当成功继续 —— 会把垃圾摘要喂给下一阶段。
+        if error_msg or not saw_done:
+            aborted = True
+            yield _sse('stage_done', {
+                'stage_id': stage['id'], 'status': 'error',
+                'elapsed_ms': elapsed_ms,
+                'error': error_msg or '阶段未正常结束（内层没有发出 done）',
+            })
+            break
+
+        yield _sse('stage_done', {
+            'stage_id': stage['id'], 'status': 'ok',
+            'elapsed_ms': elapsed_ms, 'summary_chars': len(final_text),
+        })
+
+        if final_text:
+            prior_summaries.append((stage['label'], final_text))
+
+    yield _sse('done', {
+        'final': True,
+        'stages_run': len(prior_summaries),
+        'stages_selected': total,
+        'aborted': aborted,
+    })
 
 
 def process_literature_chat_streaming(messages, api_key, context='',

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, NavLink } from 'react-router-dom'
 import { Search, Loader2 } from 'lucide-react'
 import { searchDatasets } from '../api/search'
 
@@ -189,11 +189,37 @@ export default function Header() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-text-muted hidden sm:block">
+          {/* 导航组。此前这里是不可点的纯文本 span —— 全 header 没有任何
+              NavLink/Link，logo 是裸 <a href="/">（整页刷新）。药物页需要一个
+              不刷新的切换入口，所以这里引入真正带激活态的路由导航。
+              `end` 只加在 "/" 上，否则 HomePage 会一直高亮。 */}
+          <nav className="hidden sm:flex items-center gap-1 self-stretch">
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `text-xs px-2.5 flex items-center border-b-2 transition-colors ${
+                  isActive
+                    ? 'text-brand font-semibold border-brand-gold'
+                    : 'text-text-muted border-transparent hover:text-text-secondary'
+                }`
+              }
+            >
               Multi-omics Atlas
-            </span>
-          </div>
+            </NavLink>
+            <NavLink
+              to="/drug-discovery"
+              className={({ isActive }) =>
+                `text-xs px-2.5 flex items-center border-b-2 transition-colors ${
+                  isActive
+                    ? 'text-brand font-semibold border-brand-gold'
+                    : 'text-text-muted border-transparent hover:text-text-secondary'
+                }`
+              }
+            >
+              Drug Discovery
+            </NavLink>
+          </nav>
         </div>
       </div>
     </header>

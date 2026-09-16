@@ -17,6 +17,24 @@ _RATE_WINDOW = 60
 _RATE_MAX = 100
 _rates: dict[str, list[float]] = defaultdict(list)
 
+def post_route_delivers_json_body(path: str) -> bool:
+    """POST 路由拿到的是解析好的 JSON body，还是 query string 字典？
+
+    抽成模块级函数（而不是内联在 do_POST 里）是为了能被测试**导入并直接调用**。
+    测试里再抄一份的话，两份会各自漂移 —— 抄写的那份永远陪着自己写的规则，
+    测不到 handler 真正在跑的规则。`test_handler_post_routes.py` 就是靠调用
+    这个函数，才能发现「新加了 POST 路由但这里没登记」。
+
+    `/api/drug/pipeline/stream` 曾因漏登记而拿到空 dict，端点与校验都在、
+    却永远报「query required」—— 那种失败很难从错误信息反推回这里。
+    """
+    return (
+        path.startswith('/api/llm/')
+        or path.startswith('/api/drug/')
+        or path in ('/api/milestone', '/api/heartbeat', '/api/raw-expression')
+    )
+
+
 def _rate_allowed(ip: str) -> bool:
     now = time.time()
     w = _rates[ip]
@@ -139,8 +157,9 @@ class APIHandler(BaseHTTPRequestHandler):
 
         handler = ROUTES.get(('POST', parsed.path))
         if handler:
-            is_json_body = parsed.path.startswith('/api/llm/') or parsed.path in ('/api/milestone', '/api/heartbeat', '/api/raw-expression')
+            # 规则见 post_route_delivers_json_body() —— 抽出去是为了让测试
+            # 能直接调用同一份实现，而不是抄一份跟着漂移。
             self._log_request(200)
-            return handler(self, data if is_json_body else q)
+            return handler(self, data if post_route_delivers_json_body(parsed.path) else q)
         self._log_request(404)
         self._json({'error': 'Not found'}, 404)
