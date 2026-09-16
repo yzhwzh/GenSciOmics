@@ -24,6 +24,7 @@ _table_cache = LRUCache(max_size=500)
 from events import log_event, event_log, event_log_lock, MILESTONES, milestones_lock, MILESTONE_FILE
 from search import _search_datasets
 from pubmed import _fetch_abstract
+from supplementary import extract_table, is_valid_lookup
 from analysis.umap import _get_umap_data
 from analysis.expression import _get_expression_stats
 from analysis.stats import _get_per_sample_table, _get_per_sample_mutest, _get_aggregate_table, _get_raw_expression
@@ -31,7 +32,7 @@ from analysis.plots import _generate_plot, _generate_cell_ratio_plot, _generate_
 from analysis.utils import CATEGORICAL_PALETTE_MAP, normalize_gene2_op
 from analysis.bulk import bulk_boxplot, bulk_de, bulk_diseases, bulk_groups, bulk_volcano
 from search import _get_genes, rank_gene_matches
-from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming
+from llm_proxy import process_chat, process_chat_streaming, process_literature_chat_streaming, process_drug_pipeline_streaming
 from skills import list_skills, get_skill_content
 from online import heartbeat, count_online
 
@@ -637,28 +638,16 @@ def handle_llm_chat(handler, data):
     handler._json(result)
 
 
-def handle_llm_chat_stream(handler, data):
-    """POST /api/llm/chat/stream — process chat with streaming SSE response."""
-    messages = data.get('messages', [])
-    real_path = data.get('real_path', '')
-    api_key = data.get('api_key', '')
-    model = data.get('model', 'deepseek-chat')
-    base_url = data.get('base_url', 'https://api.deepseek.com')
-    temperature = float(data.get('temperature', 0.7))
-    omics_type = data.get('omics_type', '')
-    user_id = data.get('user_id', '')
+def _stream_sse_response(handler, events, *, heartbeat_secs: int = 15) -> None:
+    """把一个事件迭代器写成 SSE 响应。
 
-    if not messages:
-        handler._send_error('messages required')
-        return
-    if not real_path:
-        handler._send_error('real_path required')
-        return
-    if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
-        handler._send_error('api_key required')
-        return
+    三个流式端点（chat / literature / drug pipeline）共用。它们的响应头、心跳、
+    断线处理、异常兜底**逐字相同**，只有产出事件的函数不同 —— 之前是两份 45 行的
+    复制粘贴，加到第三份就会开始漂移。
 
-    # Send SSE headers
+    调用方必须**先把入参校验收完**再调这里：一旦 send_response(200) 发出去了，
+    就没法再改成 JSON 错误响应。
+    """
     handler.send_response(200)
     handler.send_header('Content-Type', 'text/event-stream')
     handler.send_header('Cache-Control', 'no-cache')
@@ -669,12 +658,12 @@ def handle_llm_chat_stream(handler, data):
     handler.send_header('Access-Control-Allow-Origin', origin if origin in allowed else '')
     handler.end_headers()
 
-    # Heartbeat: send SSE comment every 15s to keep proxy alive during tool execution
+    # Heartbeat: send SSE comment every N seconds to keep proxy alive during tool execution
     _hb_stop = _threading.Event()
 
     def _heartbeat():
         while not _hb_stop.is_set():
-            _hb_stop.wait(15)
+            _hb_stop.wait(heartbeat_secs)
             if _hb_stop.is_set():
                 break
             try:
@@ -687,7 +676,7 @@ def handle_llm_chat_stream(handler, data):
     _hb_thread.start()
 
     try:
-        for event in process_chat_streaming(messages, real_path, api_key, model, base_url, temperature, omics_type, user_id=user_id):
+        for event in events:
             # Check if client disconnected
             if _hb_stop.is_set():
                 break
@@ -715,6 +704,31 @@ def handle_llm_chat_stream(handler, data):
                 pass
 
 
+def handle_llm_chat_stream(handler, data):
+    """POST /api/llm/chat/stream — process chat with streaming SSE response."""
+    messages = data.get('messages', [])
+    real_path = data.get('real_path', '')
+    api_key = data.get('api_key', '')
+    model = data.get('model', 'deepseek-chat')
+    base_url = data.get('base_url', 'https://api.deepseek.com')
+    temperature = float(data.get('temperature', 0.7))
+    omics_type = data.get('omics_type', '')
+    user_id = data.get('user_id', '')
+
+    if not messages:
+        handler._send_error('messages required')
+        return
+    if not real_path:
+        handler._send_error('real_path required')
+        return
+    if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
+        handler._send_error('api_key required')
+        return
+
+    _stream_sse_response(handler, process_chat_streaming(
+        messages, real_path, api_key, model, base_url, temperature, omics_type, user_id=user_id))
+
+
 def handle_llm_literature_stream(handler, data):
     """POST /api/llm/literature/stream — literature research chat with streaming SSE.
 
@@ -739,64 +753,58 @@ def handle_llm_literature_stream(handler, data):
         handler._send_error('api_key required')
         return
 
-    # Send SSE headers
-    handler.send_response(200)
-    handler.send_header('Content-Type', 'text/event-stream')
-    handler.send_header('Cache-Control', 'no-cache')
-    handler.send_header('Connection', 'close')
-    handler.send_header('X-Accel-Buffering', 'no')
-    origin = handler.headers.get('Origin', '')
-    allowed = getattr(handler, '_allowed_origins', [])
-    handler.send_header('Access-Control-Allow-Origin', origin if origin in allowed else '')
-    handler.end_headers()
+    _stream_sse_response(handler, process_literature_chat_streaming(
+        messages, api_key, context=context,
+        model=model, base_url=base_url, temperature=temperature,
+        user_id=user_id,
+    ))
 
-    # Heartbeat: send SSE comment every 15s to keep proxy alive
-    _lit_hb_stop = _threading.Event()
 
-    def _lit_heartbeat():
-        while not _lit_hb_stop.is_set():
-            _lit_hb_stop.wait(15)
-            if _lit_hb_stop.is_set():
-                break
-            try:
-                handler.wfile.write(b': heartbeat\n\n')
-                handler.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                break
+def handle_drug_stages(handler, q):
+    """GET /api/drug/stages — 药物流水线的阶段注册表。
 
-    _lit_hb_thread = _threading.Thread(target=_lit_heartbeat, daemon=True)
-    _lit_hb_thread.start()
+    前端据此渲染阶段卡片。返回的是 server/drug_stages.py 里的同一份数据，
+    所以加阶段只改那一个文件，前端不用动。
+    """
+    from drug_stages import stages_payload
+    handler._json(stages_payload())
 
-    try:
-        for event in process_literature_chat_streaming(
-            messages, api_key, context=context,
-            model=model, base_url=base_url, temperature=temperature,
-            user_id=user_id,
-        ):
-            if _lit_hb_stop.is_set():
-                break
-            ev_name = event.get('event', '')
-            ev_data = event.get('data', '')
-            try:
-                handler.wfile.write(f"event: {ev_name}\ndata: {ev_data}\n\n".encode())
-                handler.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                break
-    except Exception as e:
-        try:
-            handler.wfile.write(f"event: error\ndata: {json.dumps({'error': str(e)[:200]})}\n\n".encode())
-        except Exception:
-            pass
-    finally:
-        _lit_hb_stop.set()
-        _lit_hb_thread.join(timeout=3)
-        try:
-            handler.connection.shutdown(_socket.SHUT_WR)
-        except (OSError, AttributeError):
-            try:
-                handler.connection.close()
-            except (OSError, AttributeError):
-                pass
+
+def handle_drug_pipeline_stream(handler, data):
+    """POST /api/drug/pipeline/stream — 药物发现流水线（SSE）。
+
+    **不要求 real_path** —— 这是它区别于 /api/llm/chat/stream 的唯一原因：
+    药物页默认不挂数据集（直接查靶点/化合物）。agent 侧本来就不需要它
+    （prompt.py:270 有 `if real_path:` 守卫）。这里不去放开原端点的校验，
+    因为那条校验是给分析页用的，放开会波及 Free Analysis。
+
+    事件：stage_start / message / tool_call / tool_result / status /
+          stage_done / error / done（每个事件都带 stage_id）。
+    """
+    query = data.get('query', '')
+    stage_ids = data.get('stage_ids', [])
+    api_key = data.get('api_key', '')
+    model = data.get('model', 'deepseek-chat')
+    base_url = data.get('base_url', 'https://api.deepseek.com')
+    temperature = float(data.get('temperature', 0.7))
+    real_path = data.get('real_path', '')  # 可选：挂了数据集才有
+    user_id = data.get('user_id', '')
+
+    if not (query or '').strip():
+        handler._send_error('query required')
+        return
+    if not isinstance(stage_ids, list) or not stage_ids:
+        handler._send_error('stage_ids required (non-empty list)')
+        return
+    if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
+        handler._send_error('api_key required')
+        return
+
+    _stream_sse_response(handler, process_drug_pipeline_streaming(
+        query, stage_ids, api_key,
+        model=model, base_url=base_url, temperature=temperature,
+        real_path=real_path, user_id=user_id,
+    ))
 
 
 def handle_fetch_llm_models(handler, data):
@@ -928,6 +936,29 @@ def handle_raw_expression(handler, data):
     handler.wfile.write(csv_bytes)
 
 
+def handle_supplementary_table(handler, q):
+    """取出某篇文献补充材料包里的一个附件并解析成表格。
+
+    这是整个功能里**唯一会下载 25–37 MB** 的入口。附件清单走
+    /api/analysis-info 免费拿（复用为提取 Methods 已下载的全文 XML），
+    只有用户真的点「查看」才走到这里。下过一次就落盘在 .supp_cache/，
+    之后同一篇的任意附件都是读磁盘。
+
+    为什么 GET 而不是 POST：无副作用、结果可缓存，且不需要登记
+    post_route_delivers_json_body()（上一轮 POST 踩过的坑）。
+    """
+    pmcid = q.get('pmcid', '').strip()
+    name = q.get('name', '').strip()
+
+    # 非法输入回 400，与「下载/解析失败」区分开 —— 后者是正常业务流程
+    # （限流、坏文件），用 200 + error 字段让前端统一渲染。
+    if not is_valid_lookup(pmcid, name):
+        handler._send_error('非法的 pmcid 或附件名')
+        return
+
+    handler._json(extract_table(pmcid, name))
+
+
 ROUTES = {
     ('POST', '/api/heartbeat'): handle_heartbeat,
     ('GET', '/api/online-count'): handle_online_count,
@@ -954,6 +985,8 @@ ROUTES = {
     ('POST', '/api/llm/chat/stream'): handle_llm_chat_stream,
     ('POST', '/api/llm/literature/stream'): handle_llm_literature_stream,
     ('POST', '/api/llm/fetch-models'): handle_fetch_llm_models,
+    ('GET', '/api/drug/stages'): handle_drug_stages,
+    ('POST', '/api/drug/pipeline/stream'): handle_drug_pipeline_stream,
     ('POST', '/api/milestone'): handle_milestone,
     ('GET', '/api/skill-plot'): handle_get_skill_plot,
     ('GET', '/api/results'): handle_results_list,
@@ -964,4 +997,5 @@ ROUTES = {
     ('GET', '/api/bulk-diseases'): handle_bulk_diseases,
     ('GET', '/api/bulk-groups'): handle_bulk_groups,
     ('GET', '/api/bulk-volcano'): handle_bulk_volcano,
+    ('GET', '/api/supplementary-table'): handle_supplementary_table,
 }
