@@ -973,5 +973,81 @@
       "IL1RAP",
       "ANGPTL3"
     ]
+  },
+  "36898378": {
+    "Source": "Manual",
+    "Major": {
+      "T": [
+        "CD2",
+        "CD3D",
+        "CD3E",
+        "CD3G"
+      ],
+      "T_CD4": [
+        "CD4",
+        "CD40LG",
+        "IL7R"
+      ],
+      "T_CD8": [
+        "CD8A",
+        "CD8B",
+        "CD8B2"
+      ],
+      "T_gd": [
+        "TRDC",
+        "TRGC1",
+        "TRGC2"
+      ],
+      "T_MAIT": [
+        "SLC4A10",
+        "KLRB1",
+        "ZBTB16",
+        "TRAV1-2"
+      ],
+      "Treg": [
+        "FOXP3",
+        "IL2RA",
+        "CTLA4",
+        "IKZF2"
+      ],
+      "T_prolif": [
+        "MKI67",
+        "TOP2A",
+        "STMN1"
+      ],
+      "NK": [
+        "KLRF1",
+        "NCAM1",
+        "FCGR3A"
+      ],
+      "Myeloid": [
+        "LYZ",
+        "CD14",
+        "S100A8"
+      ],
+      "B": [
+        "MS4A1",
+        "CD79A"
+      ],
+      "Plasma": [
+        "MZB1",
+        "JCHAIN",
+        "SDC1"
+      ],
+      "Erythroid": [
+        "HBB",
+        "HBA1",
+        "ALAS2"
+      ]
+    },
+    "Target": [
+      "IL1A",
+      "MUC5AC",
+      "PDCD1",
+      "CD274",
+      "IGF1",
+      "IL1RAP",
+      "ANGPTL3"
+    ]
   }
 }
