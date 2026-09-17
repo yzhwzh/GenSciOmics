@@ -46,6 +46,16 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
+
 # Reuse make_figs' house style (viridis, constrained_layout, dpi300, save_all).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
@@ -174,7 +184,7 @@ def explain(model, X, outdir=None, prefix="shap", sample_idx=0,
         return {"available": False, "skipped": True, "note": msg, "figures": []}
 
     import shap
-    outdir = outdir or os.path.dirname(os.path.abspath(__file__))
+    outdir = outdir or _results_dir()
     os.makedirs(outdir, exist_ok=True)
 
     explainer, kind = _build_explainer(model, X, background_size=background_size, seed=seed)
@@ -229,16 +239,17 @@ def main():
         if sys.argv[1] != "--selftest":
             raise SystemExit("usage: python explain_shap.py [--selftest]")
         raise SystemExit(_selftest())
-    here = os.path.dirname(os.path.abspath(__file__))
+    outdir = _results_dir()
+    os.makedirs(outdir, exist_ok=True)
     if not _shap_available():
-        explain(None, None, outdir=here)  # prints the skip notice, returns cleanly
+        explain(None, None, outdir=outdir)  # prints the skip notice, returns cleanly
         print("DONE (shap absent: degraded gracefully, no figures expected)")
         return
 
     print("[demo] synthetic make_classification + RandomForest -> SHAP")
     model, X = _synth_model()
     # explain a modest slice to keep any KernelExplainer fallback cheap (caveat 3)
-    res = explain(model, X.iloc[:100], outdir=here, prefix="demo_shap")
+    res = explain(model, X.iloc[:100], outdir=outdir, prefix="demo_shap")
     print(f"explainer: {res['explainer']}  (n_samples={res['n_samples']})")
     for name, paths in res["figures"].items():
         for p in paths:

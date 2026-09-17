@@ -21,6 +21,14 @@ import seaborn as sns
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
+
+
+def _out_base() -> str:
+    """产出目录由 ShellTool 经 GENSCI_RESULTS_DIR 注入（字面量兜底须与
+    server/config.py:RESULTS_DIR 一致）；绝不写回本 skill 目录。"""
+    outdir = os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+    os.makedirs(outdir, exist_ok=True)
+    return os.path.join(outdir, "out_seaborn_stats")
 import figure_export as fx          # noqa: E402
 import color_palettes as cp         # noqa: E402
 
@@ -85,7 +93,7 @@ def main():
     sns.despine(fig)
     fig.tight_layout()
 
-    out = os.path.join(HERE, "out_seaborn_stats")
+    out = _out_base()
     written, info = fx.save_for_journal(fig, out, journal="nature",
                                         column="double", height_mm=70,
                                         formats=("pdf", "png"))

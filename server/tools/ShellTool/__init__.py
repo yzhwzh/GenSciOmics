@@ -5,7 +5,9 @@ import os
 import select
 import signal
 import subprocess
+import sys
 import time
+from config import RESULTS_DIR
 from skills import register_skill, ParamDef
 
 # ── 三级超时常量 ──────────────────────────────────────────
@@ -50,6 +52,13 @@ def shell(command: str, timeout: int = 60) -> dict:
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
+    # Agent 产出目录：子进程（skill 脚本）据此解析落点，无需 import 后端模块。
+    # 值只在 config.py 定义一次 —— CLAUDE.md 禁止硬编码路径。
+    env['GENSCI_RESULTS_DIR'] = str(RESULTS_DIR)
+    try:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f'[ShellTool] cannot create results dir {RESULTS_DIR}: {e}', file=sys.stderr)
 
     try:
         proc = subprocess.Popen(
@@ -138,9 +147,17 @@ SHELL_DESCRIPTION = (
     "  Scripts that produce output keep running; silent scripts get killed.\n"
     "- For long Python scripts, use `print(..., flush=True)` to reset the idle timer\n"
     "- No binary data in return value (text only)\n\n"
+    "### Output Location\n"
+    "ALL files you generate — reports, CSVs, tables, figures, intermediate results —\n"
+    "go to the results directory, which is exported to every command you run as\n"
+    "`$GENSCI_RESULTS_DIR` (default `/tmp/gensci_results/`).\n"
+    "- NEVER write into `server/skills/`, `src/`, or `server/` — the source tree is\n"
+    "  not a working directory. Skill folders are documentation for humans to read.\n"
+    "- Use `$GENSCI_RESULTS_DIR` rather than a hardcoded path, e.g.\n"
+    "  `python3 script.py --outdir \"$GENSCI_RESULTS_DIR\"`.\n\n"
     "### Image Protocol\n"
     "When generating plots via Python:\n"
-    "1. Save PNG to `/tmp/gensci_results/{uuid}.png`\n"
+    "1. Save PNG to `$GENSCI_RESULTS_DIR/{uuid}.png`\n"
     "2. Print `![description](/api/results?file={filename}.png)` to stdout\n"
     "3. The LLM MUST echo this markdown tag in its response\n\n"
     "### Error Recovery\n"

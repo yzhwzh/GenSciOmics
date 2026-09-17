@@ -136,9 +136,19 @@ def heatmap(matrix, ax=None, xticks=None, yticks=None, title=None,
     return ax
 
 
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
+
 def demo(outdir=None):
     """Build a 2x2 publication-style panel from synthetic data and export it."""
-    outdir = outdir or os.path.dirname(os.path.abspath(__file__))
+    outdir = outdir or _results_dir()
+    os.makedirs(outdir, exist_ok=True)
     rng = np.random.default_rng(3)
     methods = ["baseline", "ablation", "ours"]
     samples = [rng.normal(m, 0.025, 8) for m in (0.80, 0.83, 0.86)]

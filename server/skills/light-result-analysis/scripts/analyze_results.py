@@ -35,6 +35,15 @@ from significance_test import (  # noqa: E402
 ALPHA = 0.05
 
 
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
+
 def _normal(x, alpha=0.05):
     """Shapiro-Wilk normality; True if cannot reject normality (or n<3)."""
     from scipy import stats
@@ -567,8 +576,9 @@ def main():
         sys.exit(_selftest())
 
     if not a.csv:
-        here = os.path.dirname(os.path.abspath(__file__))
-        a.csv = _synth_csv(os.path.join(here, "_synth_results.csv"))
+        demo_dir = _results_dir()
+        os.makedirs(demo_dir, exist_ok=True)
+        a.csv = _synth_csv(os.path.join(demo_dir, "_synth_results.csv"))
         a.group = "method"; a.metric = a.metric or ["acc", "f1"]
         print(f"[demo] generated synthetic CSV -> {a.csv}")
     outdir = a.outdir or os.path.join(os.path.dirname(os.path.abspath(a.csv)), "analysis_out")

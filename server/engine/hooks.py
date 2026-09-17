@@ -2,7 +2,16 @@
 对标 Claude Code 的 hook 体系，用于自动注入指令。
 """
 from __future__ import annotations
+import os
+import threading
+from pathlib import Path
 from typing import Any, Callable
+
+from config import RESULTS_DIR
+
+# skill 树是只读的指令文档；产出必须落在 RESULTS_DIR（后者在 config.py 定义一次）。
+# 本文件位于 server/engine/，故向上一级即 server/。
+_SKILLS_DIR = Path(__file__).resolve().parent.parent / 'skills'
 
 _pre_tool_hooks: list[Callable] = []
 _post_tool_hooks: list[Callable] = []
@@ -54,12 +63,76 @@ def _hook_image_return(name: str, args: dict, result: dict) -> str | None:
         if '/api/results?file=' not in stdout:
             return (
                 "【图片协议提醒】检测到可能生成了图片。请确保：\n"
-                "1. 将图片保存到 /tmp/gensci_results/ 目录\n"
+                f"1. 将图片保存到产出目录 {RESULTS_DIR}/（即 $GENSCI_RESULTS_DIR）\n"
                 "2. 在 stdout 打印 markdown 图片标签：![描述](/api/results?file=xxx.png)\n"
                 "3. 在回复中**必须包含**该 markdown 标签才能在前端显示\n"
                 "4. 不要用 HTML <img> 标签，ReactMarkdown 不支持"
             )
     return None
+
+
+def _scan_skills(root: Path | None = None) -> dict[str, tuple[float, int]]:
+    """Index every file under the skill tree as {abspath: (mtime, size)}.
+
+    Metadata only — never reads file contents (~5 ms for the current ~570 files).
+    ``__pycache__``/``*.pyc`` are skipped: running a skill script creates them, and
+    they are build artifacts rather than model output.
+    """
+    idx: dict[str, tuple[float, int]] = {}
+    for dirpath, dirnames, filenames in os.walk(root or _SKILLS_DIR):
+        dirnames[:] = [d for d in dirnames if d != '__pycache__']
+        for fn in filenames:
+            if fn.endswith('.pyc'):
+                continue
+            p = os.path.join(dirpath, fn)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue  # vanished between walk and stat; not a write we caused
+            idx[p] = (st.st_mtime, st.st_size)
+    return idx
+
+
+_skill_index: dict[str, tuple[float, int]] | None = None
+_skill_index_lock = threading.Lock()
+
+
+def _hook_skill_dir_guard(name: str, args: dict, result: dict) -> str | None:
+    """Fail loudly when a shell command wrote into server/skills/.
+
+    The skill tree holds instruction documents, not a working directory. Prompt
+    text and script defaults both steer output to RESULTS_DIR, but neither stops
+    a model that decides to write next to the script anyway — this does.
+
+    The first call only establishes a baseline, so pre-existing files are never
+    reported; from then on, every new or changed file is.
+    """
+    if name != 'shell':
+        return None
+
+    global _skill_index
+    with _skill_index_lock:
+        current = _scan_skills()
+        if _skill_index is None:
+            _skill_index = current
+            return None
+        modified = [p for p, sig in current.items() if _skill_index.get(p) != sig]
+        _skill_index = current
+
+    if not modified:
+        return None
+
+    shown = modified[:10]
+    listing = '\n'.join(f'  - {os.path.relpath(p, _SKILLS_DIR)}' for p in shown)
+    if len(modified) > len(shown):
+        listing += f'\n  … 另有 {len(modified) - len(shown)} 个'
+    return (
+        f'【产出落点违规】检测到 {len(modified)} 个文件被写进了 skill 目录'
+        '（那是指令文档，不是工作目录）：\n'
+        f'{listing}\n'
+        f'请立即处理：需要的产出移到 {RESULTS_DIR}/（即 $GENSCI_RESULTS_DIR），'
+        '并 `rm` 掉误写进 skill 目录的文件。之后所有产出都写到 $GENSCI_RESULTS_DIR。'
+    )
 
 
 def _hook_error_recovery(name: str, args: dict, result: dict) -> str | None:
@@ -78,4 +151,5 @@ def _hook_error_recovery(name: str, args: dict, result: dict) -> str | None:
 
 # Register built-in hooks
 register_post_tool(_hook_image_return)
+register_post_tool(_hook_skill_dir_guard)
 register_post_tool(_hook_error_recovery)

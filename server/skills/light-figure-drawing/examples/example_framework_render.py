@@ -16,6 +16,14 @@ from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DOT = os.path.join(HERE, "example_framework.dot")
+
+
+def _out_path() -> str:
+    """产出目录由 ShellTool 经 GENSCI_RESULTS_DIR 注入（字面量兜底须与
+    server/config.py:RESULTS_DIR 一致）；绝不写回本 skill 目录。"""
+    outdir = os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+    os.makedirs(outdir, exist_ok=True)
+    return os.path.join(outdir, "out_framework.png")
 OKABE = {"blue": "#56B4E9", "green": "#009E73", "orange": "#E69F00",
          "purple": "#CC79A7", "yellow": "#F0E442"}
 
@@ -24,7 +32,7 @@ def render_with_graphviz():
     dot_bin = shutil.which("dot")
     if not dot_bin:
         return None
-    out = os.path.join(HERE, "out_framework.png")
+    out = _out_path()
     try:
         subprocess.run([dot_bin, "-Tpng", "-Gdpi=600", DOT, "-o", out],
                        check=True, capture_output=True, timeout=60)
@@ -80,7 +88,7 @@ def render_fallback():
                                   ec="#333333", lw=1.0))
     arrow(rights[4], (10.7, y + h / 2))
 
-    out = os.path.join(HERE, "out_framework.png")
+    out = _out_path()
     fig.savefig(out, dpi=600, bbox_inches="tight")
     plt.close(fig)
     return out

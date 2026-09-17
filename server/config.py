@@ -15,6 +15,13 @@ for d in ['Mouse', 'Monkey']:
 # Agent 记忆根目录（每用户隔离于 MEMORY_DIR/<sanitized_user_id>/）
 MEMORY_DIR = PROJECT_ROOT / 'server' / 'memory'
 
+# ─── Agent 产出目录 ───────────────────────────────────────────
+# 由 LLM 生成的一切文件（报告 / CSV / 表格 / 图 / 中间结果）都写这里，
+# 绝不写进源码树 —— 尤其 server/skills/，那是给人读的指令文档，不是工作目录。
+# 这是全项目唯一一处定义；ShellTool 把它作为 GENSCI_RESULTS_DIR 传给子进程，
+# 各 skill 脚本据此解析落点（脚本需独立运行，import 不到 config）。
+RESULTS_DIR = Path(os.environ.get('GENSCI_RESULTS_DIR', '/tmp/gensci_results'))
+
 # ─── Server ───────────────────────────────────────────────────
 HOST = '0.0.0.0'  # bind to all interfaces (needed for SSE direct connection from browser)
 API_PORT = int(sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == '--port' else 6001)

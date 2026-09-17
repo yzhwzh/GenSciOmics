@@ -9,9 +9,8 @@ import mimetypes
 from pathlib import Path
 from collections import Counter
 
-from config import DATA_DIRS
+from config import DATA_DIRS, RESULTS_DIR
 
-RESULTS_DIR = Path('/tmp/gensci_results')
 from scanner import datasets, datasets_lock
 from caches import LRUCache
 from core.adata_cache import get_adata
@@ -845,12 +844,46 @@ def handle_fetch_llm_models(handler, data):
 
 
 # ─── Results file serving ─────────────────────────────────────
+# 产出目录里允许被 /api/results 直接读走的后缀。列表端点只展示前四个，
+# 其余是给「下载报告/表格/导出件」用的。
+RESULT_FILE_SUFFIXES = frozenset({
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
+    '.csv', '.tsv', '.txt', '.md', '.json',
+    '.pdf', '.xlsx', '.xls', '.docx', '.pptx', '.zip', '.html',
+})
+
+
+def _safe_results_path(fn) -> Path | None:
+    """把用户传来的 file 参数收敛成产出目录内的真实文件路径，不合法则 None。
+
+    这是安全边界：`RESULTS_DIR / fn` 里的 fn 完全由用户控制，
+    `RESULTS_DIR / '../../../etc/passwd'` 会解析到产出目录之外 —— 实测可读
+    任意可读文件。所以先 resolve 再断言落在 RESULTS_DIR.resolve() 之内，
+    顺带挡住符号链接逃逸；结构上不给穿越留口子，而不是黑名单匹配攻击串。
+    """
+    if not isinstance(fn, str) or not fn or '\x00' in fn:
+        return None
+    root = RESULTS_DIR.resolve()
+    try:
+        p = (root / fn).resolve()
+    except (OSError, RuntimeError):
+        return None  # 坏路径 / 软链环
+    if not p.is_relative_to(root):
+        return None
+    if not p.is_file():
+        return None
+    if p.suffix.lower() not in RESULT_FILE_SUFFIXES:
+        return None
+    return p
+
+
 def handle_results_list(handler, q):
     """List and serve result files (Venn diagrams, plots, etc.)"""
     fn = q.get('file', '') if isinstance(q, dict) else (q.strip('/') if q else '')
     if fn:
-        fp = RESULTS_DIR / fn
-        if not fp.is_file():
+        fp = _safe_results_path(fn)
+        if fp is None:
+            # 越界与不存在返回同一个响应，不区分，免得这个端点变成探测工具
             handler._send_error('File not found')
             return
         mime = mimetypes.guess_type(str(fp))[0] or 'application/octet-stream'

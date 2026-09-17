@@ -9,7 +9,8 @@ chain the tools after their experiments finish:
   4. leakage / overfit screen           (leakage_overfit_check.run)
   5. filled-in analysis report          (assets template -> example_report.md)
 
-Everything writes into ./example_out/. Run:  python worked_example.py
+Everything writes into $GENSCI_RESULTS_DIR/worked_example_out/ (default
+/tmp/gensci_results/worked_example_out/). Run:  python worked_example.py
 """
 import os
 import sys
@@ -26,7 +27,10 @@ import significance_test as ST        # noqa: E402
 import make_figs as MF                # noqa: E402
 import leakage_overfit_check as LC    # noqa: E402
 
-OUT = os.path.join(HERE, "example_out")
+# 产出目录由 ShellTool 经 GENSCI_RESULTS_DIR 注入（字面量兜底须与
+# server/config.py:RESULTS_DIR 一致）；绝不写回本 skill 目录。
+OUT = os.path.join(os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results"),
+                   "worked_example_out")
 os.makedirs(OUT, exist_ok=True)
 
 

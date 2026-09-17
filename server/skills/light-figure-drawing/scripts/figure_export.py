@@ -24,6 +24,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 MM_PER_INCH = 25.4
 
+
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
 # 逐刊规格: width_mm 为 (单栏, 双栏/整版) 可选键; min_dpi 按线条图; min_font_pt 最终字号下限
 JOURNAL_SPECS = {
     "nature": {
@@ -537,7 +546,8 @@ def _demo_and_selfcheck():
     ax.set_title("a", loc="left")
     ax.legend()
 
-    outdir = os.path.join(here, "..", "examples", "_export_demo")
+    outdir = _results_dir()
+    os.makedirs(outdir, exist_ok=True)
     base = os.path.join(outdir, "demo_export")
     written = save_publication_figure(fig, base, formats=("pdf", "png", "svg"))
     assert all(os.path.exists(p) and os.path.getsize(p) > 0 for p in written), written

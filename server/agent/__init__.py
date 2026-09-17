@@ -102,7 +102,11 @@ def process_chat(
     # Inject skill-first reminder (compensates for lack of Anthropic system-reminder)
     working_messages.append({
         'role': 'user',
-        'content': '<system-reminder>【技能提醒】当前有可用技能。如果用户请求匹配某个技能，必须先调 skill("技能名") 获取指令，不要自己写代码。\n⚠️ 图片协议提醒：如果用 Python 生成图片（matplotlib/seaborn），必须保存到 /tmp/gensci_results/，在 stdout 打印 ![描述](/api/results?file=xxx.png)，并在回复中包含该 markdown 标签。</system-reminder>',
+        'content': '<system-reminder>【技能提醒】当前有可用技能。如果用户请求匹配某个技能，必须先调 skill("技能名") 获取指令，不要自己写代码。\n'
+                   '⚠️ 产出落点提醒：你生成的一切文件（报告 / CSV / 表格 / 图 / 中间结果）都必须写到 $GENSCI_RESULTS_DIR（默认 /tmp/gensci_results/），'
+                   'shell 子进程已注入该环境变量。**严禁写进源码树** —— 尤其 server/skills/，那是指令文档不是工作目录。'
+                   '脚本若带 --outdir/--out/-o 参数，必须显式传入。\n'
+                   '⚠️ 图片协议提醒：图片同样存到 $GENSCI_RESULTS_DIR，在 stdout 打印 ![描述](/api/results?file=xxx.png)，并在回复中包含该 markdown 标签。</system-reminder>',
     })
 
     # 8. Tool-calling loop

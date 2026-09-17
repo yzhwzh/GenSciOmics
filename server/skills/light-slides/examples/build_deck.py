@@ -5,8 +5,9 @@
 配色与字体全部取自 assets/themes.py，做到“审美统一、重点突出”。
 
 运行：
-    python build_deck.py                 # 用 academic 主题，出 academic_demo.pptx
+    python build_deck.py                 # 用 academic 主题 -> $GENSCI_RESULTS_DIR/academic_demo.pptx
     python build_deck.py --theme tech -o tech_demo.pptx
+（默认落点为 $GENSCI_RESULTS_DIR，未设置时 /tmp/gensci_results；绝不写进 skill 目录）
 
 跑完后默认会打印每页标题（幽灵 deck 测试），方便检查论证连贯性。
 本脚本不依赖任何外部数据，可直接自测运行。
@@ -19,6 +20,15 @@ import argparse
 # 让脚本能 import 同仓 assets/themes.py
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "assets"))
+
+
+def _results_dir() -> str:
+    """产出目录由 ShellTool 经 GENSCI_RESULTS_DIR 注入（字面量兜底须与
+    server/config.py:RESULTS_DIR 一致）；绝不写回本 skill 目录，也不用相对路径
+    （相对路径会落在 ShellTool 的工作目录 = 项目根）。"""
+    outdir = os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+    os.makedirs(outdir, exist_ok=True)
+    return outdir
 from themes import get_theme  # noqa: E402
 
 from pptx import Presentation
@@ -315,7 +325,7 @@ def main():
     ap.add_argument("--theme", default="academic")
     ap.add_argument("-o", "--out", default=None)
     args = ap.parse_args()
-    out = args.out or f"{args.theme}_demo.pptx"
+    out = args.out or os.path.join(_results_dir(), f"{args.theme}_demo.pptx")
     prs, out, t = build(args.theme, out)
     size_kb = os.path.getsize(out) / 1024
     print(f"已生成：{out}（主题 {t['name']} / {t['label']}，"

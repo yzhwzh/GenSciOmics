@@ -135,6 +135,15 @@ def cvd_backend():
         return "approx"
 
 
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
+
 def preview_palette(colors=None, outpath=None, title="palette"):
     """出对照预览: 原色 / 灰度 / 三种色盲, 存 png。返回路径。"""
     if colors is None:
@@ -157,8 +166,7 @@ def preview_palette(colors=None, outpath=None, title="palette"):
     ax.axis("off")
     ax.set_title(f"{title}  (CVD backend: {cvd_backend()})", fontsize=9, loc="left")
     if outpath is None:
-        outpath = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "..", "examples", "_export_demo", "palette_preview.png")
+        outpath = os.path.join(_results_dir(), "palette_preview.png")
     os.makedirs(os.path.dirname(os.path.abspath(outpath)), exist_ok=True)
     fig.savefig(outpath, dpi=200, bbox_inches="tight")
     plt.close(fig)

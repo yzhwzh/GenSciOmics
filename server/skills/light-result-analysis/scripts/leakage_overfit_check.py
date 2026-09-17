@@ -30,6 +30,15 @@ LEAK_CORR = 0.95        # |corr(feature, target)| above this -> leakage suspect
 NEAR_CONST = 0.999      # one value covers >= this fraction of rows -> degenerate
 
 
+def _results_dir() -> str:
+    """Default output dir. Inlined (not imported) so the script stays standalone.
+
+    ShellTool exports GENSCI_RESULTS_DIR to every command it runs; the literal
+    fallback must match server/config.py:RESULTS_DIR.
+    """
+    return os.environ.get("GENSCI_RESULTS_DIR", "/tmp/gensci_results")
+
+
 def gap_check(train_s, val_s, test_s):
     flags = []
     if train_s is not None and val_s is not None:
@@ -207,7 +216,8 @@ def main():
     else:
         report = run(a.train, a.test, a.target, (a.train_score, a.val_score, a.test_score))
 
-    out = a.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "leakage_report.json")
+    out = a.out or os.path.join(_results_dir(), "leakage_report.json")
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"verdict: {report['verdict']}  ({report['n_flags']} flags)")

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Dynamic Prompt Assembler — 对标 Claude Code 的分层系统提示。"""
 
+from config import PROJECT_ROOT, RESULTS_DIR
+
+# 路径只在 config.py 定义一次（CLAUDE.md 硬编码禁令）；提示词里只做注入。
+_PROJECT_ROOT = str(PROJECT_ROOT)
+_RESULTS_DIR = str(RESULTS_DIR)
+
 
 # ── 核心身份定义 ──────────────────────────────────────────
 CORE_IDENTITY = (
@@ -45,11 +51,13 @@ IMAGE_PROTOCOL = (
 
     "### Step-by-Step\n"
     "1. Generate the figure using matplotlib/seaborn/plotly in Python.\n"
-    "2. Save the figure to `/tmp/gensci_results/` with a unique filename:\n"
+    "2. Save the figure into the results directory (`$GENSCI_RESULTS_DIR`, default\n"
+    "   `" + _RESULTS_DIR + "/`) with a unique filename:\n"
     "   ```python\n"
-    "   import uuid\n"
+    "   import os, uuid\n"
     "   fn = f\"plot_{uuid.uuid4().hex[:12]}.png\"\n"
-    "   plt.savefig(f'/tmp/gensci_results/{fn}', dpi=150, bbox_inches='tight')\n"
+    "   path = os.path.join(os.environ.get('GENSCI_RESULTS_DIR', '" + _RESULTS_DIR + "'), fn)\n"
+    "   plt.savefig(path, dpi=150, bbox_inches='tight')\n"
     "   plt.close()\n"
     "   ```\n"
     "3. Print the markdown image tag to **stdout** so it appears in the tool result:\n"
@@ -98,13 +106,26 @@ SHELL_CONSTRAINTS = (
     "- Pass `timeout=N` to change idle timeout (capped at 300s).\n\n"
 
     "### Working around truncation\n"
-    "- If output is truncated, save results to a temp file and `cat` it in a second command.\n"
-    "- For large data processing, save to `/tmp/gensci_results/` and read back.\n"
+    "- If output is truncated, save results to a file under `$GENSCI_RESULTS_DIR` and `cat` it "
+    "in a second command.\n"
     "- Use `wc -l`, `tail`, `head` to inspect large outputs incrementally.\n\n"
 
     "### Working directory\n"
-    "- The shell runs from the project root: `/data/yuanwuzhou/102.ClaudeCode/06.GenSci/`\n"
-    "- Data files are under `Data/Human/{Tissue}/`\n"
+    "- The shell runs from the project root: `" + _PROJECT_ROOT + "/`\n"
+    "- Data files are under `Data/Human/{Tissue}/`\n\n"
+
+    "### Output location (★ ALL generated files, not just images)\n"
+    "- The results directory is exported to every command you run as `$GENSCI_RESULTS_DIR`\n"
+    "  (default `" + _RESULTS_DIR + "/`). Write **everything you generate** there:\n"
+    "  reports, CSVs, tables, figures, intermediate results, exports.\n"
+    "- **NEVER write into the source tree** — not `server/skills/`, not `src/`, not `server/`.\n"
+    "  Skill folders are instruction documents for humans; the source tree is not a\n"
+    "  working directory. A file written there pollutes everyone's workspace.\n"
+    "- Prefer `\"$GENSCI_RESULTS_DIR\"` over a hardcoded path, so scripts keep working if\n"
+    "  the location is reconfigured:\n"
+    "  `python3 <skill>/scripts/x.py --outdir \"$GENSCI_RESULTS_DIR\"`\n"
+    "- If a skill script has an `--outdir`/`--out`/`-o` option, ALWAYS pass it explicitly.\n"
+    "  Several default to their own directory when the flag is omitted.\n"
 )
 
 # ── 错误恢复策略 ─────────────────────────────────────────
