@@ -7,9 +7,15 @@
   - 内层的 `done` 若不拦，前端会以为整条流水线在第一个阶段就结束了；
   - 上一阶段的结论若没带进下一阶段，第 2 阶段等于从零开始 —— 用户看到的是
     6 段各说各话，而这恰恰是「流水线」相对「6 次独立对话」的全部价值；
-  - 内层出错若不中止，后面的阶段会拿着空摘要继续跑，把垃圾结论一路传下去。
+  - 内层**明确报错**后若继续跑，却不告诉下一阶段「上一环缺了」，后者会当作上游
+    已产出，交出一份读起来很完整的报告 —— 缺的是数据，不是措辞；
+  - 内层**静默**结束（没发 done）则必须中止：那说明这一段是半途断的，
+    `final_text` 可能只是半截叙事，下游会把它当结论用。
 
-这三条都是「看起来在跑、实际白跑」，只能用事件序列断言锁住。
+两条失败路径形态不同、处置也不同（见 [4] 与 [5]）：前者跳过该阶段继续跑，
+但把「未完成」显式写进下游 prompt；后者直接停下。
+
+这些都是「看起来在跑、实际白跑」，只能用事件序列断言锁住。
 
 这里**不测**注册表本身的完整性（阶段 id / skill 目录 / 过滤器）——
 那是 test_drug_stages.py 的职责。
@@ -59,9 +65,24 @@ def run() -> None:
         yield {'event': 'turn_complete', 'data': {'content': '假回复'}}
         yield {'event': 'done', 'data': {'final': True}}
 
-    def _boom_stream(**kw):
+    def _boom_on_target(**kw):
+        """只让第 1 阶段（靶点）炸，后面照常成功。
+
+        必须只炸一段：三段全炸的话就没有「成功阶段的结论」可验证，
+        「失败标记往下传」和「正常结论往下传」这两条会分不开。
+        """
         calls.append(kw)
-        yield {'event': 'error', 'data': {'error': 'API error: 502'}}
+        if 'drug-target-intelligence' in (kw.get('skills_filter') or []):
+            # 报错前先吐半截内容 —— 真实世界里 error 常发生在跑了几轮工具之后，
+            # 此时 final_text 非空。若实现把它当结论传下去，这个 '半截话' 就会
+            # 出现在下一阶段的 prompt 里。
+            yield {'event': 'message', 'data': {'content': '半截话'}}
+            yield {'event': 'turn_complete', 'data': {'content': '半截话'}}
+            yield {'event': 'error', 'data': {'error': 'API error: 502'}}
+            return
+        yield {'event': 'message', 'data': {'content': '假回复'}}
+        yield {'event': 'turn_complete', 'data': {'content': '假回复'}}
+        yield {'event': 'done', 'data': {'final': True}}
 
     def _silent_stream(**kw):
         """内层没发 done 就结束了 —— agent 的错误路径就是这么 return 的。"""
@@ -154,29 +175,56 @@ def run() -> None:
                   for e, d in ev if e == 'stage_done'),
               f'{[d for e, d in ev if e == "stage_done"]}')
 
-        # ── 4. 内层报错：中止而非带病续跑 ──────────────────────────
-        print('\n[4] 内层报错：立刻中止，不把垃圾摘要传给下一阶段')
+        # ── 4. 内层明确报错：跳过失败阶段，继续跑剩下的 ─────────────
+        # 与 [5] 的关键区别：报错时该阶段**不进** prior_summaries 的结论位，下游拿到
+        # 的是「这一环缺了」而不是半截摘要 —— 所以继续跑是安全的，且能保住后面几段。
+        print('\n[4] 内层报错：跳过失败阶段，继续跑后续阶段')
         calls.clear()
-        agent.process_chat_streaming = _boom_stream
+        agent.process_chat_streaming = _boom_on_target
         ev = _events(query='EGFR', stage_ids=['target', 'design', 'safety'], api_key='sk-test')
         names = [e for e, _ in ev]
         sd = [d for e, d in ev if e == 'stage_done']
 
         check('出错的阶段 stage_done 标 error 并带上原因',
-              len(sd) == 1 and sd[0]['status'] == 'error' and '502' in sd[0]['error'], f'{sd}')
-        check('出错的阶段仍有 stage_start（前端进度条不会卡在上一段）',
-              names.count('stage_start') == 1, f'{names}')
-        check('内层出错 → 后续阶段不再执行', len(calls) == 1, f'{len(calls)} 次')
+              bool(sd) and sd[0]['status'] == 'error' and '502' in sd[0]['error'], f'{sd}')
+        # 前三段都开了头 —— 前端进度条不会缺格（applyStageEvent 按 stage_id 定位）
+        check('三个阶段都发了 stage_start',
+              names.count('stage_start') == 3, f'{names}')
+        check('内层出错 → 后续阶段继续执行', len(calls) == 3, f'{len(calls)} 次')
         check('内层出错 → error 事件如实外发（不吞掉）', 'error' in names, f'{names}')
-        check('内层出错 → 末尾 done 标 aborted',
-              ev[-1][1]['aborted'] is True and ev[-1][1]['stages_run'] == 0, f'{ev[-1][1]}')
+
+        # 关键：下一阶段的 prompt 里必须**显式**说明上一环没产出。
+        # 否则它与「用户压根没勾这一段」无法区分，模型会交出一份读起来很完整的报告。
+        second_msg = calls[1]['messages'][0]['content']
+        check('下一阶段的消息里显式标注上一阶段未完成',
+              '未完成' in second_msg and '靶点与机制发现' in second_msg,
+              f'含「未完成」={"未完成" in second_msg}，'
+              f'含失败阶段名={"靶点与机制发现" in second_msg}')
+        # 半截叙事绝不能被当作结论 —— 这是「继续跑」这个决定成立的前提
+        check('失败阶段的半截内容没有被当成结论混进去',
+              '半截话' not in second_msg,
+              f'含半截内容={"半截话" in second_msg}')
+        check('失败阶段在前序结论里只占那一格（没有额外塞内容）',
+              second_msg.count('### ') == 1,
+              f'「### 小节」出现 {second_msg.count("### ")} 次，应为 1（只有失败标记）')
+
+        # 再下一段要同时看到两样：上上段的失败标记（跨阶段继续传）+ 上一段的真结论
+        third_msg = calls[2]['messages'][0]['content']
+        check('失败标记跨阶段继续往下传', '未完成' in third_msg,
+              f'含「未完成」={"未完成" in third_msg}')
+        check('成功阶段的结论照常往下传', '假回复' in third_msg,
+              f'含上一段结论={"假回复" in third_msg}')
+
+        check('done 记下失败阶段、不标 aborted（流水线跑到了头）',
+              ev[-1][1]['aborted'] is False and ev[-1][1]['failed'] == ['target']
+              and ev[-1][1]['stages_run'] == 2, f'{ev[-1][1]}')
         check('内层出错 → 仍然以 done 收尾（前端有确定的结束信号）',
               names[-1] == 'done', f'{names}')
 
-        # ── 5. 内层没发 done 就结束：同样按失败处理 ────────────────
-        # agent 的错误路径是 `return` 而非 yield error，所以「没有 done」是唯一的信号。
-        # 不当失败处理的话，这一阶段会带着空摘要进入下一阶段。
-        print('\n[5] 内层静默结束（没有 done）：按失败处理')
+        # ── 5. 内层没发 done 就结束：必须中止 ──────────────────────
+        # 与 [4] 相反：这里不知道内层为什么停的，final_text 可能只是半截叙事，
+        # 当成结论往下传会把垃圾一路带下去。所以这一段维持中止。
+        print('\n[5] 内层静默结束（没有 done）：中止')
         calls.clear()
         agent.process_chat_streaming = _silent_stream
         ev = _events(query='EGFR', stage_ids=['target', 'safety'], api_key='sk-test')
@@ -187,7 +235,8 @@ def run() -> None:
         check('没有 done → 错误信息说明是内层没结束',
               bool(sd) and 'done' in sd[0].get('error', ''), f'{sd[0].get("error") if sd else None}')
         check('没有 done → 后续阶段不再执行', len(calls) == 1, f'{len(calls)} 次')
-        check('没有 done → 末尾 done 标 aborted', ev[-1][1]['aborted'] is True, f'{ev[-1][1]}')
+        check('没有 done → 末尾 done 标 aborted 并记下失败阶段',
+              ev[-1][1]['aborted'] is True and ev[-1][1]['failed'] == ['target'], f'{ev[-1][1]}')
 
         # ── 6. 单阶段也要有完整的一对事件 ─────────────────────────
         print('\n[6] 单阶段')

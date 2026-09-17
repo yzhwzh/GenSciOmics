@@ -298,6 +298,13 @@ def process_chat_streaming(
         try:
             for chunk in _stream_sse(working_messages, iter_tools, api_key, model, base_url, temperature, api_type):
                 if 'error' in chunk:
+                    # 失败也要留痕。2026-09-15 那次流水线中止，事后能定位到「第 3 阶段
+                    # 挂了」的唯一依据是 monitor.db 里**没有**它的行 —— 错误文本、耗时、
+                    # 已经跑了几个工具，现场全无。这两处 return 原先都绕过了 log_request。
+                    log_request(session_id, query=user_msg, intent="unknown",
+                                tool_calls=len(all_tool_results), iterations=iteration,
+                                latency_ms=(time.time() - _start_time) * 1000,
+                                status='error', error=str(chunk['error']))
                     yield {'event': 'error', 'data': {'error': chunk['error']}}; return
                 choices = chunk.get('choices')
                 if not choices:
@@ -316,6 +323,10 @@ def process_chat_streaming(
                         if td.get('function', {}).get('name'): e['function']['name'] += td['function']['name']
                         if td.get('function', {}).get('arguments'): e['function']['arguments'] += td['function']['arguments']
         except Exception as e:
+            log_request(session_id, query=user_msg, intent="unknown",
+                        tool_calls=len(all_tool_results), iterations=iteration,
+                        latency_ms=(time.time() - _start_time) * 1000,
+                        status='error', error=f'API error: {str(e)[:200]}')
             yield {'event': 'error', 'data': {'error': f'API error: {str(e)[:200]}'}}; return
 
         yield {'event': 'turn_complete', 'data': {'content': collected_content}}

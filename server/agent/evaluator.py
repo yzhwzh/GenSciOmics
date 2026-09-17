@@ -139,22 +139,31 @@ class Monitor:
             total_latency_ms REAL DEFAULT 0,
             plan_used INTEGER DEFAULT 0,
             evaluator_used INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'ok')''')
+            status TEXT DEFAULT 'ok',
+            error TEXT DEFAULT '')''')
+        # CREATE TABLE IF NOT EXISTS 对**已存在**的表是空操作，不会补列。库里那张
+        # sessions 表建于 error 列存在之前，所以必须显式 ALTER 一次（幂等，靠
+        # PRAGMA 守：列已在就跳过）。
+        cols = {r[1] for r in conn.execute('PRAGMA table_info(sessions)')}
+        if 'error' not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN error TEXT DEFAULT ''")
         conn.commit()
         conn.close()
 
     def log_session(self, session_id: str, query: str = '', intent: str = '',
                     tool_calls: int = 0, iterations: int = 0,
                     latency_ms: float = 0.0, plan_used: bool = False,
-                    evaluator_used: bool = False, status: str = 'ok') -> None:
+                    evaluator_used: bool = False, status: str = 'ok',
+                    error: str = '') -> None:
         self._conn.execute(
             '''INSERT INTO sessions
                (session_id, timestamp, query, intent, tool_calls, iterations,
-                total_latency_ms, plan_used, evaluator_used, status)
-               VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                total_latency_ms, plan_used, evaluator_used, status, error)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
             (session_id, datetime.now().isoformat(), query[:200] if query else '',
              intent or '', tool_calls, iterations, round(latency_ms, 1),
-             1 if plan_used else 0, 1 if evaluator_used else 0, status))
+             1 if plan_used else 0, 1 if evaluator_used else 0, status,
+             (error or '')[:500]))
         self._conn.commit()
 
 
@@ -172,13 +181,13 @@ def get_monitor() -> Monitor:
 def log_request(session_id: str, query: str = '', intent: str = '',
                 tool_calls: int = 0, iterations: int = 0,
                 latency_ms: float = 0.0, plan_used: bool = False,
-                status: str = 'ok') -> None:
+                status: str = 'ok', error: str = '') -> None:
     """Shorthand for logging a request."""
     try:
         m = get_monitor()
         m.log_session(session_id, query=query, intent=intent,
                       tool_calls=tool_calls, iterations=iterations,
                       latency_ms=latency_ms, plan_used=plan_used,
-                      status=status)
+                      status=status, error=error)
     except Exception as e:
         print(f'[monitor] Log error: {e}')

@@ -105,15 +105,59 @@ def _build_anthropic_request(messages, tools, model, api_key, base_url, temperat
     return url, body, headers
 
 
+# ── 重试判定 ────────────────────────────────────────────────────
+# 2026-09-15：EGFR 流水线第 3 阶段撞上 LLM 网关的 120s 首字节超时，**一次都没重试**
+# 就报了错、并因此终止了整条流水线（后续 3 个阶段一个没跑）。
+#
+# 两个分支漏的是同一个故障：
+#   - `_URLErr` 分支原先只认 `code in (502, 503, 504)`，而连接/首字节超时被 urllib
+#     包成**没有 code** 的 URLError（str = `<urlopen error timed out>`）；
+#   - 下面 `except Exception` 分支的字符串匹配写的是 'timeout'，但真实文本是
+#     **'timed out'**（带空格）—— 前者不是后者的子串。
+#
+# 于是把判定收成两个函数，两处共用，避免再各写一套。
+_RETRYABLE_STATUS = frozenset({408, 425, 429})   # 4xx 里仅这三个是瞬时的
+_TRANSIENT_HINTS = (
+    'timed out', 'timeout', 'connection reset', 'connection refused',
+    'connection aborted', 'remote end closed', 'temporarily unavailable', 'eof',
+)
+
+
+def _is_retryable(code: int) -> bool:
+    """这次失败值不值得重试。
+
+    - 有 HTTP code：5xx 与 408/425/429 才重试。其余 4xx 是客户端问题
+      （key 写错、模型名不对），重试只会白等几秒再报同一个错。
+    - 没有 HTTP code：说明请求根本没走到服务端（超时 / DNS / 连接被拒 / TLS），
+      一律按瞬时故障处理 —— 这正是 2026-09-15 那次的形态。
+    """
+    if code:
+        return code >= 500 or code in _RETRYABLE_STATUS
+    return True
+
+
+def _is_transient_text(err_str: str) -> bool:
+    """非 HTTP 异常（socket / SSL / 解码层）的瞬时判定。"""
+    low = (err_str or '').lower()
+    return any(h in low for h in _TRANSIENT_HINTS)
+
+
 def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type):
     """Unified SSE reader — yields OpenAI-style delta chunks.
 
-    Retries on transient server errors (502/503/504) with exponential backoff.
+    Retries on transient transport failures (connect/read timeout, connection
+    reset, 5xx, 408/425/429) with exponential backoff.
     对齐 Claude Code: _call_llm() 已有相同重试逻辑，streaming 路径补上。
     """
     import time as _time
     max_retries = 2
     retry_delay = 1.0
+
+    # 是否已经向调用方吐过内容。只在**首字节之前**失败才允许重试：调用方是
+    # `collected_content += delta` 累加（agent/__init__.py:307），流中途重试会把
+    # 整段回复从头再接一遍，用户看到重复正文。放宽重试判定后这条更容易踩到，
+    # 所以在这里挡住。
+    emitted = False
 
     for attempt in range(max_retries + 1):
         if api_type == 'anthropic':
@@ -153,9 +197,11 @@ def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type
                         if ev == 'content_block_start':
                             block = data.get('content_block', {})
                             if block.get('type') == 'text':
+                                emitted = True
                                 yield {'choices': [{'delta': {'content': block.get('text', '')}}]}
                             elif block.get('type') == 'tool_use':
                                 idx_val = data.get('index', 0)
+                                emitted = True
                                 yield {'choices': [{'delta': {'tool_calls': [{
                                     'index': idx_val,
                                     'id': block.get('id', ''),
@@ -165,8 +211,10 @@ def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type
                         elif ev == 'content_block_delta':
                             delta = data.get('delta', {})
                             if delta.get('type') == 'text_delta':
+                                emitted = True
                                 yield {'choices': [{'delta': {'content': delta.get('text', '')}}]}
                             elif delta.get('type') == 'input_json_delta':
+                                emitted = True
                                 yield {'choices': [{'delta': {'tool_calls': [{
                                     'index': data.get('index', 0),
                                     'function': {'arguments': delta.get('partial_json', '')},
@@ -178,13 +226,14 @@ def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type
                         if ds == '[DONE]':
                             break
                         try:
+                            emitted = True
                             yield json.loads(ds)
                         except json.JSONDecodeError:
                             continue
             return  # Success — exit retry loop
         except _URLErr as e:
-            code = getattr(e, 'code', 0)
-            if code in (502, 503, 504) and attempt < max_retries:
+            code = getattr(e, 'code', 0) or 0
+            if not emitted and _is_retryable(code) and attempt < max_retries:
                 _time.sleep(retry_delay * (2 ** attempt))
                 continue
             err = ''
@@ -197,8 +246,7 @@ def _stream_sse(messages, tools, api_key, model, base_url, temperature, api_type
             return
         except Exception as e:
             err_str = str(e)[:200]
-            is_transient = any(x in err_str.lower() for x in ('timeout', 'connection reset', 'connection refused', 'eof'))
-            if is_transient and attempt < max_retries:
+            if not emitted and _is_transient_text(err_str) and attempt < max_retries:
                 _time.sleep(retry_delay * (2 ** attempt))
                 continue
             yield {'error': err_str[:300]}
@@ -243,6 +291,17 @@ def _sse(event: str, data) -> dict:
     return {'event': event, 'data': json.dumps(data, ensure_ascii=False, default=str)}
 
 
+# 失败阶段进入下游 prompt 时占的那一格。**必须显式**：只是「不出现」的话，下游
+# 分不清「上一环挂了」和「用户没勾这一段」，会照常交出一份读起来很完整的报告 ——
+# 缺的是数据，不是措辞。drug_stages.py 的 _COMMON_RULES 第 3 条已经要求模型对本阶段
+# 做不到的事直说，这里是同一件事的上游版本。
+_FAILED_STAGE_NOTE = (
+    '【本阶段未完成：{reason}】该阶段没有产出任何结论。'
+    '下游分析不得假设本阶段已执行或已有结果；'
+    '若需要覆盖这一环节，请明确注明「该环节缺失」，不要用其他阶段的结论替代。'
+)
+
+
 def process_drug_pipeline_streaming(query, stage_ids, api_key,
                                     model=DEFAULT_MODEL,
                                     base_url=DEFAULT_BASE_URL,
@@ -281,10 +340,14 @@ def process_drug_pipeline_streaming(query, stage_ids, api_key,
         yield _sse('error', {'error': 'query 不能为空'})
         return
 
-    # [(阶段 label, 该阶段最终回复文本)] —— 只带结论，不带过程
+    # [(阶段 label, 该阶段最终回复文本)] —— 只带结论，不带过程。
+    # 失败的阶段也会往里放一条**显式的未完成标记**（见下方 _FAILED_STAGE_NOTE）：
+    # 不放的话，下游 prompt 与「用户压根没勾这一段」完全无法区分。
     prior_summaries: list[tuple[str, str]] = []
     total = len(stages)
     aborted = False
+    ran_stages: list[str] = []       # 正常结束的阶段
+    failed_stages: list[str] = []    # 报错或静默中断的阶段
 
     for idx, stage in enumerate(stages, start=1):
         yield _sse('stage_start', {
@@ -330,14 +393,38 @@ def process_drug_pipeline_streaming(query, stage_ids, api_key,
 
         elapsed_ms = int((_time.time() - _t0) * 1000)
 
-        # 内层只有在出错或尚未迭代完时才不 emit done。没见到 done 就一定出了事，
-        # 不能当成功继续 —— 会把垃圾摘要喂给下一阶段。
-        if error_msg or not saw_done:
+        # 两种失败分开处置。它们看着像，其实不一样：
+        #
+        #   明确报错 —— 内层干净地说了「我失败了」。这一阶段没有产出，也不会往
+        #     prior_summaries 里放半截叙事，所以**跳过它继续跑是安全的**。后面几段
+        #     各自吃的是靶点（阶段 1）和候选分子（阶段 2），并不依赖本段的结论 ——
+        #     比如 ADMET 挂掉完全不使「机制深化」失效。继续跑能保住用户已等了几十分钟的
+        #     工作；一旦中止，剩下几段一次都跑不到。
+        #
+        #   静默结束 —— 内层没发 done 就断了，不知道它停在哪。此时 final_text 可能只是
+        #     半截叙事，当成结论往下传会把垃圾一路带下去，所以**必须中止**。
+        #
+        # 早期这两种都中止，理由是「不把垃圾摘要传给下一阶段」。那个理由对第二种成立，
+        # 对第一种不成立 —— 见上方注释与 test_drug_pipeline_events.py 的 [4]/[5]。
+        if error_msg:
+            failed_stages.append(stage['id'])
+            prior_summaries.append((
+                stage['label'],
+                _FAILED_STAGE_NOTE.format(reason=error_msg[:200]),
+            ))
+            yield _sse('stage_done', {
+                'stage_id': stage['id'], 'status': 'error',
+                'elapsed_ms': elapsed_ms, 'error': error_msg,
+            })
+            continue
+
+        if not saw_done:
+            failed_stages.append(stage['id'])
             aborted = True
             yield _sse('stage_done', {
                 'stage_id': stage['id'], 'status': 'error',
                 'elapsed_ms': elapsed_ms,
-                'error': error_msg or '阶段未正常结束（内层没有发出 done）',
+                'error': '阶段未正常结束（内层没有发出 done）',
             })
             break
 
@@ -346,13 +433,17 @@ def process_drug_pipeline_streaming(query, stage_ids, api_key,
             'elapsed_ms': elapsed_ms, 'summary_chars': len(final_text),
         })
 
+        ran_stages.append(stage['id'])
         if final_text:
             prior_summaries.append((stage['label'], final_text))
 
+    # aborted 专指「没跑到最后就被打断」（只有静默失败会这样）。跳过某个失败阶段但
+    # 跑完了其余部分，不算中止 —— 那种情况由 failed 字段如实记录。
     yield _sse('done', {
         'final': True,
-        'stages_run': len(prior_summaries),
+        'stages_run': len(ran_stages),
         'stages_selected': total,
+        'failed': failed_stages,
         'aborted': aborted,
     })
 
