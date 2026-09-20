@@ -64,6 +64,99 @@ def _scope_args(name: str, args: dict, mem_root) -> dict:
     return args
 
 
+# ── 「没执行却宣称做完了」的兜底 ────────────────────────────────
+# 模型偶发地整轮不调工具：直接吐一段文字（常常夹着代码块），并在里面声称
+# 「已生成」「已重新生成」。没有 shell 调用就没有任何文件产生，那句话是假的 ——
+# 用户看到的现象就是「只输出代码不执行」。
+#
+# 现场（/tmp/gensci_monitor.db）：2026-09-20 那段 Free Analysis 会话 10 轮里
+# 6 轮 tool_calls=0。按前端的确切消息形状重放该会话复现到原话「图片已重新生成！」
+# 并编造了文件名 venn_Merge5_vs_MMP7_unified.png —— 那一轮一次工具都没调。
+# 同一条提示在空白上下文里重放 5/5 正常调工具，所以这是**上下文诱发的模型行为**，
+# 不是某次回归；兜底只能放在循环里，不能靠改提示词指望它不再发生。
+#
+# 判定只在**整个请求一次工具都没跑过**时生效（见 _needs_execution_nudge）：
+# 正常收尾那一轮同样没有 tool_calls，但那时 all_tool_results 非空，正文里的
+# 「已生成」是实话 —— 拿它当证据会把每一轮正常收尾都判成撒谎。
+#
+# 判据第一版是「枚举中文完成副词」（已生成 / 已完成 / 已保存…），端到端重放时
+# **连续两次漏判**：同一轮故障换了两种措辞，两版正则都匹配不上 ——
+#   「完成了！现在两个散点图的标题格式一致」            （没有「已」字）
+#   「![...](/api/results?file=merge5_coexpression_….png)」（图片链接不是副词）
+# 靠枚举措辞是打地鼠，赢不了。改成按「这段文字指向了一个已经存在的产物」来判 ——
+# 那是可证伪的：本轮一次工具都没跑，被引用的文件不可能存在。
+_RESULT_ARTIFACT_RE = re.compile(
+    r'!\[[^\]]*\]\([^)]*\)'                      # markdown 图片 = 「这就是结果」
+    r'|/api/results\?file='
+    r'|[\w-]{3,}\.(?:png|jpe?g|svg|pdf|csv|tsv|xlsx?|h5ad|zip)\b'
+)
+
+# 完成声明的措辞兜底。**只在整轮零工具调用时才用**（见 _needs_execution_nudge），
+# 所以「正常收尾那一轮说已生成」不会被误判 —— 那时 all_tool_results 非空。
+_UNEXECUTED_CLAIM_RE = re.compile(
+    r'已(?:经)?(?:重新)?(?:生成|执行|运行|保存|绘制|出图|输出|更新|完成|搞定|修改)'
+    r'|(?:图片|图像|图|结果|文件|脚本|代码|标题)(?:已|已经)(?:生成|保存|输出|更新|运行|执行|修改|一致)'
+    r'|重新生成|完成了|搞定(?:了)?|处理完毕|已就绪'
+)
+_FENCE_RE = re.compile(r'```[^\n]*\n(.*?)```', re.S)
+# 只在代码块里找这些才算「贴了一段能跑的脚本」。裸词 'code'/'script' 不算 ——
+# 正文里顺口提一句脚本名是常态。
+_EXEC_HINT_RE = re.compile(
+    r'import\s+[A-Za-z_]|from\s+[A-Za-z_.]+\s+import|def\s+[A-Za-z_]'
+    r'|subprocess|read_h5ad|scanpy|matplotlib|pandas|numpy|plt\.|pd\.'
+)
+
+# 最多纠正几次。模型对纠正的反应不是每次都灵（monitor.db 里用户手打「你没有执行」
+# 之后，模型有时调工具、有时仍然不调），所以给两次而不是一次；但不能无上限 ——
+# 否则一个坚持不调工具的模型会把轮次烧穿。
+_MAX_EXECUTION_NUDGES = 2
+
+_EXECUTION_NUDGE = (
+    '【未执行】你这一轮没有调用任何工具，但回复里指向了已经产生的结果'
+    '（图片 / 图 / 表 / 数值 / 文件名）。没有工具调用就没有任何文件产生，这些都还不存在。\n'
+    '如果你确实要产出结果，现在必须真正调用工具：先 skill("技能名") 取指令，'
+    '再用 shell 执行。不要只贴代码、也不要只描述步骤。\n'
+    '如果你确实不需要任何工具（例如纯知识性回答），**只回复「无需执行」四个字**，'
+    '不要重复上面的内容。'
+)
+
+
+def _execution_nudge_reason(text: str) -> str | None:
+    """这段文字读起来像「已经做完并给出了结果」吗？像的话是凭什么判的。
+
+    返回值决定要不要给用户挂可见提示（见 process_chat_streaming）：
+      'artifact' —— 引用了图片 / 文件名 / /api/results 链接。本轮零工具调用时
+                    那个文件**不可能存在**，是硬事实，挂提示不会冤枉人。
+      'claim'    —— 只有完成声明的措辞。措辞判据可能失手（「……这样就完成了」
+                    这种纯解释也可能命中），所以**不挂提示**，静默补一轮即可。
+      'code'     —— 正文里贴了一段没拿去执行的脚本。
+    """
+    if not text:
+        return None
+    if _RESULT_ARTIFACT_RE.search(text):
+        return 'artifact'
+    if _UNEXECUTED_CLAIM_RE.search(text):
+        return 'claim'
+    if any(_EXEC_HINT_RE.search(block) for block in _FENCE_RE.findall(text)):
+        return 'code'
+    return None
+
+
+def _looks_like_unexecuted_work(text: str) -> bool:
+    """_execution_nudge_reason 的布尔形式。"""
+    return _execution_nudge_reason(text) is not None
+
+
+def _needs_execution_nudge(tool_calls: list, all_tool_results: list,
+                           content: str, nudges: int) -> bool:
+    """要不要因为「没执行就宣称完成」再续跑一轮。"""
+    if tool_calls or all_tool_results:
+        return False          # 工具真的跑过，正文里的「已生成」就是实话
+    if nudges >= _MAX_EXECUTION_NUDGES:
+        return False          # 已经纠正过，不再纠缠
+    return _looks_like_unexecuted_work(content)
+
+
 def process_chat(
     messages: list[dict],
     real_path: str,
@@ -111,6 +204,7 @@ def process_chat(
 
     # 8. Tool-calling loop
     all_tool_results = []
+    nudges = 0          # 「没执行却宣称完成」已纠正次数，见 _needs_execution_nudge
     _start_time = time.time()
     iteration = 0
 
@@ -150,6 +244,12 @@ def process_chat(
         working_messages.append(assistant_msg)
 
         if not tool_calls:
+            if _needs_execution_nudge(tool_calls, all_tool_results, content, nudges):
+                nudges += 1
+                # assistant_msg 上面已经追加进 working_messages 了，这里只补纠正。
+                # 非流式不经过 SSE，正文还没交给调用方，没有「已流出去收不回来」的问题。
+                working_messages.append({'role': 'user', 'content': _EXECUTION_NUDGE})
+                continue
             log_request(session_id, query=user_msg, intent="unknown",
                         tool_calls=len(all_tool_results), iterations=iteration,
                         latency_ms=(time.time() - _start_time) * 1000,
@@ -286,6 +386,7 @@ def process_chat_streaming(
 
     _, api_type = _api_url_proxy(base_url)
     all_tool_results = []
+    nudges = 0          # 「没执行却宣称完成」已纠正次数，见 _needs_execution_nudge
     _start_time = time.time()
 
     for iteration in range(max_iterations):
@@ -333,6 +434,22 @@ def process_chat_streaming(
         tcl = list(collected_tc.values())
 
         if not tcl:
+            if _needs_execution_nudge(tcl, all_tool_results, collected_content, nudges):
+                nudges += 1
+                # 已经流出去的文字收不回来 —— 前端（FreeAnalysisTab.tsx:119-145）
+                # 只认 message / tool_result / error，没有「撤回」事件，message 又是
+                # **追加**到最后一条 assistant 气泡。既然撤不掉，就在同一条气泡里
+                # 紧接着声明它不作数；否则默不作声地补跑，用户先看到「图片已生成！」
+                # 和一个空图框，紧接着才出现真结果，比不说更糟。
+                #
+                # 只在 'artifact' 时挂这句。那时「文件不存在」是硬事实；靠措辞
+                # （'claim'/'code'）判来的可能失手，不能拿一句未必成立的话去指责模型。
+                if _execution_nudge_reason(collected_content) == 'artifact':
+                    yield {'event': 'message', 'data': {'content':
+                        '\n\n⚠️ 上面引用的文件/图片并没有真正产生（本轮未调用任何工具），正在重新执行…\n\n'}}
+                working_messages.append({'role': 'assistant', 'content': collected_content})
+                working_messages.append({'role': 'user', 'content': _EXECUTION_NUDGE})
+                continue
             log_request(session_id, query=user_msg, intent="unknown",
                         tool_calls=len(all_tool_results), iterations=iteration,
                         latency_ms=(time.time() - _start_time) * 1000)
