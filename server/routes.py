@@ -22,7 +22,7 @@ _plot_cache = LRUCache(max_size=500)
 _table_cache = LRUCache(max_size=500)
 from events import log_event, event_log, event_log_lock, MILESTONES, milestones_lock, MILESTONE_FILE
 from search import _search_datasets
-from pubmed import _fetch_abstract
+from pubmed import _fetch_abstract, cached_abstract
 from supplementary import extract_table, is_valid_lookup
 from analysis.umap import _get_umap_data
 from analysis.expression import _get_expression_stats
@@ -83,7 +83,13 @@ def validate_real_path(path_str: str):
         original = Path(path_str)
         allowed = any(original.is_relative_to(d) for d in DATA_DIRS)
         return original if allowed else None
-    except Exception:
+    except Exception as e:
+        # 不吞：以前这里静默 return None，上层只会回一句笼统的 400
+        # "Invalid file path"，于是「路径越界」和「符号链接断了」「路径格式
+        # 不合法」在现场完全无法区分。B35 把同一函数链上另一处 except 打开后，
+        # 直接揪出了 scanner 快路径从未生效——教训是同一个。
+        print(f'[GenSci] validate_real_path failed for {path_str!r}: {type(e).__name__}: {e}',
+              file=sys.stderr)
         return None
 
 
@@ -173,7 +179,9 @@ def handle_log(handler, q):
 
 
 def handle_analysis_info(handler, q):
-    pmid = q.get('pmid', '')
+    # strip 与 /api/abstract 保持一致 —— 否则 '12345 ' 在一边是缓存键、
+    # 在另一边是另一个缓存键，两个端点会各查各的。
+    pmid = q.get('pmid', '').strip()
     real_path_str = q.get('real_path', '')
     real_path = validate_real_path(real_path_str)
     if not real_path or not real_path.is_file():
@@ -182,9 +190,23 @@ def handle_analysis_info(handler, q):
     cache_key = f'ai:{real_path_str}:{pmid}'
     cached = _analysis_info_cache.get(cache_key)
     if cached:
+        # 摘要可能是在这条 _analysis_info_cache 条目**之后**才被抓进来的
+        # （/api/abstract 先跑完了）。每次出栈都跟摘要缓存对一次：
+        # 否则这里会一直对外报 abstract_ready=False，前端每次访问都得再问一遍。
+        ready = cached_abstract(pmid)
+        if ready is not None and cached.get('abstract_ready') is not True:
+            cached = {**cached, 'abstract': ready, 'abstract_ready': True}
+            _analysis_info_cache.set(cache_key, cached)
         handler._json(cached)
         return
-    abstract_info = _fetch_abstract(pmid)
+    # 摘要只读进程内缓存，**绝不在这里发网络**（BUG_LOG B35）。
+    # 这里以前是同步的 _fetch_abstract(pmid)：冷缓存时要经公司代理发 3 次外部
+    # HTTP，实测有一次拖到 125s。前端 apiFetch 60s 就 abort，页面于是显示
+    # "Failed to load info"，而服务端还在那儿等代理。
+    # 现在 stats 立刻返回，摘要由 /api/abstract 另发一次、到了再补。
+    # `abstract_ready` 告诉前端「这次带回来的摘要是不是全的」：
+    # False 不代表失败，只代表要再问一次 /api/abstract。
+    abstract_info = cached_abstract(pmid)
     # Try scanner cache first (fast, no h5ad read)
     stats = None
     try:
@@ -192,7 +214,7 @@ def handle_analysis_info(handler, q):
         if SCANNER_CACHE_FILE.exists():
             sc = json.loads(SCANNER_CACHE_FILE.read_text())
             for k, v in sc.items():
-                if str(real_path) in k or k.endswith(str(real_path).name):
+                if str(real_path) in k or k.endswith(real_path.name):
                     if v.get('pmid') == pmid:
                         stats = {
                             'cells': v.get('n_obs') or 0,
@@ -208,8 +230,10 @@ def handle_analysis_info(handler, q):
                             'group_dist': v.get('group_dist', ''),
                         }
                         break
-    except Exception:
-        pass
+    except Exception as e:
+        # 不吞：scanner 缓存坏了要留痕，否则只是静默退化成读 h5ad，
+        # 现场什么都看不到。（CLAUDE.md 设计决策 #4：No silent error swallowing）
+        print(f'[GenSci] scanner cache lookup failed for {real_path_str}: {e}', file=sys.stderr)
     # Fallback: read h5ad directly (slow, for cold cache)
     if stats is None:
         try:
@@ -238,9 +262,45 @@ def handle_analysis_info(handler, q):
         except Exception as e:
             stats = {'cells': 0, 'genes': 0, 'patient_count': 0, 'sample_count': 0,
                      'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
-    result = {'pmid': pmid, 'abstract': abstract_info, 'stats': stats}
+    result = {'pmid': pmid, 'abstract': abstract_info,
+              'abstract_ready': abstract_info is not None, 'stats': stats}
     _analysis_info_cache.set(cache_key, result)
     handler._json(result)
+
+
+def handle_abstract(handler, q):
+    """按需抓摘要 —— 全项目**唯一**会为摘要发外部请求的端点。
+
+    与 /api/analysis-info 分开，是因为这两件事的时延差了三个数量级：
+    stats 是本地 scanner 缓存（毫秒），摘要要过公司代理发 3 次外部 HTTP
+    （实测 4s ~ 125s）。挤在同一个响应里，慢的那一头会把整个页面拖垮，
+    而这正是 B35 的成因。
+    """
+    # 前导/尾随空白必须先去掉再往下走：pmid 会被拼进 URL 也会当缓存键，
+    # 没 strip 的话 '12345 ' 是一个「合法」但永远查不到的键 —— 一个输入问题
+    # 伪装成网络问题。非数字 ID（PKU/BALF 之类）这里也放行，它们本来就
+    # 查不到摘要，_fetch_abstract 会立刻返回空记录。
+    pmid = q.get('pmid', '').strip()
+    if not pmid:
+        handler._send_error('Missing pmid')
+        return
+    try:
+        _fetch_abstract(pmid)   # 总时限 config.ABSTRACT_DEADLINE_S
+    except Exception as e:
+        # 外部抓取失败不该是 500 —— 页面其余部分（stats）是好的，
+        # 摘要退化成「暂时取不到」，且这里必须留痕。
+        print(f'[GenSci] abstract fetch failed for {pmid}: {e}', file=sys.stderr)
+        handler._json({'pmid': pmid, 'abstract': cached_abstract(pmid), 'abstract_ready': False})
+        return
+    # abstract_ready 的判据**只有这一个**：记录在不在摘要缓存里。
+    # _fetch_abstract 只在记录完整时才写缓存（B26 + 预算跳过），所以
+    # 「在缓存里」== 「服务器认为这就是最终答案了，别再问了」。
+    # 以前这里另算一遍 `bool(title or abstract or pmcid)`，与
+    # /api/analysis-info 的 `cached_abstract(pmid) is not None` 是两个不同的
+    # 定义：全文因预算被跳过时，一个说 ready、另一个说 not ready，
+    # 前端于是拿着 ready=true 永远不再重取，Methods 与补充材料清单永久缺失。
+    ready_info = cached_abstract(pmid)
+    handler._json({'pmid': pmid, 'abstract': ready_info, 'abstract_ready': ready_info is not None})
 
 
 def handle_umap_data(handler, q):
@@ -1001,6 +1061,7 @@ ROUTES = {
     ('GET', '/api/stats'): handle_stats,
     ('GET', '/api/log'): handle_log,
     ('GET', '/api/analysis-info'): handle_analysis_info,
+    ('GET', '/api/abstract'): handle_abstract,
     ('GET', '/api/umap-data'): handle_umap_data,
     ('GET', '/api/search-genes'): handle_search_genes,
     ('GET', '/api/expression-stats'): handle_expression_stats,

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AnalysisPage from './AnalysisPage'
 import { findDataset } from '../api/datasets'
-import { fetchAnalysisInfo, fetchUmapData } from '../api/analysis'
+import { fetchAnalysisInfo, fetchAbstract, fetchUmapData } from '../api/analysis'
 
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ tissue: 'kidney', disease: 'IgAN', pmid: '33936064' }),
@@ -12,6 +12,7 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../api/datasets', () => ({ findDataset: vi.fn() }))
 vi.mock('../api/analysis', () => ({
   fetchAnalysisInfo: vi.fn(),
+  fetchAbstract: vi.fn(),
   fetchUmapData: vi.fn(),
 }))
 // The five tab bodies pull in ECharts, the LLM panel and the whole container
@@ -27,6 +28,7 @@ vi.mock('../components/analysis', () => ({
 
 const findDatasetMock = vi.mocked(findDataset)
 const fetchAnalysisInfoMock = vi.mocked(fetchAnalysisInfo)
+const fetchAbstractMock = vi.mocked(fetchAbstract)
 const fetchUmapDataMock = vi.mocked(fetchUmapData)
 
 const ds = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -56,6 +58,9 @@ describe('AnalysisPage — a failed read must not open the analysis', () => {
   beforeEach(() => {
     findDatasetMock.mockReset()
     fetchAnalysisInfoMock.mockReset().mockResolvedValue({} as never)
+    // `{}` 意味着 abstract_ready 是 undefined，页面据此判定摘要还要再取一次 ——
+    // 所以这里必须给 fetchAbstract 一个 resolved 值，否则页面会调到未 mock 的路径。
+    fetchAbstractMock.mockReset().mockResolvedValue({ pmid: '33936064', abstract: null, abstract_ready: false })
     fetchUmapDataMock.mockReset().mockResolvedValue({} as never)
   })
 
@@ -124,5 +129,87 @@ describe('AnalysisPage — a failed read must not open the analysis', () => {
     )
     expect(screen.queryByText(READ_FAILED_RE)).toBeNull()
     expect(await screen.findByRole('button', { name: /study info/i })).toBeTruthy()
+  })
+})
+
+// The error screen is the failure mode B35 reported: a slow abstract dragged the
+// whole /api/analysis-info response past apiFetch's 60s abort, so the user got
+// "Failed to load info / Go Back" for a dataset whose stats were available in
+// milliseconds. The abstract is now a separate request that cannot blank the page.
+const ABORTED_RE = /failed to load info/i
+
+describe('AnalysisPage — the abstract must not be able to blank the page', () => {
+  beforeEach(() => {
+    findDatasetMock.mockReset().mockResolvedValue(ds() as never)
+    fetchAnalysisInfoMock.mockReset().mockResolvedValue({
+      pmid: '33936064', abstract: null, abstract_ready: false,
+    } as never)
+    fetchAbstractMock.mockReset()
+    fetchUmapDataMock.mockReset().mockResolvedValue({} as never)
+  })
+
+  it('renders the analysis while the abstract is still in flight', async () => {
+    // Never settles — stands in for the 4s~125s the real fetch takes.
+    fetchAbstractMock.mockReturnValue(new Promise(() => {}))
+
+    render(<AnalysisPage />)
+
+    expect(await screen.findByRole('button', { name: /study info/i })).toBeTruthy()
+    expect(screen.queryByText(ABORTED_RE)).toBeNull()
+    // 'Go Back' only exists on the error screen; 'Back' in the top bar does not match.
+    expect(screen.queryByRole('button', { name: /go back/i })).toBeNull()
+  })
+
+  it('keeps the analysis open when the abstract fetch rejects', async () => {
+    fetchAbstractMock.mockRejectedValue(new Error('timed out'))
+
+    render(<AnalysisPage />)
+
+    expect(await screen.findByRole('button', { name: /study info/i })).toBeTruthy()
+    expect(screen.queryByText(ABORTED_RE)).toBeNull()
+  })
+
+  // The two tests above only assert "tab rendered, no error screen" — delete the
+  // whole second effect and they still pass. This one pins the feature: the
+  // request actually goes out, for the right pmid.
+  it('actually asks for the abstract, for the dataset being viewed', async () => {
+    fetchAbstractMock.mockResolvedValue({
+      pmid: '33936064', abstract: null, abstract_ready: true,
+    })
+
+    render(<AnalysisPage />)
+
+    await waitFor(() => expect(fetchAbstractMock).toHaveBeenCalledWith('33936064'))
+  })
+
+  // Pins the no-loop property. The effect's deps are primitives derived from
+  // `info`, so writing `abstract_ready: false` over `false` is a no-op for
+  // Object.is and the effect settles after one extra request. Add `info` (or
+  // anything object-valued derived from it) to the dep array and this becomes
+  // an infinite loop — nothing else in the suite would catch that.
+  it('does not re-request in a loop when the server still reports not-ready', async () => {
+    fetchAbstractMock.mockResolvedValue({
+      pmid: '33936064', abstract: null, abstract_ready: false,
+    })
+
+    render(<AnalysisPage />)
+
+    await screen.findByRole('button', { name: /study info/i })
+    await waitFor(() => expect(fetchAbstractMock).toHaveBeenCalled())
+    // Let any would-be follow-up effect run before counting.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(fetchAbstractMock).toHaveBeenCalledTimes(1)
+  })
+
+  // The stats request is what the page cannot do without, so it must still be
+  // the one that owns the error screen — otherwise the tests above would also
+  // pass if the page had stopped reporting failures altogether.
+  it('still shows the error screen when the stats request itself fails', async () => {
+    fetchAnalysisInfoMock.mockRejectedValue(new Error('boom'))
+
+    render(<AnalysisPage />)
+
+    await screen.findByText(ABORTED_RE)
+    expect(screen.queryByRole('button', { name: /study info/i })).toBeNull()
   })
 })

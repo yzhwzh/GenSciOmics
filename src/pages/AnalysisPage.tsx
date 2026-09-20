@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, FileText, ScatterChart, Box, BarChart3, Brain } from 'lucide-react'
 import { findDataset } from '../api/datasets'
-import { fetchAnalysisInfo, fetchUmapData } from '../api/analysis'
+import { fetchAnalysisInfo, fetchAbstract, fetchUmapData } from '../api/analysis'
 import {
   InfoPanel,
   UmapTabContent,
@@ -35,6 +35,13 @@ export default function AnalysisPage() {
   const [attempt, setAttempt] = useState(0)
   const [info, setInfo] = useState<AnalysisInfo | null>(null)
   const [infoLoading, setInfoLoading] = useState(true)
+  // 与 infoLoading 分开：stats 先到就先渲染，摘要那一块自己转自己的圈。
+  // 摘要这次取败了。注意**没有** abstractLoading 状态：转圈与否由数据推导
+  // （见 InfoPanel），effect 里 set 的标志在 effect 跑起来之前仍是 false，
+  // 会让每一轮冷加载先闪一帧「Abstract not available」。
+  const [abstractError, setAbstractError] = useState(false)
+  const [abstractNonce, setAbstractNonce] = useState(0)
+  const retryAbstract = useCallback(() => setAbstractNonce((n) => n + 1), [])
   const [umapData, setUmapData] = useState<UmapData | null>(null)
   const [umapLoading, setUmapLoading] = useState(false)
 
@@ -118,6 +125,40 @@ export default function AnalysisPage() {
     return () => { cancelled = true }
   }, [realPath, pmid])
 
+  // 摘要分两段取：/api/analysis-info 只带服务端**已经缓存**的那份，冷缓存时
+  // 它给的是 abstract_ready=false + abstract=null，这里再补一次。
+  //
+  // 为什么必须拆开（BUG_LOG B35）：摘要要经公司代理发外部 HTTP，实测 4s~125s，
+  // 而 stats 是本地缓存、毫秒级。两者同在一个响应里时，摘要会把整页拖过
+  // apiFetch 的 60s 超时，用户看到 "Failed to load info" —— 连本来已经拿到的
+  // stats 都一起丢了。
+  //
+  // 失败**只降级到摘要那一块**：stats 那时已经渲染在屏幕上，不能因为摘要取不到
+  // 就把整页切成错误屏。摘要有 20s 的服务端总时限兜底，所以这里也不会久等。
+  //
+  // 失败必须「说得出失败」并且**能重试**。以前这里是个空 .catch：取不到就
+  // 等同「Abstract not available」，而且 needsAbstract 的依赖没变化、effect
+  // 不会重跑，用户只能刷新整页 —— 而服务端本来就是按「下次请求重试」设计的
+  // （pubmed.py 失败不写缓存）。前端把这个重试机会整个丢掉了。
+  const needsAbstract = info != null && info.abstract_ready !== true
+  useEffect(() => {
+    if (!realPath || !pmid || !needsAbstract) return
+    let cancelled = false
+    setAbstractError(false)
+    fetchAbstract(pmid)
+      .then((res) => {
+        if (cancelled) return
+        setInfo((prev) => (prev ? { ...prev, abstract: res.abstract, abstract_ready: res.abstract_ready } : prev))
+        // abstract_ready=false 表示服务端还没拿到「最终答案」（它不缓存残缺记录），
+        // 不等于「这篇没有摘要」，所以按可重试处理。
+        setAbstractError(res.abstract_ready !== true)
+      })
+      .catch(() => {
+        if (!cancelled) setAbstractError(true)
+      })
+    return () => { cancelled = true }
+  }, [realPath, pmid, needsAbstract, abstractNonce])
+
   const fetchUmap = useCallback(() => {
     if (!realPath) return
     setUmapLoading(true)
@@ -189,7 +230,15 @@ export default function AnalysisPage() {
         {activeTab === 0 && (
           <div className="h-full flex-col bg-surface rounded-xl m-3 shadow-card overflow-hidden flex">
             <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-4 pt-2.5 pb-0 shrink-0">Study Info</div>
-            <div className="flex-1 min-h-0"><InfoPanel info={info} loading={infoLoading} isBulk={isTabular} /></div>
+            <div className="flex-1 min-h-0">
+              <InfoPanel
+                info={info}
+                loading={infoLoading}
+                abstractError={abstractError}
+                onRetryAbstract={retryAbstract}
+                isBulk={isTabular}
+              />
+            </div>
           </div>
         )}
         {isTabular && activeTab === 1 && (

@@ -119,8 +119,30 @@ export interface AnalysisStats {
 
 export interface AnalysisInfo {
   pmid: string
-  abstract: AbstractInfo
+  /**
+   * 摘要。**可能为 null**。
+   *
+   * 摘要是这个页面上唯一要经公司代理发外部 HTTP 的字段，冷缓存时实测 4s~125s
+   * （BUG_LOG B35），而 stats 走本地 scanner 缓存只要毫秒级。两者挤在同一个
+   * 响应里时，慢的那一头会把整个「点进数据集」页面拖垮。
+   * 所以 /api/analysis-info 只带回进程内**已经缓存**的摘要，没有就给 null，
+   * 由 fetchAbstract 另发一次请求补上。
+   */
+  abstract: AbstractInfo | null
+  /**
+   * 服务端是否已拿到完整摘要。false 不代表失败，只代表还该问一次
+   * /api/abstract。可选的理由与 PlotResult.gene_resolved 相同：
+   * 字段出现之前产生的响应仍然合法。
+   */
+  abstract_ready?: boolean
   stats: AnalysisStats
+}
+
+/** GET /api/abstract 的响应 —— 按需抓取的摘要。 */
+export interface AbstractResponse {
+  pmid: string
+  abstract: AbstractInfo | null
+  abstract_ready: boolean
 }
 
 export interface BulkDeRow {

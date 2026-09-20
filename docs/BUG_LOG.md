@@ -1362,4 +1362,269 @@ BoxPlot tab 输入 `CD3` → 正确出现 `No gene named "CD3" in this dataset`�
 
 ---
 
-*后续新缺陷按 B35、B36... 追加。*
+## B35. 摘要把整个「点进数据集」页面拖垮；顺带查出 scanner 快路径从未生效 (2026-09-20)
+
+### 现象
+
+用户原话：
+
+> 为什么32832599 这个数据，点进去 Failed to load info / Go Back
+
+点进 `32832599.IPF.h5ad` 的分析页，等一段时间后整页变成错误屏 —— 只有一句 `Failed to load info` 和一个 `Go Back`。**stats（细胞数/基因数/样本数）本来早就拿到了，也一起丢了。**
+
+### 根因
+
+#### 1. 主因：`/api/analysis-info` 同步调外部抓取，且这次抓取**没有总时限**
+
+`handle_analysis_info`（`routes.py:187`）在冷缓存时同步执行 `pubmed._fetch_abstract(pmid)`，后者要经公司代理发 **3 次**外部 HTTP（EuropePMC ×2 + NCBI PMC 全文 ×1）。旧代码的超时是**写死的单次 socket 超时**：
+
+```
+_proxy_opener.open(req, timeout=8)    # EuropePMC 第 1 个候选 URL
+_proxy_opener.open(req, timeout=8)    # EuropePMC 第 2 个候选 URL
+_proxy_opener.open(req, timeout=10)   # PMC 全文 XML
+```
+
+`urllib` 的 `timeout` 是**单个 socket** 的超时，不是整次请求的墙钟上限。代理「连得上、但很慢」时它会一直慢慢吐数据，每次调用都能把 8 秒用满 —— `8+8+10` 只是理论下界，不是上界。
+
+在一个**全新进程**上做冷启动实测（多数据集样本）：
+
+```
+124.83s  40112801.Blood.AIDA.h5ad
+ 67.99s  38548990.ILD.h5ad
+ 29.01s  39438660.IBD.h5ad
+  4.09s  32832599.IPF.h5ad      ← 用户报的那条；在已退化的旧进程上是 104s
+```
+
+前端 `apiFetch` 的默认 `timeoutMs = 60_000`（`src/api/client.ts:4`）到点 abort → `.catch` 把 `setError('Failed to load info')`（`AnalysisPage.tsx:116`）。服务器 100 秒后才 `_json(result)`，对端早已断开 → `BrokenPipeError`（`routes.py:243` → `handler.py:82`）。
+
+**单看这三条时间不足以定罪。** 当时我用「响应快到不可能是读了 h5ad」把「读数据慢」这条排除了 —— 见下面第 2 条，这个理由其实是错的。
+
+#### 2. 并存的第二个缺陷：scanner 快路径**从来没生效过**
+
+`routes.py:209`：
+
+```python
+if str(real_path) in k or k.endswith(str(real_path).name):   # ← 对**字符串**取 .name
+```
+
+`str(real_path).name` 在字符串上取 `.name` → `AttributeError`。而外层是：
+
+```python
+    except Exception:
+        pass          # ← 一个字都不留
+```
+
+于是：**遍历到任何一个不匹配的 key 都会抛异常，直接跳到 `except`**，`stats` 保持 `None`，然后走「读整个 h5ad」的兜底分支。线上 104 个数据集，正确的 key 前面永远排着别人，所以这条为「不读 h5ad」而写的快路径**一次都没有命中过**。
+
+`Path.resolve()` 会跟随符号链接，所以 `real_path.name` 一度被怀疑是链接目标名 —— **不是**：`validate_real_path` 显式返回**未解析的原始 Path**（`routes.py:69-87`，注释写明「Checks the original path (not resolved symlink target)」），所以 `real_path.name == '32832599.IPF.h5ad'`，与 scanner 缓存的 key 逐字吻合。
+
+这条缺陷是在**修主因的过程中**被发现的：把 `except: pass` 换成 `print(..., file=sys.stderr)` 之后，第一行日志就是
+
+```
+[GenSci] scanner cache lookup failed for .../32832599.IPF.h5ad: 'str' object has no attribute 'name'
+```
+
+修好之后，同样三个数据集的 `/api/analysis-info`：**6.21s → 0.01s、1.65s → 0.01s、1.02s → 0.01s**，且 `cells` 逐一与读 h5ad 得到的值相同（243472 / 450465 / 1265624），说明快慢两条路径结果一致。
+
+#### 3. 前端：慢的那个字段把快的那些一起拖下水
+
+`abstract` 和 `stats` 挤在同一个响应里。stats 走本地 scanner 缓存是**毫秒级**，abstract 要过代理是**秒到分钟级** —— 合并成一个响应，等于让最快的数据陪最慢的数据一起等，且超时后**两者全丢**。这不是「摘要显示不出来」的小问题，是**页面根本打不开**。
+
+### 修复
+
+**拆端点**：`/api/analysis-info` 变成纯本地（只读进程内已缓存的摘要），摘要由新端点 `/api/abstract` 按需抓。
+
+- **`server/config.py`** 新增 `ABSTRACT_DEADLINE_S = 20` —— 整次抓取的墙钟上限。
+- **`server/pubmed.py`**
+  - `_fetch_abstract(pmid, deadline_s=None)`：`time.monotonic()` 起算，每个 `open()` 拿到的是 `min(剩余预算, 单次上限)`；**预算耗尽就不再发下一个请求**。两处新增常量 `_PER_CALL_TIMEOUT_S = 8` / `_PMC_TIMEOUT_S = 10` 现在只决定「别让一次调用占满全部预算」，不再是整次请求的上界。
+    > ⚠️ **这句在写下的当天就被证伪了** —— 它只对「请求之间」成立，对「一次请求内部」不成立。见下方「补记」。真正的上限由 `_read_bounded()` 提供。
+  - 新增 `cached_abstract(pmid)`：**只读**缓存，绝不发网络，给 `/api/analysis-info` 用。
+  - 缓存策略补上第七条不写路径：`incomplete = (pmc_error and not info['methods']) or pmc_skipped`。B26 的「失败不缓存」原样保留（`pmc_error` 那半条逐字未动），新增的是 `pmc_skipped` —— 预算在 EuropePMC 阶段就烧光时，PMC 全文压根没发出去，这份记录是**残缺**的。若缓存它，前端拿到 `abstract_ready=true` 就再也不会重取，methods 与补充材料清单**永久缺失** —— 正是 B26 那个坑的另一种走法。
+  - `except Exception: continue`（EuropePMC 候选循环）→ 记 `type(e).__name__` 与 URL 后 continue。原先这个失败在日志里**一个字都没有**，上层只看到一个空记录，分不清「查无此文」和「网络挂了」。
+- **`server/routes.py`**
+  - `handle_analysis_info` 去掉网络调用，响应新增 `abstract_ready: bool`。
+  - 缓存出栈时与摘要缓存对一次：`ready = cached_abstract(pmid)`，拿到了就把 `{**cached, 'abstract': ready, 'abstract_ready': True}` 写回。不加这一步的话 `_analysis_info_cache` 会把 `abstract_ready=false` **钉死到进程结束**，前端每次访问都白跑一次 `/api/abstract`。（**这一条是测试逼出来的** —— 见下面「验证」第 1 点。）
+  - 新增 `handle_abstract` + `('GET', '/api/abstract')` 路由。抓取失败返回 **200 + `abstract_ready: false`**，不是 500：页面其余部分（stats）是好的，摘要是可降级的补充，5xx 会诱导前端把它当成整页失败。
+  - `except Exception: pass` → 记日志。**就是这一条让上面第 2 个缺陷现形。**
+  - `k.endswith(str(real_path).name)` → `k.endswith(real_path.name)`。
+- **前端**
+  - `AnalysisPage.tsx` 第二个 effect：`needsAbstract = info != null && info.abstract_ready !== true`，命中就单独 `fetchAbstract(pmid)`，回来后用不可变合并写进 `info`；**`.catch` 是空的** —— 摘要失败不许碰页面级 `error`。
+  - `fetchAbstract` 用 `apiFetch(url, undefined, 30_000)`，不共用 60s 默认值。后端硬上限 20s，留一倍余量；沿用 60s 等于把「超时给得太宽」这个成因留在原地。
+  - `AbstractInfo | null`（`abstract` 由非空变可空）+ 新增 `AbstractResponse`；`InfoPanel` 全部解引用加守卫，并区分**「还在取」**（转圈）与**「取回来是空的」**（`Abstract not available`）—— 只判空的话，取摘要那几百毫秒里会有一瞬间在谎称「这篇没有摘要」。
+
+### 验证
+
+1. **TDD 顺序**：先 RED 后 GREEN。RED 是 `TypeError: _fetch_abstract() got an unexpected keyword argument 'deadline_s'`（退出码 1）。新增 `server/tests/test_analysis_info_nonblocking.py`，**15 条断言全过**，全程 monkeypatch、不发真实网络请求。
+   GREEN 之后仍有 **2 条 FAIL**，暴露的是初版方案的真实缺陷：`_analysis_info_cache` 把 `abstract_ready: false` 钉死了（就是我一开始想「YAGNI 跳过」的那个刷新分支）。测试是对的，加上了。
+2. **新测试里真正抓得住 bug 的一条是后来补的**：`[3]` 的假 scanner 缓存**只有一个 key，而它恰好就是被查的那个** —— `str(real_path) in k` 一短路，`k.endswith(...)` 根本不求值，于是它**在改前就是 PASS 的**，完全掩盖了第 2 个缺陷。补了 `[3b]`：把不匹配的条目**排在最前**，复现线上真实形态。**变异验证**：`sed` 改回 `str(real_path).name` → 该条 FAIL（`实际 0`，即退化到读空 h5ad 的兜底返回）；改回 → PASS。
+3. **前端**：`npx vitest run` **152 passed (16 files)**（本轮前 149，新增 3）；`npx tsc --noEmit` 干净；`npm run lint` 干净。
+   新增的 3 条在 `AnalysisPage.test.tsx`：摘要**永不 resolve** 时页面照常打开、摘要 **reject** 时页面照常打开、以及**正对照** —— stats 自己失败时**必须**出错误屏（没有这条，前两条在「页面干脆不再报错」的实现下也会通过）。
+   同时补了 `vi.mock('../api/analysis')` 缺的 `fetchAbstract`：Vitest 的模块 mock 是全量替换，页面新调用的函数不在 mock 里会直接抛错（实测 `Test Files 1 failed`）。
+4. **既有后端自包含脚本不回归**：14 个脚本全 PASS（`test_supplementary_parse`、`test_coexpression_table`、`test_drug_stages`、`test_drug_pipeline_events`、`test_handler_post_routes`、`test_results_dir`、`test_pipeline_resilience` 等）。
+5. **HTTP 端到端**（重启后端后实测，三个数据集）：
+   ```
+                      /api/analysis-info      /api/abstract     再次 analysis-info
+   32832599.IPF          0.01s (原 104s/4.09s)     3.40s        0.00s, ready=True
+   38548990.ILD          0.01s (原  67.99s)        2.88s        0.00s, ready=True
+   40112801.Blood.AIDA   0.01s (原 124.83s)        1.72s        0.00s, ready=True
+   ```
+   `scanner cache lookup failed` 在后端日志里从「每次都出现」变成 **0 条**。
+6. **浏览器端到端真跑了**（`playwright-core` 驱动本机 chromium，无 DISPLAY 故用 headless；注意本会话应使用 `playwright` MCP，ECC 自带的那个在本机因找不到系统 Chrome 而不可用）：
+   ```
+   32832599.IPF       tab 出现 336ms，摘要 443ms，无错误屏，stats 显示 243.5K，无 console/page error
+   40112801.AIDA      tab 出现 315ms，无错误屏，stats 正常，无 console/page error
+   ```
+   修复前用户看到的 `Failed to load info / Go Back` 在两次运行中都没有出现（`go_back` 按钮计数为 0）。
+7. **一次诚实的踩坑记录**：第一次浏览器验证报 `abstract_title_ms: null` + `Abstract not available`，我一度以为是新代码的问题。实际是**两个各自独立的假象**：
+   - `playwright` 的 strict mode —— 标题同时出现在顶栏和 `h4` 两处，`getByText` 匹配到多个元素直接抛错，被我自己 `try/catch` 吞成了 `null`。换成 `locator('h4', {hasText})` 后正常。
+   - 那一次**恰好**赶上冷缓存下 EuropePMC 抓取失败，后端按 B26 策略**不缓存**，页面如实降级成 `Abstract not available`（这正是设计行为）；几秒后同样的请求就成功了。**是这次留下的日志缺失（上面新增的 EuropePMC 失败留痕）让这次失败变成不可解释**，所以才补了那条 stderr。
+
+### 补记：第一版修复没修住，是代码评审揪出来的（2026-09-20 当天，同一轮内）
+
+按 CLAUDE.md 第 4 阶段跑了两个语言评审（`ecc:python-reviewer`、`ecc:typescript-reviewer`），**各报一个 HIGH，且都是「第一版加的防护在真实故障形态下不成立」**。两条都经我独立复现确认，已修。
+
+#### 1. [HIGH] 「总时限」是假的 —— 预算管得住「几次请求」，管不住「一次请求内部」
+
+这是我第一版最要命的地方，也是最讽刺的地方：**我为了修「per-socket 超时管不住总时长」而加的预算，本身也只作用在请求之间。**
+
+`urllib` 的 `timeout` 是**单次 socket 操作**（connect + 每次 recv）的超时。`resp.read()` 会一直 recv 到 EOF，而对端只要慢到「每个 recv 间隔内吐得出一个字节」，超时就永远不触发 —— `min(budget, 8)` 那个约束完全落空。**B35 记录的 125s 正是这个形态**，也就是说第一版没修住它自己引用的那个案子。
+
+实测（本地滴流服务器：`Content-Length: 60`，每秒吐 1 字节，`_proxy_opener` 重定向到本地）：
+
+```
+改前：deadline_s=2 → 59.07s   deadline_s=3 → 59.07s   deadline_s=5 → 59.07s
+改后：deadline_s=2 →  2.00s   deadline_s=3 →  3.00s   deadline_s=5 →  5.01s
+```
+
+**三个预算跑出同一个 59.07s** —— 预算参数对结果完全没有影响，这就是「不是上限」的铁证。
+
+修复：`_read_bounded(resp, remaining)` —— 用 `resp.read1(chunk)` 保证每次只消费一次 recv，**每次 recv 之间查预算**，耗尽就返回 `None`（body 不完整）。EuropePMC 与 PMC 两处 body 读取都改走它；读不完一律按失败处理（不写缓存）。新增上限常量 `_MAX_BODY_BYTES` 防止无上限 body 撑内存。
+**诚实标注**：最坏超时 = 剩余预算 + 一次 socket 操作（≤8s），因为掐表那一刻的 recv 已经在飞、收不回来。所以服务端上界是 28s，前端 30s 仍留了余量 —— 但不等于「正好 20s」。
+
+#### 2. [HIGH] 前端把「取不到」说成了「这篇没有摘要」，而且**没有重试**
+
+`AnalysisPage.tsx` 的 `.catch(() => {})` 是空的，失败后 `abstract_ready` 仍是 `false`、`needsAbstract` 依赖没变、effect 不会重跑 —— 用户看到的是「Abstract not available」（一个关于论文的**事实断言**），而且**没有任何办法重试，只能刷新整页**。服务端本来就按「失败不缓存、下次请求重试」设计（B26），前端把这个机会整个丢掉了；同一轮里后端 `except` 都补了留痕，前端反倒新增了一个静默 `catch`。
+
+修复：`abstractError` 状态 + 「摘要暂时取不到（外部文献库超时或限流）· 重试」按钮（`retryAbstract` 走 nonce 触发 effect 重跑）。
+
+#### 3. [MEDIUM] `abstractPending` 由 effect 里 set 的标志推导 → 每轮冷加载先闪一帧假话
+
+`abstractLoading` 是在 effect **内部** set 的，而 effect 在 commit 之后才跑。所以每次冷加载都会先渲染一帧 `abstractLoading === false && !abstract` → 显示「Abstract not available」—— 正是那段注释声称已经消除的谎话。
+
+修复：**删掉 `abstractLoading` 这个状态**，三种状态全部由数据推导：
+```tsx
+const abstractMissing   = abstract == null || (!abstract.title && !abstract.abstract)
+const abstractPending   = info.abstract_ready !== true && abstractMissing && !abstractError
+const abstractUnavailable = info.abstract_ready !== true && abstractMissing && abstractError
+```
+顺带消掉了「`if (!cancelled)` 守着的唯一一次复位被跳过 → 标志永久卡在 true」这个潜在路径 —— 标志没了，路径也就不存在了。只有 `abstract_ready === true` 且内容为空才说 not available，那才是服务端在说「这就是全部」。
+
+#### 4. [MEDIUM] 代理拦截页被当成「已获取全文」
+
+`xml_ok = True` 原先的含义是「`read()` 返回了」，不是「body 是文章 XML」。代理拦截页 / 限流页 / eutils 的 `<error>` 文档**全是 HTTP 200**，于是「这次没抓成」被缓存成「这篇确实没有补充材料」并当事实讲给用户 —— 与 B26 的「失败不要伪装成成功」直接冲突，而且就发生在本轮重写的那些行里。
+
+修复：`if '<article' not in xml_text[:8192]: raise ValueError(...)` → 走 `pmc_error` 分支，不缓存。已验证真实 PMC 不受影响（`PMC7439502`：methods 28440 字符、15 个补充材料）。
+
+#### 5. [MEDIUM] `abstract_ready` 有两个互相矛盾的定义
+
+`/api/analysis-info` 用 `cached_abstract(pmid) is not None`，`/api/abstract` 另算 `bool(title or abstract or pmcid)`。全文因预算被跳过时，一个说 ready、另一个说 not ready；前端拿着 `ready=true` **永久不再重取**，Methods 与补充材料清单就永久缺失 —— 恰好是本轮特意加 `pmc_skipped` 想防住的那件事，被另一个端点从侧面捅穿了。
+
+修复：判据收敛成一个 —— **「在摘要缓存里」**（`_fetch_abstract` 只在记录完整时才写缓存，所以「在缓存里」== 「服务器认为这是最终答案了」）。两个端点现在共用它。
+
+#### 6. 其余同批修掉的
+
+- `handle_abstract` / `handle_analysis_info` 的 `pmid` 统一 `.strip()`：`'12345 '` 会拼进 URL 也当缓存键，让一个**输入问题伪装成网络问题**。
+- `validate_real_path` 的 `except Exception: return None` 补留痕。这是 `handle_analysis_info` 调用链上**最后一处静默**，就在被打开的那处上方 100 行。B35 主因那条教训（去掉静默 → 揪出从未生效的代码）在这里是同一个手法。
+- 评审同时指出 `str(real_path) in k` 是**子串**匹配而非相等，且 `k.endswith(real_path.name)` 现在从「死代码」变成了**活代码**。查了线上 `.scanner_cache.json`：104 个 key、0 个 basename 重复，所以是潜在而非现实风险。本轮未改成精确相等 —— 记在「未覆盖」里。
+- `CLAUDE.md` 的路由表把 `/api/analysis-info` 描述为「Dataset abstract + stats」，已不准确。（**未改**，与计划文件里的文档改动一起做更合适。）
+
+#### 7. 评审反过来说对了我一个错误做法：两条「假测试」
+
+- 后端：`[3]` 的假 scanner 缓存只有一个 key 且恰好命中，`str(real_path) in k` 一短路，第二条件根本不求值 —— **两个缺陷都在时它照样 PASS**。（这条上一版已经自己发现了，补了 `[3b]`。）
+- 但**同一种病我在这轮又犯了一次**：新写的 `[1]` 断言的是「传给 opener 的 timeout ≤ 总预算」。滴流响应**恰恰满足**这条断言（代码确实把 timeout 传小了），却能跑满 59 秒。断言看的是「传下去的参数」，不是「实际花掉的墙钟」。
+  补了 `[1b]`：假时钟 + 滴流响应（`read1` 每次推 0.4s 吐 1 字节），断言 **`read1` 调用次数有限**。变异验证 `read1 → read` → `FAIL 实际 10000 次`。
+- 还有一个更隐蔽的：新写的「非 XML 200 不被当作全文」那条，**第一次是空过的** —— 旧的 `_Resp` 假响应没有 `read1`，欧洲PMC 阶段直接 `AttributeError`、被吞成「抓取失败」，`epmc_hit` 从未置位，断言 `note != 'none'` 于是自动成立。给 `_Resp` 补 `read1` 后才真正测到。变异验证（删掉 `<article` 检查）→ 2 条 FAIL。
+- 前端：`AnalysisPage.test.tsx` 把 `InfoPanel` 整个 mock 成 `() => null`，**全仓库没有第二个文件渲染它**，于是本轮修复「用户看得见的那一半」覆盖率是 0 —— `abstractError` 和重试按钮整段删掉，152 条测试全绿。补了 `InfoPanel.test.tsx`（5 条）与页面级的「请求确实发出去了 / 不会循环重取」2 条。变异验证：把 pending/unavailable 不再由 `abstract_ready` 推导 → 3 条 FAIL；忽略 `abstractError` → 1 条 FAIL；把 `info` 加进 effect 依赖数组（人为造无限循环）→ 循环那条 FAIL。
+
+#### 8. 我自己在排查里栽的两个跟头（比缺陷本身更值得记）
+
+- **第一版复现脚本跑了两次都「PASS」，两次都是无效实验。** 第一次用 `build_opener()` 且**候选 URL 仍指向 ebi.ac.uk** —— 请求压根没到本地服务器；第二次以为绕开了代理，其实还是直奔真实 EuropePMC，还拿回了一条真记录（`Optical study of niobium disilicide...`）却当成「本地滴流没超时」。**是 `hits=[]` 这个我自己加的计数暴露了它** —— 只要我少打一行调试输出，就会拿着一个 PASS 去否定评审的 HIGH。教训：复现脚本必须证明「请求确实走到了被测的那条路上」，否则它与「什么都没测」不可区分。
+- **评审给的 7.01s 和我后来的 59.07s 不是一回事，但结论一致。** 数字对不上时不要急着判定谁错 —— 两次都是真的，只是假服务器的吐字节节奏不同。
+
+#### 9. 补记后的实测（重启后端后重跑）
+
+```
+                             /api/analysis-info      cells
+ 32832599.IPF.h5ad                 0.002s          243472   （原 104s）
+ 32832599.COPD.h5ad                0.002s          165759
+ 38548990.ILD.h5ad                 0.005s          450465   （原 67.99s）
+ 40112801.Blood.AIDA.h5ad          0.008s         1265624   （原 124.83s）
+
+                             /api/abstract           methods  supp   note
+ 32832599                          1.9ms(已缓存)      28440    15
+ 38548990                          3.44s              16954     4
+ 40112801                          1.71s                  0     0   'no-pmcid'
+
+ /api/abstract?pmid=<纯空白>  →  HTTP 400（strip 后为空）
+ /api/abstract?pmid=PKU001    →  200，空记录并缓存（非 PubMed ID，没有可查的东西）
+ 后端日志 scanner cache lookup failed / validate_real_path failed  →  0 条
+```
+
+同 `pmid` 但不同 basename 的两个数据集（`32832599.IPF` / `32832599.COPD`）stats 分别是 243472 / 165759，**没有串** —— 这是对 basename 回退那条守卫的直接检验。
+
+**浏览器端到端**（`playwright-core` + 本机 chromium，headless）：
+```
+[正常路径] tab=337ms  abstract_title=3687ms  stats=true  go_back=0  failed_screen=0
+[失败路径] 用 route.abort() 掐断 /api/abstract：
+           拦截=1  重试按钮=出现
+           谎称 "Abstract not available" = 0
+           stats 仍在屏幕上 = true
+           整页错误屏 = 0   go_back = 0
+[重试]     点击后 3370ms 真的取回了摘要
+```
+失败路径这条是**第一版做不到的**：以前掐断 `/api/abstract`，用户看到的就是「Abstract not available」并且无从重试。
+
+**回归**：`npx vitest run` **159 passed (17 files)**（本轮新增 7 条：InfoPanel 5 + 页面 2）；`npx tsc --noEmit` 干净；`npm run lint` 干净；后端自包含脚本 **14/14 PASS**（按退出码判定）。
+
+### 未覆盖（明确留白）
+
+- **两处评审意见本轮明确未修，留给后续：**
+  - **`_EUROPE_PMC_CACHE` 是无界 dict，且新端点让写入变得廉价。** `caches.LRUCache` 是本项目既定模式，这里没用。更要紧的是：`/api/abstract?pmid=xxx` 现在**零网络、无 `real_path` 校验**就能写一条缓存（改前写一次需要合法数据集路径 + 一次慢速外部抓取）。目前只有 per-IP 100 req/60s 限流。本轮未改成 LRU、也未拒绝非数字 pmid —— 因为非 PubMed 数据集（PKU/BALF）本来就走这条路。
+  - **预算耗尽导致的「残缺记录」永久不可缓存。** `pmc_skipped` 被当成失败处理，于是坏代理日里某个 pmid 每访问一次就要重发 2 次 EuropePMC + 1 次 PMC。这是 B26 的保守方向（宁可重试也不缓存残缺），**但代价是真实的**：正确的做法是把 EuropePMC 部分与 PMC 全文分开缓存、再加 per-pmid 单飞去重，属重构，本轮没做。
+  - **`k.endswith(real_path.name)` 的 basename 回退**现在从死代码变成了活代码（子串匹配 `str(real_path) in k` 也仍在）。线上 104 个 key 无重复 basename，属潜在风险。
+- **`ABSTRACT_DEADLINE_S = 20` 是拍板值，不是测出来的。** 依据是多数样本落在 4~14s —— 20s 能让绝大多数请求拿到完整记录，代价是最坏情况多等 20 秒。**但本轮实测的三次 `/api/abstract` 都在 3.4s 以内：预算耗尽这条分支在真实代理上从未触发过**，只在假时钟 + 假滴流响应下验证过（补记第 7 条）。真实高延迟日会走到哪一支、最多等 28 秒用户能否接受，都还不知道。
+- **服务端最坏 28s 与前端 30s 之间只隔 2 秒。** 28s = `ABSTRACT_DEADLINE_S`(20) + 一次 socket 操作(≤8)。这两个数字分别写在 Python 和 TypeScript 里，**没有任何东西把它们绑在一起**：把 `ABSTRACT_DEADLINE_S` 调到 25，前端就会抢跑 abort，而客户端 abort 是更坏的结果（没有结构化回答、没有错误原因，见补记第 2 条）。
+- **`_analysis_info_cache` 与 `_EUROPE_PMC_CACHE` 的一致性只在读路径上对齐。** 摘要在 `/api/abstract` 里被抓进来后，只对**之后**的出栈生效；已经在 `_analysis_info_cache` 里的条目要在下次请求时才刷新。功能上没问题（前端拿到的值是对的），但「两个缓存谁说了算」没有单一真相源。
+- **`_fetch_abstract` 的 EuropePMC 候选循环里，真正的失败原因仍然只能看 stderr。** 本轮补了日志，但没有把这个信息透到 API 响应里 —— 前端依然分不清「这篇确实没摘要」和「这次没抓到」。
+- **`/api/abstract` 没有并发去重。** 同一 pmid 被 N 个浏览器同时请求（或同一用户快速刷新）会发 N 次外部抓取。`ThreadingHTTPServer` 下这不是安全问题，但会放大代理压力。当前规模（内网、少用户）不值得加锁，写在这里免得以后当成「已经处理过」。
+- **`get_adata()` 兜底分支依旧是无限时的。** `/api/analysis-info` 在 scanner 缓存缺失时仍会读整个 h5ad（Tabula Sapiens 那种文件实测 >240s）。本轮把它从「每次必经」降级为「只在 scanner 缓存真的缺失时」—— **但没有给它加上时限**。同一个页面、同一种失败模式，只是触发条件变得罕见得多。
+- **本轮的 0.01s 掩盖了一件事**：scanner 缓存里存的是扫描时刻的快照。修好快路径之后，stats 现在**总是**来自这份快照，不再有机会被 h5ad 实读纠正。快照过期（文件被替换、扫描器 30s 周期未到）时会显示旧数字 —— 这是快路径本来就有的语义，不是本轮引入的，但本轮把它从「几乎不发生」变成了「总是发生」。
+- **`/api/analysis-info` 的 `abstract_ready` 是可选字段**（`abstract_ready?: boolean`），前端按 `!== true` 判定。旧的缓存响应里没有这个字段，会被当成「需要再取一次」—— 这是有意的保守方向，但意味着**字段缺失时永远多发一次请求**。
+- 浏览器验证覆盖了 2 个数据集 × 1 条路径（直接 URL 进入 Study Info tab）。**没有覆盖**：切数据集、前进/后退、快速连点导致摘要请求交叉、以及在摘要仍在飞行时切走 tab。
+- **唯一的运行期观察无法解释**：其中一次实例的 `VmHWM` 到过 66.5 GB，另一次同样负载下只有 6.65 GB。**没有查到原因，也没有证据表明与本轮改动有关**（改动只减少了外部请求与 h5ad 读取）。记在这里，不作结论。
+
+### 涉及文件
+
+- `server/config.py`（`ABSTRACT_DEADLINE_S`）
+- `server/pubmed.py`（`_fetch_abstract` 总时限、`cached_abstract`、`pmc_skipped`、EuropePMC 失败留痕）
+- `server/routes.py`（`handle_analysis_info` 去网络化 + 摘要缓存回填、`handle_abstract`、`/api/abstract` 路由、`str(real_path).name` → `real_path.name`、两处 `except` 留痕）
+- `src/api/types.ts`（`AnalysisInfo.abstract` 可空、`abstract_ready?`、`AbstractResponse`）
+- `src/api/analysis.ts`（`fetchAbstract`、`ABSTRACT_TIMEOUT_MS`）
+- `src/pages/AnalysisPage.tsx`（第二个 effect + `abstractLoading`）
+- `src/components/analysis/InfoPanel.tsx`（可空 `abstract`、`abstractLoading`、转圈/空态分离）
+- `src/pages/AnalysisPage.test.tsx`（补 `fetchAbstract` mock + 3 条回归，补记再加 2 条）
+- `src/components/analysis/InfoPanel.test.tsx`（**补记新增**，5 条 —— 该组件此前被 mock 成 `null`，全仓库无测试）
+- `server/tests/test_analysis_info_nonblocking.py`（新增，**19 条断言**）
+
+### 关键教训
+
+- **「超时」这个词必须问清是哪一个：单次 socket 超时 ≠ 整次操作的总时限。** `8+8+10` 看起来像个上界，实际只是个下界 —— 串行 N 次带超时的调用，任何一次「连得上但很慢」都能把总时长撑到任意大。写超时的时候要连着写**预算**，不是给每一步各配一个 timeout 就完事。这条和 B32（`_stream_sse` 的重试）是同一类错误的两面。
+- **两个时延差三个数量级的字段，不该挤在同一个响应里。** 这不是性能优化，是**可用性设计**：合并它们，等于让快的数据陪慢的数据一起超时，超时后**全丢**。判据很简单 —— 只要一个响应里有两个字段的合理时延差了一个数量级以上，就该拆。
+- **`except Exception: pass` 会把「从来没能生效的代码」伪装成「一直在正常工作的代码」。** scanner 快路径的 `AttributeError` 被吞了不知道多久，表现出来只是「这一页有点慢」—— 慢到能被归因成网络、磁盘、数据太大，唯独不会被归因成一行取错属性的代码。**去掉一个 `except: pass` 的成本是三行，收益是这一整类 bug 从不可见变成可见。**（CLAUDE.md 设计决策 #4 早就写了不许静默吞异常，这条是它的实证。）
+- **一个「只有一个元素」的 fixture 测不出遍历逻辑的 bug。** `[3]` 的假缓存只有一个 key 且恰好命中，`or` 短路让第二个条件根本没求值 —— 于是这条测试**在本轮改动的两个缺陷都存在时照样 PASS**。**测遍历 bug 时，fixture 里必须有不匹配的元素，而且它要排在前面。** 复盘时问一句「这个测试如果把这个功能整个删掉，还会通过吗」，能筛掉一大半假测试。
+- **推不对的时候要承认是推的。** 排查阶段我用「响应快到不可能是读 h5ad」排除了读数据这条路径，结论（慢在外部抓取）**碰巧是对的**，理由**是错的** —— 当时无从分辨两条路径，因为两条路径都静默。**推论与结论一致不代表推论成立**；后来日志一开，直接看到的和当初推的并不是同一件事。
+- **降级要降在正确的那一层。** 摘要取不到，降的应该是摘要那一块，不是整个页面。`/api/abstract` 失败返回 200 而不是 500 也是同一个判断 —— **5xx 是在说「这个端点坏了」，而它其实是说「这次的补充信息没拿到」**，两者会让前端做出完全不同的处理。
+
+---
+
+*后续新缺陷按 B36、B37... 追加。*

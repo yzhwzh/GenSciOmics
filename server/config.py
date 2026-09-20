@@ -47,6 +47,13 @@ os.environ.setdefault('http_proxy', HTTP_PROXY)
 os.environ.setdefault('https_proxy', HTTP_PROXY)
 os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1,10.0.0.0/8,.ai.dgtmeta.com')
 
+# ─── 外部抓取总时限 ───────────────────────────────────────────
+# EuropePMC / PMC 全文抓取**整次**的墙钟上限（不是单次 socket 超时）。
+# 每次 open() 收到的是「剩余预算」，预算耗尽就不再发下一个请求。
+# 为什么必须有：urllib 的 timeout 只管单个 socket，代理「连得上但很慢」时
+# 拦不住 —— 8s + 8s + 10s 只是理论下界，实测单次抓到过 125s（见 BUG_LOG B35）。
+ABSTRACT_DEADLINE_S = 20
+
 # ─── Obs columns convention ──────────────────────────────────
 OBS_COLUMNS = ['Patient', 'Sample', 'Group', 'CellType', 'Tissue']
 

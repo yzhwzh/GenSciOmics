@@ -1,5 +1,6 @@
 import { apiFetch, cachedFetch } from './client'
 import type {
+  AbstractResponse,
   AnalysisInfo,
   UmapData,
   ExpressionStats,
@@ -58,6 +59,24 @@ export function getClientUserId(): string {
 
 export async function fetchAnalysisInfo(pmid: string, realPath: string): Promise<AnalysisInfo> {
   return apiFetch<AnalysisInfo>(`/api/analysis-info?pmid=${pmid}&real_path=${encodeURIComponent(realPath)}`)
+}
+
+// 后端抓摘要的总时限是 config.ABSTRACT_DEADLINE_S（20s），这里留一倍余量。
+// 不共用 apiFetch 默认的 60s：那个默认值当初正是这么把 B35 藏起来的 ——
+// 超时给得太宽，慢请求会一直挂到用户以为页面死了。
+const ABSTRACT_TIMEOUT_MS = 30_000
+
+/**
+ * 按需抓取摘要 —— 全项目唯一会为摘要发起外部请求的调用。
+ *
+ * 只该在 /api/analysis-info 返回 `abstract_ready !== true` 之后调，
+ * 且**它的失败绝不能影响页面**：stats 那时已经渲染在屏幕上了，摘要只是补充。
+ * 失败时抛异常，由调用方决定怎么降级（见 AnalysisPage）。
+ */
+export async function fetchAbstract(pmid: string): Promise<AbstractResponse> {
+  return apiFetch<AbstractResponse>(
+    `/api/abstract?pmid=${encodeURIComponent(pmid)}`, undefined, ABSTRACT_TIMEOUT_MS,
+  )
 }
 
 /**
