@@ -19,16 +19,28 @@ expr = pd.DataFrame({gene: adata[:, gene].X.toarray().flatten(), 'CellType': ada
 if condition_col:
     expr['Condition'] = adata.obs[condition_col].values
 
+# Get group information for title
+group_col = 'Group' if 'Group' in adata.obs.columns else None
+if group_col:
+    group_value = adata.obs[group_col].iloc[0]
+    n_cells = len(adata)
+    title = f"{group_value} (n={n_cells})"
+else:
+    n_cells = len(adata)
+    title = f"n={n_cells} cells"
+
 fig, ax = plt.subplots(figsize=(12, 4))
 if plot_type == 'boxplot':
     sns.boxplot(data=expr, x='CellType', y=gene, hue=condition_col if condition_col else None, ax=ax)
 else:
     agg = expr.groupby(['CellType'] + ([condition_col] if condition_col else []))[gene].mean().reset_index()
     sns.barplot(data=agg, x='CellType', y=gene, hue=condition_col if condition_col else None, ax=ax)
+
+ax.set_title(title, fontsize=14)
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 fn = f'{gene}_{plot_type}_{_TS}.png'
 plt.savefig(f'{outdir}/{fn}', dpi=200, bbox_inches='tight')
 plt.close()
-print(f'![{gene} {plot_type}](/api/results?file={fn})')
+print(f'![{plot_type}](/api/results?file={fn})')
 print(f'Done: {fn}')
