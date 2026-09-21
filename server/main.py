@@ -11,7 +11,15 @@ Run: python3 server/main.py [--port 6000]
 
 import os
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-os.environ.setdefault('OLLAMA_MODELS', '/home/mengguofeng/.ollama/models')
+# 这里曾有一行 `os.environ.setdefault('OLLAMA_MODELS', '/home/mengguofeng/.ollama/models')`，
+# 已删除，原因有三，任一都足够：
+#   1. 它指向别人的家目录，且是 CLAUDE.md 点名的「依赖特定机器的路径」。
+#   2. 全仓库搜索 `OLLAMA_MODELS` 只有这一处 —— 没有任何代码读它。
+#   3. 该变量是 ollama **守护进程**的启动参数，由 systemd 那侧设置才有效；
+#      本进程 setdefault 只写进自己的 environ，对已在运行的 ollama 服务毫无影响，
+#      本进程也没有 spawn 过 `ollama serve`。也就是说这行从来没有任何效果。
+# 如果将来确实要让 GenSci 自带一份模型目录，正确的做法是启动 ollama 时用环境变量，
+# 而不是在 API 进程里设置。
 
 import sys
 import time as _time

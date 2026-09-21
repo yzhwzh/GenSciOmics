@@ -96,6 +96,15 @@ export default function UmapTabContent({
   useEffect(() => {
     if (!realPath) return
     let cancelled = false
+    // 进入即置「加载中」，并清掉上一轮的图与错误。
+    // 此前没有 setLoading(true)，loading 于是全程为 false：请求还在飞的时候
+    // 面板走的是「空结果」那条分支（:226/:261 的假 "No data"），而 :221/:258
+    // 的 Loader 一次也不会出现 —— 加载中和真的没有数据长得一模一样。
+    // 清 plotData / error 是同一个动作的另一半：换 palette 时若不先清，旧图会
+    // 留在屏幕上、旧报错会压在新请求上面。
+    setLoading(true)
+    setError(null)
+    setPlotData(null)
     fetchUmapRatioPlots(realPath, 'Group', palette)
       .then(d => {
         if (cancelled) return
@@ -109,6 +118,12 @@ export default function UmapTabContent({
   useEffect(() => {
     if (!realPath) return
     let cancelled = false
+    // 与上面 ratio effect 同一处缺陷（:91 的 setDotplotLoading 同样从未被调用），
+    // 症状一致：:362 的 Loader 不转，:367 在加载途中就写 "No data"。
+    // 这里**不**清 dotplotData：ratio 的依赖只有 realPath/palette 两个离散开关，
+    // 而这里还要跟着 targetGenes 走，把旧图留着比让它闪一下更稳。
+    setDotplotLoading(true)
+    setDotplotError(null)
     const genesStr = targetGenes.map(g => g.value).join(',')
     fetchMarkerDotplot(realPath, palette, dotplotGroupFilter, genesStr)
       .then(d => {

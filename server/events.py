@@ -2,6 +2,7 @@
 """Event logging and milestone management."""
 
 import json
+import sys
 import time
 import threading
 
@@ -42,8 +43,11 @@ def log_event(event_type: str, message: str, detail: str = '', ui_message: str |
     try:
         with open(LOG_FILE, 'a') as f:
             f.write(json.dumps(file_entry) + '\n')
-    except Exception:
-        pass
+    except Exception as e:
+        # 事件日志是「事后回溯」的唯一凭据（磁盘满、权限错、LOG_FILE 被删）。
+        # 这里吞掉就等于：UI 的 Update Log 还记得这件事，磁盘上的审计轨迹没有，
+        # 且没有任何人知道两者对不上。CLAUDE.md 设计原则 #4 要求每处 except 都留痕。
+        print(f'[GenSci] event log write failed ({LOG_FILE}): {e}', file=sys.stderr)
 
 
 # ─── Development Milestones ───────────────────────────────────

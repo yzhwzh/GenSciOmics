@@ -81,7 +81,16 @@ def _load_annotation_sources() -> dict:
         data = json.loads(_ANNOTATION_SOURCES_FILE.read_text())
         _annotation_sources_cache = (mtime, data)
         return data
-    except Exception:
+    except Exception as e:
+        # 「文件本来就没有」和「文件被改坏了」是两件事，不能一起吞：
+        # annotation_sources.json 是可选的，缺失属常态，静默返回空即可；
+        # 但 JSON 语法错 / 权限错会让**所有**数据集悄悄退回 Source='Paper'，
+        # 而这件事此前没有任何出口 —— 正是这条 except 本意要避免的。
+        # 所以只对「文件不在」保持静默，其余一律报错。
+        if not isinstance(e, FileNotFoundError):
+            print(f'[GenSci] annotation_sources.json 读取失败 '
+                  f'({_ANNOTATION_SOURCES_FILE}): {e} — 全部数据集将退回 Source=Paper',
+                  file=sys.stderr)
         if _annotation_sources_cache is not None:
             return _annotation_sources_cache[1]
         return {}  # file missing on first load → empty, all default to 'Paper'

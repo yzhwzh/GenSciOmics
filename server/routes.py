@@ -35,26 +35,9 @@ from llm_proxy import process_chat, process_chat_streaming, process_literature_c
 from skills import list_skills, get_skill_content
 from online import heartbeat, count_online
 
-# ── Plot storage (skills put PNGs here, frontend fetches by ID) ──
-import socket as _socket, uuid as _uuid, base64 as _b64, threading as _threading
-_plots: dict[str, bytes] = {}
-_plots_lock = _threading.Lock()
-
-def store_plot(png_bytes: bytes) -> str:
-    pid = _uuid.uuid4().hex[:12]
-    with _plots_lock:
-        _plots[pid] = png_bytes
-    return pid
-
-def handle_get_skill_plot(handler, q):
-    pid = q.get('id', '')
-    with _plots_lock:
-        data = _plots.get(pid)
-    if data is None:
-        handler._send_error('Plot not found')
-        return
-    handler._send_bytes(data, 'image/png')
-
+# 两个下划线别名都还有别的用途，别跟着上面那段一起删：
+# `_threading` 起 heartbeat 线程、`_socket` 做 connection.shutdown(SHUT_WR)。
+import socket as _socket, threading as _threading
 
 VALID_PALETTES = set(CATEGORICAL_PALETTE_MAP.keys())
 
@@ -80,7 +63,19 @@ def validate_real_path(path_str: str):
             return None
         # But validate the ORIGINAL (unresolved) path is within DATA_DIRS
         # This allows symlinks inside DATA_DIRS pointing to external storage
-        original = Path(path_str)
+        #
+        # normpath 不是可有可无的规范化：`is_relative_to` 是**纯词法**比较，
+        # 不折叠 `..`，所以 `Data/../server/config.py` 会通过白名单，而函数返回的
+        # 又是未折叠的路径，OS 随后把 `..` 解析掉 —— 白名单就空了。
+        # 这里必须用 normpath 而非 resolve()：前者只词法折叠 `..`、不碰软链接，
+        # 后者会把 Data/ 内 97 个指向外部存储的软链接一并禁掉，整个平台读不到数据。
+        #
+        # 前提：Data/ 下**不能有目录软链接**。normpath 是词法的，而 `..` 前面若有
+        # 目录软链接，词法折叠与 OS 实际解析会得出不同结果
+        # （Data/<目录软链>/../x 词法落在 Data/ 内，OS 却落在链接目标那边）。
+        # 当前 97 个软链接全是文件链接、无一目录链接，test_real_path_traversal.py
+        # 第 4 组把这条前提钉住了；布局一旦变化，那里会红并指向这里。
+        original = Path(os.path.normpath(path_str))
         allowed = any(original.is_relative_to(d) for d in DATA_DIRS)
         return original if allowed else None
     except Exception as e:
@@ -640,8 +635,12 @@ def handle_milestone(handler, data):
         try:
             with open(MILESTONE_FILE, 'w') as f:
                 json.dump(MILESTONES, f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            # 落盘失败时内存里的 MILESTONES 已经加过了，所以本次请求返回 200 是
+            # 「对了一半」：调用方以为存下了，重启后这条里程碑就没了。
+            # 不改返回值（那会改变 API 语义，超出本次范围），但必须留下痕迹。
+            print(f'[GenSci] milestone NOT persisted ({MILESTONE_FILE}): {e} '
+                  f'— in-memory only, will be lost on restart', file=sys.stderr)
     handler._json(entry)
 
 
@@ -692,6 +691,19 @@ def handle_llm_chat(handler, data):
     if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
         handler._send_error('api_key required')
         return
+
+    # 必填 ≠ 校验过。这里此前只查了「非空」，于是任意字符串（`/README.md`、
+    # `Data/NoSuchFile.h5ad`、`Data/../server/config.py`）都原样交给 process_chat
+    # → agent._execute_tool → 注入 skill 参数 → get_adata() 与 ShellTool。
+    # 同为 LLM 端点的 handle_llm_literature_stream 注释写明「Does NOT require
+    # real_path」，说明「不校验」在它那儿是刻意的；这两条要求必填却不校验，
+    # 是不对称漏掉的（见 server/tests/test_llm_real_path_guard.py）。
+    validated = validate_real_path(real_path)
+    if validated is None:
+        handler._send_error('Invalid file path')
+        return
+    # 交出去的必须是**校验通过的那个路径**，否则「校验的」与「使用的」是两个值。
+    real_path = str(validated)
 
     result = process_chat(messages, real_path, api_key, model, base_url, temperature, user_id=user_id)
     handler._json(result)
@@ -783,6 +795,15 @@ def handle_llm_chat_stream(handler, data):
     if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
         handler._send_error('api_key required')
         return
+
+    # 同 handle_llm_chat：必填 ≠ 校验过。这里必须**在 _stream_sse_response 之前**
+    # 校验完 —— 一旦 send_response(200) 发出去，就没法再改成 JSON 错误响应了
+    # （_stream_sse_response 的 docstring 也是这么要求调用方的）。
+    validated = validate_real_path(real_path)
+    if validated is None:
+        handler._send_error('Invalid file path')
+        return
+    real_path = str(validated)
 
     _stream_sse_response(handler, process_chat_streaming(
         messages, real_path, api_key, model, base_url, temperature, omics_type, user_id=user_id))
@@ -1082,7 +1103,6 @@ ROUTES = {
     ('GET', '/api/drug/stages'): handle_drug_stages,
     ('POST', '/api/drug/pipeline/stream'): handle_drug_pipeline_stream,
     ('POST', '/api/milestone'): handle_milestone,
-    ('GET', '/api/skill-plot'): handle_get_skill_plot,
     ('GET', '/api/results'): handle_results_list,
     ('POST', '/api/raw-expression'): handle_raw_expression,
     ('GET', '/api/cell-types'): handle_cell_types,
