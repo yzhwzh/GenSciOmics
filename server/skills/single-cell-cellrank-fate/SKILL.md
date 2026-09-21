@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-cellrank-fate
+name: single-cell-cellrank-fate
 description: CellRank fate maps from RNA velocity. Combine VelocityKernel + ConnectivityKernel into a transition matrix, fit a GPCCA estimator, predict terminal states, and produce per-cell fate probabilities. Visualise with `ov.pl.branch_streamplot` and feed branch-resolved gene-trends into `ov.single.dynamic_features` / `ov.pl.dynamic_trends` / `ov.pl.dynamic_heatmap`. Use after RNA velocity is computed (scvelo / dynamo / latentvelo / graphvelo) and before reporting fate probabilities or marker dynamics.
 ---
 

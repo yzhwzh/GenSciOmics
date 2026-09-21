@@ -1738,4 +1738,76 @@ RESULT guard_fired_turns=[4]
 
 ---
 
-*后续新缺陷按 B37、B38... 追加。*
+## B37. 10 个 skill 被宣传成调不通的名字：`scan_skills()` 用 frontmatter `name`，`SKILL_REGISTRY` 用目录名 (2026-09-21)
+
+### 现象
+
+Free Analysis 的系统提示词「可用技能」列表里列着某些 skill，模型照着调却必然失败。
+`skill(name)` 返回：
+
+```json
+{"error": "Skill not found: omicverse-single-cell-annotation",
+ "available_skills": [...]}
+```
+
+**前端不显示任何异常，后端也不报错** —— 列表里有它、调用说没有它，两边各自都「正常」。
+
+### 根因
+
+同一件事有两套实现，各写各的，谁都没校验对方：
+
+| 消费者 | 位置 | 名字取自 |
+|---|---|---|
+| 生成 prompt 的技能列表 | `skills/_loader.py:40` `scan_skills()` | **frontmatter 的 `name`** |
+| 执行 `skill(name)` | `skills/__init__.py:191` `SKILL_REGISTRY` | **目录名** |
+
+`agent/prompt.py:227-229` 据此告诉模型「call skill("name")」，而
+`tools/SkillTool/__init__.py:21-26` 拿这个名字**查 `SKILL_REGISTRY`**、并**按它拼
+`skills/<name>/SKILL.md` 的路径** —— 所以两边必须恰好相等。
+
+实测 82 个 `SKILL.md` 里 **10 个**不等，全部是 omicverse 上游移植的遗留
+（目录名被裁短、frontmatter 里留着原名）。
+
+官方手册与 Claude Code 都要求 `name` 等于目录名：Claude Code 只把 frontmatter 的
+`name` 当 `displayName`，正式名始终取目录名
+（`08.claude-code-source/src/skills/loadSkillsDir.ts:452`）。所以错的是 `_loader.py`
+那一侧 —— 但**改目录名会牵动** `llm_proxy.py:20-25` 的 `OMICS_SKILL_FILTERS`
+（按目录名前缀分派，这 10 个全落在 `single-*`），故选择改 frontmatter，零风险方向。
+
+### 修复
+
+1. 10 个 `SKILL.md` 的 frontmatter `name` 改为等于目录名（各 1 行）。
+2. `skills/statistical-analysis/SKILL.md:97-100` 正文里那 4 个同类断链一并改掉 ——
+   它是 prompt 之外的第二条断链：模型读完 statistical-analysis 再照做，同样查不到。
+3. 新增 `server/tests/test_skill_spec_conformance.py`，把 `drug-*` 早有的那条局部断言
+   （「frontmatter name 等于目录名」）推广到全仓 82 个 skill，并补上手册其余硬性约束
+   （kebab-case、≤64 字符、description ≤1024、无保留词），外加一条**契约级**断言：
+   `scan_skills()` 的每个名字都必须能在 `SKILL_REGISTRY` 里查到。
+4. 删掉 `test_drug_stages.py` 里那条局部断言（已被全量覆盖），并加 `npm run test:py` ——
+   否则 20 个后端脚本仍只能人手跑，删掉的那条覆盖会落进「没人跑的文件」。
+
+### 验证
+
+- **RED → GREEN**：改名字**之前**先跑新测试，失败清单恰好是那 10 个（`[2]` 与 `[6]`
+  各命中 10）；改完 14/14 绿。先看到红，才说明测试不是空跑。
+- 活体（重启后端）：`/api/skills` 88 条；`scan_skills()` 的 88 个名字与
+  `SKILL_REGISTRY` 的 88 个键完全对齐，「宣传了但查不到」为空。
+- 用**真入口** `SkillTool.skill()` 实调 5 个原名，全部返回 7813–13217 字符正文
+  并带 `Base directory for this skill:` 前缀。
+- **反例对照**：旧名 `omicverse-single-cell-rna-velocity` 与不存在的名字仍正确返回
+  `Skill not found` —— 证明不是把所有名字都放行了。
+
+### 教训
+
+- **同一件事有两份实现时，两边都会「按自己的理解」实现，而谁都不会去校验对方。**
+  这条断言本该在第二套解析出现时就写上；它当时只写在了 `drug-*` 上，于是覆盖之外的
+  10 个沉默了很久。**局部断言会给人一种「已经管住了」的错觉。**
+- **新写的断言必须能被证伪 —— 本次新测试自己先踩了一次。** 一条「description ≤1024」
+  的断言，遇到 YAML 块标量（`description: |`）时两个解析器都把值读成字面串 `'|'`
+  （长度 1），于是在一条实际 2000 字的描述上**全绿** —— 而写长描述最自然的写法
+  恰好就是 `|`。已在测试里显式识别块标量；**没有**去改生产解析器（那会动运行时行为）。
+  写断言时要问：**它会在什么情况下给出假绿？**
+
+---
+
+*后续新缺陷按 B38、B39... 追加。*

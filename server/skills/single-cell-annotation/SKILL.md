@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-annotation
+name: single-cell-annotation
 description: Annotate single-cell AnnData with OmicVerse using the CellTypist, gpt4celltype, or SCSA branches. Use when turning OmicVerse annotation notebooks into a reusable, triggerable skill, selecting a backend, or mapping a clustered AnnData object to cell-type labels.
 ---
 

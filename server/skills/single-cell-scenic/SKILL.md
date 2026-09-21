@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-scenic
+name: single-cell-scenic
 description: Convert OmicVerse SCENIC notebooks into a reusable, triggerable skill for single-cell AnnData regulon analysis. Use when initializing SCENIC with cisTarget resources, choosing the RegDiffusion, GRNBoost2, or GENIE3 GRN branch, tuning regulon-construction thresholds, or running downstream RSS, binarization, and regulon-focused GRN exploration.
 ---
 

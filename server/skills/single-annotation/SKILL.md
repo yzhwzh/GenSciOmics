@@ -1,5 +1,5 @@
 ---
-name: single-cell-annotation-skills-with-omicverse
+name: single-annotation
 title: Single-cell annotation skills with omicverse
 description: "Cell type annotation: SCSA, MetaTiME, CellVote consensus, CellMatch, GPTAnno, weighted KNN label transfer in OmicVerse."
 ---

@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-rna-velocity
+name: single-cell-rna-velocity
 description: Analyze single-cell AnnData for RNA velocity with OmicVerse. Use when converting OmicVerse velocity notebooks into a reusable, triggerable skill, when deciding whether a velocity notebook subset or branch should update an existing skill, or when selecting the scvelo, dynamo, latentvelo, graphvelo, recipe, backend, or mode branches for velocity preprocessing, dynamics, and embedding.
 ---
 

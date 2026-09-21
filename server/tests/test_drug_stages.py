@@ -123,18 +123,8 @@ def run() -> None:
                  if '⚠️ GenSci 执行适配' not in (d / 'SKILL.md').read_text(encoding='utf-8')]
     check('每个 drug-* 都带「⚠️ GenSci 执行适配」头', not no_header, f'缺头: {no_header}')
 
-    bad_name = []
-    for d in drug_dirs:
-        text = (d / 'SKILL.md').read_text(encoding='utf-8')
-        m = re.match(r'\A---\s*\n(.*?)\n---\s*\n', text, re.DOTALL)
-        if not m:
-            bad_name.append(f'{d.name}(无 frontmatter)')
-            continue
-        nm = next((l.partition(':')[2].strip() for l in m.group(1).split('\n')
-                   if l.startswith('name:')), '')
-        if nm != d.name:
-            bad_name.append(f'{d.name}(name={nm!r})')
-    check('每个 drug-* 的 frontmatter name 等于目录名', not bad_name, f'不一致: {bad_name[:5]}')
+    # 「frontmatter name 等于目录名」已移入 test_skill_spec_conformance.py ——
+    # 那边覆盖全部 82 个 skill（含这 29 个 drug-*），此处不再重复一份。
 
     readme = SKILLS_DIR / 'drug-README.md'
     check('drug-README.md 记录来源与许可证',

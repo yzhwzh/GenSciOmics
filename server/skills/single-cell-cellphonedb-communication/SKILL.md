@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-cellphonedb-communication
+name: single-cell-cellphonedb-communication
 description: Analyze single-cell cell-cell communication with OmicVerse CellPhoneDB and CellChat-style visualization. Use when converting an OmicVerse CellPhoneDB notebook into a reusable skill, when running CellPhoneDB ligand-receptor analysis on annotated AnnData, or when choosing pathway aggregation, layout, signaling-role, and bubble-plot branches for downstream communication summaries.
 ---
 

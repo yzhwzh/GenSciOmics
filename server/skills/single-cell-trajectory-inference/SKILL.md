@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-trajectory-inference
+name: single-cell-trajectory-inference
 description: Run or adapt OmicVerse single-cell trajectory inference on cluster-ready AnnData. Use when converting OmicVerse trajectory notebooks into a reusable skill, or when choosing the diffusion_map, slingshot, palantir, PAGA, or Palantir branch-selection branches for developmental ordering and lineage summaries.
 ---
 

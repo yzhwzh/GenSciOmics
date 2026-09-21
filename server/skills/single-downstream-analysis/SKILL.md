@@ -1,5 +1,5 @@
 ---
-name: single-cell-downstream-analysis
+name: single-downstream-analysis
 title: Single-cell downstream analysis
 description: "AUCell pathway scoring, metacell DEG, scDrug response, SCENIC regulons, cNMF programs, and NOCD community detection in OmicVerse."
 ---

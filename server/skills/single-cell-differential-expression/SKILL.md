@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-differential-expression
+name: single-cell-differential-expression
 description: Run OmicVerse single-cell differential expression analysis as a reusable, triggerable skill. Use when comparing conditions inside one or more cell types in AnnData, choosing between Wilcoxon, t-test, and memento backends, or adapting a related notebook into a repeatable DEG workflow.
 ---
 

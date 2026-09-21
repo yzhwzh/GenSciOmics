@@ -94,7 +94,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/expression_plot.py <data.h5ad> <gene> <plot_
 ## Boundary
 
 - 共表达/相关性 → `find_related_genes.py`
-- 差异表达(DEG) → 简单两组比较用 `statistical_analysis.py`；完整 DEG 流程调 `omicverse-single-cell-differential-expression`
-- 细胞通讯 → 调 `omicverse-single-cell-cellphonedb-communication`
-- 轨迹推断 → 调 `omicverse-single-cell-trajectory-inference`
-- 基础模型 → 调 `omicverse-single-cell-foundation-model`
+- 差异表达(DEG) → 简单两组比较用 `statistical_analysis.py`；完整 DEG 流程调 `single-cell-differential-expression`
+- 细胞通讯 → 调 `single-cell-cellphonedb-communication`
+- 轨迹推断 → 调 `single-cell-trajectory-inference`
+- 基础模型 → 调 `single-cell-foundation-model`

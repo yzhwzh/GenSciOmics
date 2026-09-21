@@ -12,7 +12,8 @@
     "start": "python3 server/main.py & npm run dev",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:py": "for f in server/tests/test_*.py; do echo \"--- $f\"; python3 \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",

@@ -1,5 +1,5 @@
 ---
-name: omicverse-single-cell-foundation-model
+name: single-cell-foundation-model
 title: Single-cell foundation model (SCLLMManager)
 description: "Cell embedding, cell-type annotation, batch integration, and (where supported) perturbation prediction with single-cell foundation models — scGPT, Geneformer, scFoundation, UCE, CellPLM. Driven by the unified `ov.llm.SCLLMManager` interface; one object handles model loading, inference, and (optional) fine-tuning."
 ---
