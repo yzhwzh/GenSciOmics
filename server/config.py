@@ -37,9 +37,11 @@ ALLOWED_ORIGINS = [
 SCAN_INTERVAL = 30  # seconds
 SCANNER_CACHE_FILE = PROJECT_ROOT / '.scanner_cache.json'
 
-# ─── Cache limits ─────────────────────────────────────────────
-CACHE_MAX_SIZE = 1000
-PLOT_CACHE_MAX_SIZE = 500
+# 缓存上限刻意不放在这里：每个 LRUCache 的 max_size 写在它自己的构造处
+# （search / routes / scanner / expression / pubmed），各按自己的域取值
+# （obs 1000、umap 与搜索结果 200、其余 500）。曾有一对 CACHE_MAX_SIZE /
+# PLOT_CACHE_MAX_SIZE 常量位于此处，随 fork 一起继承下来，全仓无人引用 ——
+# 看上去是可调旋钮，改了却没有任何效果。已删除。
 
 # ─── Proxy ────────────────────────────────────────────────────
 HTTP_PROXY = os.environ.get('HTTP_PROXY', 'http://10.230.68.120:3128')
