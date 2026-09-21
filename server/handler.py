@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """HTTP request handler for the GenSci API."""
 
-import json, sys, time
+import json, sys, threading, time
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from collections import defaultdict
 import mimetypes, os
 from pathlib import Path
 import numpy as np
@@ -15,7 +14,51 @@ DATA_DIRS = None
 # ─── Rate limiting ──────────────────────────────────────────
 _RATE_WINDOW = 60
 _RATE_MAX = 100
-_rates: dict[str, list[float]] = defaultdict(list)
+# 普通 dict，**不是** defaultdict。原先 `w = _rates[ip]` 是 defaultdict 的下标
+# 访问 —— 取不到就插入一个空 list。于是每个「历史上出现过一次」的 IP 都永久
+# 留下一个键：清理循环只 pop 时间戳，从不删键。内存因而随「累计见过多少不同
+# 的源地址」单调增长，与当前请求量无关（服务监听 :6001 且对公网可达）。
+_rates: dict[str, list[float]] = {}
+# ThreadingHTTPServer 每请求一线程，而 _rate_allowed 是「读 len → 判断 → append」
+# 的读-改-写：不加锁时多个线程能同时读到 len(w) == _RATE_MAX - 1 而各 append
+# 一次，上限被击穿。（实测 32 线程并发下临界区重叠度可达 32。）
+_rates_lock = threading.Lock()
+_rates_swept_at = 0.0   # 上次全表清理的时刻
+
+
+def _sweep_stale_ips(cutoff: float, now: float) -> None:
+    """删掉窗口外、且已不再使用的 IP。调用方必须已持有 _rates_lock。
+
+    只在距上次清理 ≥ _RATE_WINDOW 时真的遍历，于是 O(活跃 IP 数) 的扫描被摊到
+    每分钟一次，而不是每请求一次。
+
+    只删 `v[-1] < cutoff`（该 IP 最后一条记录已在窗口外）的键 —— 窗口内还在
+    访问的 IP 一个都不能动：删掉它等于把计数清零，反而是放宽限流。
+    """
+    global _rates_swept_at
+    if now - _rates_swept_at < _RATE_WINDOW:
+        return
+    _rates_swept_at = now
+    for k in [k for k, v in _rates.items() if not v or v[-1] < cutoff]:
+        del _rates[k]
+
+
+def _rate_allowed(ip: str) -> bool:
+    now = time.time()
+    cutoff = now - _RATE_WINDOW
+    with _rates_lock:
+        _sweep_stale_ips(cutoff, now)
+        w = _rates.get(ip) or []
+        while w and w[0] < cutoff:
+            w.pop(0)
+        if len(w) >= _RATE_MAX:
+            return False
+        w.append(now)
+        # 只在放行时落键：于是「键存在」⟺「该 IP 在窗口内至少被放行过一次」，
+        # 被拒的 IP 不会白占一个条目。
+        _rates[ip] = w
+        return True
+
 
 def post_route_delivers_json_body(path: str) -> bool:
     """POST 路由拿到的是解析好的 JSON body，还是 query string 字典？
@@ -33,17 +76,6 @@ def post_route_delivers_json_body(path: str) -> bool:
         or path.startswith('/api/drug/')
         or path in ('/api/milestone', '/api/heartbeat', '/api/raw-expression')
     )
-
-
-def _rate_allowed(ip: str) -> bool:
-    now = time.time()
-    w = _rates[ip]
-    while w and w[0] < now - _RATE_WINDOW:
-        w.pop(0)
-    if len(w) >= _RATE_MAX:
-        return False
-    w.append(now)
-    return True
 
 
 class _NumpyEncoder(json.JSONEncoder):
@@ -111,14 +143,6 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         self.wfile.write(body)
-
-    def _send_bytes(self, data: bytes, mime: str = 'application/octet-stream'):
-        self.send_response(200)
-        self.send_header('Content-Type', mime)
-        self.send_header('Content-Length', str(len(data)))
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(data)
 
     def _log_request(self, status: int):
         ip = self.client_address[0]

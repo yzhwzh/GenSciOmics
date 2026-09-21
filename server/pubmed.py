@@ -10,10 +10,18 @@ import urllib.request
 
 from config import HTTP_PROXY, ABSTRACT_DEADLINE_S
 from supplementary import parse_supplementary, supplementary_note
+from caches import LRUCache
 
 
 # Cache: key = pmid, value = dict
-_EUROPE_PMC_CACHE: dict[str, dict] = {}
+#
+# 上限不是可有可无的润色：值是整条记录，其中 `methods` 由 `_extract_sec(...,
+# 100000)` 填出，单条可到 100 KB 量级；而键是 PMID。于是这个缓存的大小取决于
+# **历史上被查过多少篇文献**，与当前负载无关 —— 裸 dict 时它只增不减，服务跑得
+# 越久、搜过的文献越多，常驻内存越高，且永不回落。
+# 500 与 search/expression/routes 那几处同级缓存同量级。
+_ABSTRACT_CACHE_MAX = 500
+_EUROPE_PMC_CACHE = LRUCache(_ABSTRACT_CACHE_MAX)
 
 # 单次 socket 操作的超时。**它管不住整次请求** —— 这是 per-recv 的，对端只要
 # 慢到「每个 recv 间隔内吐得出一个字节」就能让它永远不触发。实测 60 字节 / 1 B/s
@@ -72,8 +80,11 @@ def _fetch_abstract(pmid: str, deadline_s: float | None = None) -> dict:
     为什么不能只靠 socket timeout：代理「连得上但很慢」时单次 timeout 拦不住，
     而这里最多串 3 次请求，8+8+10 只是理论下界 —— 实测单次抓到过 125s（BUG_LOG B35）。
     """
-    if pmid in _EUROPE_PMC_CACHE:
-        return _EUROPE_PMC_CACHE[pmid]
+    # 单次 get：原先是 `in` + `[]`，在 LRUCache 上是**两次**加锁，且两次之间
+    # 条目可能已被淘汰，第二次取值会 KeyError。值恒为 dict，不会是 None。
+    cached = _EUROPE_PMC_CACHE.get(pmid)
+    if cached is not None:
+        return cached
 
     if deadline_s is None:
         deadline_s = ABSTRACT_DEADLINE_S
@@ -87,7 +98,7 @@ def _fetch_abstract(pmid: str, deadline_s: float | None = None) -> dict:
 
     # Skip non-PubMed IDs (PKU, BALF, brain-map, etc.)
     if not pmid or not pmid.strip().isdigit():
-        _EUROPE_PMC_CACHE[pmid] = info
+        _EUROPE_PMC_CACHE.set(pmid, info)
         return info
 
     # EuropePMC — proxy first, single attempt per URL
@@ -261,5 +272,5 @@ def _fetch_abstract(pmid: str, deadline_s: float | None = None) -> dict:
     has_record = bool(info['title'] or info['abstract'] or info.get('pmcid'))
     incomplete = (pmc_error and not info['methods']) or pmc_skipped
     if has_record and not incomplete:
-        _EUROPE_PMC_CACHE[pmid] = info
+        _EUROPE_PMC_CACHE.set(pmid, info)
     return info
