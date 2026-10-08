@@ -306,8 +306,47 @@ describe('TissuePage — load failure vs. genuinely empty tissue', () => {
 
       const text = await captured.blob!.text()
       const fields = text.split('\n').find((l) => l.includes('33936064'))!.split(',')
-      // Patient / Sample / CellTypes carry no measurement for this row.
+      // Patient / Sample / CellType carry no measurement for this row.
       expect(fields.slice(5, 8)).toEqual(['-', '-', '-'])
+    } finally {
+      clickSpy.mockRestore()
+    }
+  })
+
+  // `celltype_count` is len(obs['CellType'].unique()) — the number of DISTINCT
+  // cell types, not a cell count. "Cells" is the true cell count (adata.n_obs),
+  // which InfoPanel already labels "Cells"; the sibling SearchPage table uses
+  // "CellType" for this same column. Calling this one "Cells" made the two
+  // quantities indistinguishable.
+  it('labels the celltype_count column "CellType", not "Cells"', async () => {
+    fetchDatasetsMock.mockResolvedValue([dataset()] as never)
+
+    render(<TissuePage />)
+
+    await waitFor(() => expect(screen.getAllByText('IgAN').length).toBeGreaterThanOrEqual(2))
+    expect(screen.getByRole('columnheader', { name: 'CellType' })).toBeTruthy()
+    expect(screen.queryByRole('columnheader', { name: 'Cells' })).toBeNull()
+  })
+
+  // The CSV header and the on-screen <th> name the same column, so they have to
+  // agree. They drifted apart once already: the table said "Cells" while the
+  // export said "CellTypes", with the same celltype_count value behind both.
+  it('names the celltype column "CellType" in the CSV header too', async () => {
+    const captured: { blob: Blob | null } = { blob: null }
+    URL.createObjectURL = vi.fn((b: Blob) => { captured.blob = b; return 'blob:mock' })
+    URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    try {
+      fetchDatasetsMock.mockResolvedValue([dataset()] as never)
+
+      render(<TissuePage />)
+      await waitFor(() => expect(screen.getAllByText('IgAN').length).toBeGreaterThanOrEqual(2))
+      await userEvent.click(screen.getByRole('button', { name: /CSV/i }))
+
+      const header = (await captured.blob!.text()).split('\n')[0].split(',')
+      expect(header).toContain('CellType')
+      expect(header).not.toContain('Cells')
     } finally {
       clickSpy.mockRestore()
     }

@@ -149,7 +149,8 @@ export default function TissuePage() {
   const isTabular = activeTab === 'bulk-rna' || activeTab === 'proteomics'
 
   const downloadCSV = () => {
-    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', isTabular ? 'Genes' : 'CellTypes', 'Group']
+    // Column names mirror the on-screen <th> — see the celltype note further down.
+    const headers = ['Species', 'Disease', 'PMID', 'Size', 'Status', 'Patient', 'Sample', isTabular ? 'Genes' : 'CellType', 'Group']
     if (!isTabular) headers.push('Annotation Source')
     const csvRows = [headers.join(',')]
     for (const r of omicsRows) {
@@ -326,7 +327,10 @@ export default function TissuePage() {
                   <th className="text-center py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Status</th>
                   <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Patient</th>
                   <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Sample</th>
-                  <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">{isTabular ? 'Genes' : 'Cells'}</th>
+                  {/* celltype_count is the number of distinct cell types, not a cell
+                      count — "Cells" (adata.n_obs) is a different number, shown as such
+                      in InfoPanel. SearchPage labels this same column "CellType". */}
+                  <th className="text-right py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">{isTabular ? 'Genes' : 'CellType'}</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Group</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">
                     <FilterDropdown label={isTabular ? 'Data Type' : 'Sample Type'} values={getUniqueValues(isTabular ? 'data_type' : 'tissue_obs')}
