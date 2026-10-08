@@ -1810,4 +1810,202 @@ Free Analysis 的系统提示词「可用技能」列表里列着某些 skill，
 
 ---
 
-*后续新缺陷按 B38、B39... 追加。*
+## B38. `validate_real_path` 的白名单只是词法比较，`..` 未折叠即可绕过 (2026-09-21)
+
+> 编号说明：本条与 B39 都在 2026-09-21 修复、当时未记账，今日（10-08）一并补录。
+> 为让日期单调，它们排在今日发现的 B40 之前，编号与补录提议时的口头序号不同。
+
+### 现象
+
+所有接受 `real_path` 的接口（`/api/plot`、`/api/umap-data`、`/api/expression-stats` …）都先过
+`validate_real_path()` 做「路径必须落在 `Data/` 下」的白名单校验。但
+`…/10.GenSciOmics/Data/../server/config.py` 能**通过**校验：函数原样返回这条路径，
+OS 直到 `open()` 才把 `..` 解析掉 —— 真正读到的是 `server/config.py`。白名单等于不存在。
+
+### 根因
+
+`Path.is_relative_to()` 是**纯词法**比较：它只按路径分量做前缀匹配，既不折叠 `..`，
+也不看符号链接。而原实现是把它用在**未规范化的原始字符串**上，再把**同一条**未折叠的
+路径返回给调用方。
+
+问题不在 `is_relative_to` 用错了，而在**「被检查的字符串」和「最终被 OS 解析的字符串」
+是同一条** —— OS 是这条链上唯一会解释 `..` 的一方，检查却发生在它之前。检查与使用之间
+的语义差，就是绕过口。
+
+### 修复
+
+`server/routes.py:78-79` —— 先用 `os.path.normpath()` 折叠 `..`，再拿去做白名单比较：
+
+```python
+original = Path(os.path.normpath(path_str))
+allowed = any(original.is_relative_to(d) for d in DATA_DIRS)
+```
+
+刻意**不用** `resolve()`：它会一并跟随符号链接，而 `Data/` 下 97 个软链接全都指向外部
+存储（真实 `.h5ad` 在 `/data/yuanwuzhou/08.GEO/…`），跟随之后**全部落在白名单外** ——
+一次「更彻底」的安全加固会直接变成平台读不到任何数据。
+
+`normpath` 是词法的，因此前提是「`Data/` 下不能有**目录**软链接」：`..` 前面若有目录软链，
+词法折叠（落在 `Data/` 内）与 OS 解析（落在链接目标那侧）会分叉。当前 97 个全是**文件**链接，
+`test_real_path_traversal.py` 第 4 组把这条前提钉住；布局一变，那里会红并指回这里。
+
+### 同一提交里的其余修正（`d5d4e83`）
+
+- **`/api/llm/chat`、`/api/llm/chat/stream` 补 `validate_real_path`**：两个端点都要求
+  `real_path` 必填，却只判空。用户可控路径一路传到 skill 参数与 `ShellTool`。stream 那条
+  必须在 `_stream_sse_response()` **之前**校验 —— 响应头发出 200 之后就没法再改错误状态了。
+- **`UmapTabContent` 请求进行中先闪一句 "No data"**：`setLoading` 在这个文件里根本不存在，
+  加载态从来没被置起来过。补 `setLoading(true)` 并复位 `error` / `plotData`。
+- **`main.py` 里写死他人目录的 `OLLAMA_MODELS` `setdefault` 删除**：CLAUDE.md 硬编码禁令；
+  且该变量属 ollama 守护进程、不是本进程，全仓无人读它，从来无效。
+- **三处静默 `except` 补 stderr**：`events.py` 事件日志写入、`routes.py` 里程碑落盘、
+  `scanner.py` 解析 `annotation_sources.json`。scanner 那处区分「文件本来就没有」与
+  「解析失败」，只有前者保持静默。
+- **死代码 `/api/skill-plot` 整条链删除**（`store_plot` / `_plots` / `_plots_lock` /
+  `handle_get_skill_plot` / 路由注册项）。源自 `06.GenSci` 的 `90d5e98`，`f2296b2` 重构
+  skill 时调用方被移除，此后全仓零引用、`_plots` 恒为空 dict。
+
+### 验证
+
+- `server/tests/test_real_path_traversal.py` —— `..` 被拒，且 `Data/` 内软链接**仍放行**
+  （防误伤：与上面「不用 resolve」是同一个约束的两面）
+- `server/tests/test_llm_real_path_guard.py` —— 两个 LLM 端点的路径校验
+- `src/components/analysis/UmapTabContent.test.tsx` —— 请求未完成时不得出现 "No data"
+
+### 涉及文件
+
+`server/routes.py`、`server/main.py`、`server/events.py`、`server/scanner.py`、
+`src/components/analysis/UmapTabContent.tsx` + 3 个新测试文件
+
+### 关键教训
+
+- **校验用的字符串，必须就是最终被解析的那条。** 中间只要还夹着一层会重新解释它的东西
+  （这里是 OS），词法检查就能被绕过 —— 而且绕得非常安静。
+- **「更严格」不等于「更正确」。** `resolve()` 看上去比 `normpath()` 更彻底，但它会禁掉
+  97 个软链接，把一次安全修复变成一次服务中断。约束来自**数据布局**，不来自 API 的名字；
+  写死代码前先去数链接。
+
+---
+
+## B39. 两处随「历史累计量」单调增长的内存，和一处被击穿的限流 (2026-09-21)
+
+### 现象
+
+两个与服务**运行时长**和**累计见过多少不同的东西**成正比、而与当前负载无关的内存增长；
+外加一个在并发下不成立的上限。
+
+### 根因
+
+**① `pubmed._EUROPE_PMC_CACHE` 是裸 dict。** 键是 PMID，值是整条摘要记录，其中 `methods`
+由 `_extract_sec(…, 100000)` 填出，**单条可到 100 KB 量级**。于是缓存大小只取决于历史上
+被查过多少篇文献 —— 只增不减，永不回落。
+
+**② `handler._rates` 的键从不删除。** 原实现是 `defaultdict(list)`，且用下标访问
+`w = _rates[ip]` —— 取不到就**插入**一个空 list。清理循环只 `w.pop(0)` 掉窗口外的
+时间戳，从不 `del _rates[ip]`。于是每个「历史上出现过一次」的源地址都永久留一个键。
+服务监听 `:6001` 且对公网可达，内存因此与「累计见过多少个不同 IP」单调增长。
+
+**③ 限流上限 `_RATE_MAX = 100` 可以被击穿。** `_rate_allowed` 是「读 `len(w)` → 判断 →
+`append`」的读-改-写；`ThreadingHTTPServer` 每请求一线程，不加锁时多个线程能同时读到
+`len(w) == _RATE_MAX - 1` 然后各自 append。（实测 32 线程并发下临界区重叠度可达 32。）
+
+### 修复
+
+- `pubmed.py`：`_EUROPE_PMC_CACHE` 改为 `LRUCache(500)`，与 search / expression / routes
+  那几处同级缓存同量级。
+- `handler.py`：`_rates` 改**普通 dict**（不是 defaultdict）；清理只删 `v[-1] < cutoff`
+  —— 即该 IP **最后一条**记录已在窗口外 —— 的键。窗口内还在访问的 IP 一个都不能动：
+  删掉它等于把计数清零，那是**放宽**限流，方向反了。
+- 全表扫描只在距上次 ≥ `_RATE_WINDOW` 时真的遍历，把 O(活跃 IP 数) 摊到每分钟一次，
+  而不是每请求一次。加 `_rates_lock` 包住整个读-改-写。
+- **只在放行时落键**：于是「键存在」⟺「该 IP 在窗口内至少被放行过一次」，被拒的 IP
+  不白占一个条目。
+- `caches.LRUCache` 补 dict 协议（`__contains__` / `__setitem__` / `__getitem__` …），
+  使上述替换处的调用方无需改写访问方式。
+
+### 验证
+
+`server/tests/test_abstract_cache_bounded.py`（216 行）、
+`server/tests/test_rate_limit_bounded.py`（323 行）。
+
+### 涉及文件
+
+`server/pubmed.py`、`server/handler.py`、`server/caches.py` + 2 个新测试文件
+
+### 关键教训
+
+- **缓存的上限要由「当前负载」封顶，不能由「历史累计」决定。** 任何以「历史上出现过
+  多少个不同的 X」为键空间的容器（摘要按 PMID、限流表按源 IP），上限都是必需品，
+  不是优化项。
+- **`defaultdict` 的下标访问是写操作。** 读代码时它长得像一次查询，跑起来是一次插入。
+  当清理逻辑只清「值」不清「键」时，泄漏就藏在这条缝里 —— 而且它不报错、不告警。
+- **「检查后使用」的计数必须有锁。** 无锁时上限只是一句愿望。这与 B38 是同一类错误的
+  不同外衣：检查的对象与生效的对象不是同一个状态。
+
+---
+
+## B40. 身体图谱两个器官只画出一半：SVG 路径用逗号分隔两条命令，浏览器静默丢弃后半段 (2026-10-08)
+
+### 现象
+
+Tissue 页左侧身体图谱里的**肾脏（Kidney）**和**肾上腺（Adrenal Gland）**只渲染出约一半
+轮廓 —— 只剩第一个子路径，第二个子路径整块消失。控制台只有两条 `Expected path command`，
+页面无异常、无红框；肉眼看上去完全像「这个器官本来就是这个形状」。
+
+### 根因
+
+`src/data/mockData.ts` 里这两条路径用**逗号**连接 `closepath` 与后面的 `moveto`：
+
+```
+…290.17,933.912z,M464.609,920.767…
+                 ↑ 这里
+```
+
+SVG 路径语法里**逗号只能分隔「值」，永远不能分隔「命令」**；命令字母前面唯一合法的分隔符
+是空白（或字符串开头）。浏览器遇到 `z,M` 判为语法错误，报 `Expected path command`，
+然后**丢弃该逗号之后的全部内容** —— 不抛异常、不回退到「截断到可用部分」，而是整条子路径
+静默扔掉。
+
+量化证据（注入两个 10×10 方块，量 `getTotalLength()`）：
+
+| 写法 | `getTotalLength()` |
+|---|---|
+| `…z,M…`（缺陷写法） | `34.14213562011719` |
+| `…z M…`（修复写法） | `68.28427124023438` |
+
+正好一倍 —— 后一个子路径从未进入渲染树。
+
+### 修复
+
+`z,M` → `z M`（`mockData.ts:249/250`，**两个字符**）。顺带查过：合法的紧贴形式 `zM`
+在全文件出现 **0 次** —— 需要拼接子路径的两处，恰好都用了错的那种。
+
+### 验证
+
+新增 `src/data/mockData.test.ts`，两条断言覆盖 `ORGAN_SHAPES` 与 `SPECIES_ORGANS` 全部
+**29 条**路径串：
+
+1. 任何路径串都不得出现「逗号后跟命令字母」；
+2. `kidney` / `adrenal_gland` 必须**仍保有**第二个子路径（`/[zZ]\s*[Mm]/`）—— 这条防的是
+   「把逗号删掉、顺手把第二个器官也删了」的假修复。
+
+### 涉及文件
+
+`src/data/mockData.ts`、`src/data/mockData.test.ts`（新增）
+
+### 关键教训
+
+- **「没有报错」不等于「没有问题」。** 浏览器对 SVG 路径语法的恢复策略是丢弃剩余部分：
+  器官照画、只是画少一半 —— 视觉上与「本来就是这样」不可区分。这次是把 `getTotalLength()`
+  量出来才证死的，目视和读源码都看不出来。
+- **写断言时先问：它会在什么情况下给出假绿？** 本条的第一版断言写成「字符串里存在第二个
+  `M`」—— 而 `z,M` 的字母**就在源码里**，是浏览器在运行时丢的。写成那样，缺陷存在时测试
+  照样全绿。所以断言必须落在**拼接处**本身，而不是「某个字母出现过」。
+- **正则扫全文件前，先把目标剥出来再匹配。** 第一遍用宽正则扫 `mockData.ts`，报了 **104** 处
+  命中，实际只有 **2** 处 —— 其余是 `, liver` / `, lung` / `, label:` 这类**散文**撞上了字符类。
+  改成只提取被引号包住的路径串后才是真数。同一个错当天犯了两次（第二次是扫 `{ slug:` 行，
+  那里同样有 `, label:`）。
+
+---
+
+*后续新缺陷按 B41、B42... 追加。*
