@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 860" width="100%" height="100%" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
   <defs>
     <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000012"/></filter>
     <filter id="shadow-light"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0000000A"/></filter>
@@ -8,168 +8,212 @@
   </defs>
 
   <!-- TITLE -->
-  <text x="600" y="32" text-anchor="middle" font-size="20" font-weight="bold" fill="#1E293B">Single-cell Atlas — 系统架构图</text>
-  <text x="600" y="50" text-anchor="middle" font-size="9" fill="#64748B">System Architecture  |  Layered Container Diagram</text>
+  <text x="720" y="32" text-anchor="middle" font-size="22" font-weight="bold" fill="#1E293B">GenSciOmics — 系统架构图</text>
+  <text x="720" y="52" text-anchor="middle" font-size="11" fill="#64748B">System Architecture  |  Layered Container Diagram  |  单细胞 · Bulk RNA · 蛋白质组 · 药物发现</text>
 
   <!-- ════════════════════════════════════════════════════════════
        L1: FRONTEND
      ════════════════════════════════════════════════════════════ -->
-  <rect x="40" y="72" width="1120" height="125" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1" filter="url(#shadow)"/>
-  <text x="600" y="88" text-anchor="middle" font-size="10" font-weight="bold" fill="#166534">L1 — 前端应用 (Frontend SPA)</text>
-  <text x="60" y="101" font-size="7" fill="#64748B" font-style="italic">React 19 · TypeScript 6 · Vite 8 · Tailwind v4 · ECharts 6</text>
+  <rect x="40" y="70" width="1360" height="165" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1" filter="url(#shadow)"/>
+  <text x="720" y="88" text-anchor="middle" font-size="13" font-weight="bold" fill="#166534">L1 — 前端应用 (Frontend SPA)</text>
+  <text x="56" y="104" font-size="9" fill="#64748B" font-style="italic">React 19 · TypeScript 6 · Vite 8 · Tailwind v4 · ECharts 6 · react-router v7  —  6 条路由</text>
 
-  <!-- HomePage -->
-  <rect x="55" y="108" width="340" height="78" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="225" y="122" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#166534">🏠 HomePage (/)</text>
-  <text x="65" y="138" font-size="6.5" fill="#475569">  CoreDatasets — 28 组织卡片网格</text>
-  <text x="65" y="152" font-size="6.5" fill="#475569">  StatsTable — 组织×物种统计表</text>
-  <text x="65" y="166" font-size="6.5" fill="#475569">  TissueAtlas — SVG 人体/小鼠/猴 体图</text>
+  <!-- 1 HomePage -->
+  <rect x="56" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="66" y="129" font-size="10.5" font-weight="bold" fill="#166534">🏠 HomePage</text>
+  <text x="66" y="143" font-size="7.5" fill="#94A3B8">/</text>
+  <text x="66" y="161" font-size="8.5" fill="#475569">CoreDatasets — 组织卡片</text>
+  <text x="66" y="177" font-size="8.5" fill="#475569">TissueAtlas — SVG 体图</text>
+  <text x="66" y="193" font-size="8.5" fill="#475569">StatsTable — 组织×物种</text>
+  <text x="66" y="209" font-size="8.5" fill="#475569">OnlineUsers · UpdateLog</text>
 
-  <!-- TissuePage -->
-  <rect x="410" y="108" width="340" height="78" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="580" y="122" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#166534">🔬 TissuePage (/tissue/:slug)</text>
-  <text x="420" y="138" font-size="6.5" fill="#475569">  DatasetTable — 数据集列表 + FilterDropdown</text>
-  <text x="420" y="152" font-size="6.5" fill="#475569">  LiteratureTab (Tissue Workspace) — LLM 文献</text>
-  <text x="420" y="166" font-size="6.5" fill="#475569">  RawDataDownload — CSV 导出</text>
+  <!-- 2 DatasetPage -->
+  <rect x="280" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="290" y="129" font-size="10.5" font-weight="bold" fill="#166534">📄 DatasetPage</text>
+  <text x="290" y="143" font-size="7.5" fill="#94A3B8">/dataset/:slug</text>
+  <text x="290" y="161" font-size="8.5" fill="#475569">数据集详情</text>
+  <text x="290" y="177" font-size="8.5" fill="#475569">按 URL slug 查数据集</text>
+  <text x="290" y="193" font-size="8.5" fill="#475569">未命中回退 Unknown</text>
+  <text x="290" y="209" font-size="8" fill="#94A3B8" font-style="italic">(占位页，待补)</text>
 
-  <!-- AnalysisPage -->
-  <rect x="765" y="108" width="380" height="78" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="955" y="122" text-anchor="middle" font-size="7.5" font-weight="bold" fill="#166534">📊 AnalysisPage (/analysis/:slug/:disease/:pmid)</text>
-  <text x="775" y="138" font-size="6.5" fill="#475569">  Tab0:InfoPanel · Tab1:UmapPlot+DualGeneColorMap</text>
-  <text x="775" y="152" font-size="6.5" fill="#475569">  Tab2:BoxPlotContainer+DetailTable+MuTestTable</text>
-  <text x="775" y="166" font-size="6.5" fill="#475569">  Tab3:ExpressionChartContainer+FisherTable</text>
+  <!-- 3 TissuePage -->
+  <rect x="504" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="514" y="129" font-size="10.5" font-weight="bold" fill="#166534">🔬 TissuePage</text>
+  <text x="514" y="143" font-size="7.5" fill="#94A3B8">/tissue/:slug</text>
+  <text x="514" y="161" font-size="8.5" fill="#475569">DatasetInfo + 筛选器</text>
+  <text x="514" y="177" font-size="8.5" fill="#475569">OmicsTab — 组学切换</text>
+  <text x="514" y="193" font-size="8.5" fill="#475569">LiteratureTab — LLM</text>
+  <text x="514" y="209" font-size="8.5" fill="#475569">CSV 数据导出</text>
 
-  <line x1="600" y1="199" x2="600" y2="212" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
+  <!-- 4 AnalysisPage -->
+  <rect x="728" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="738" y="129" font-size="10.5" font-weight="bold" fill="#166534">📊 AnalysisPage</text>
+  <text x="738" y="143" font-size="7" fill="#94A3B8">/analysis/:tissue/:disease/:pmid</text>
+  <text x="738" y="161" font-size="8.5" fill="#475569">单细胞: UMAP/Box/Bar</text>
+  <text x="738" y="177" font-size="8.5" fill="#475569">Bulk/蛋白: Expression &amp; DE</text>
+  <text x="738" y="193" font-size="8.5" fill="#475569">共同: Study Info</text>
+  <text x="738" y="209" font-size="8.5" fill="#475569">共同: Free Analysis</text>
+
+  <!-- 5 SearchPage -->
+  <rect x="952" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="962" y="129" font-size="10.5" font-weight="bold" fill="#166534">🔎 SearchPage</text>
+  <text x="962" y="143" font-size="7.5" fill="#94A3B8">/search</text>
+  <text x="962" y="161" font-size="8.5" fill="#475569">基因/疾病/PMID/细胞型</text>
+  <text x="962" y="177" font-size="8.5" fill="#475569">useTableFilter + 筛选器</text>
+  <text x="962" y="193" font-size="8.5" fill="#475569">匹配类型分类着色</text>
+  <text x="962" y="209" font-size="8.5" fill="#475569">外部链接直达</text>
+
+  <!-- 6 DrugDiscoveryPage -->
+  <rect x="1176" y="112" width="209" height="112" rx="4" fill="#FFFFFF" stroke="#86EFAC" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1186" y="129" font-size="10.5" font-weight="bold" fill="#166534">💊 DrugDiscovery</text>
+  <text x="1186" y="143" font-size="7.5" fill="#94A3B8">/drug-discovery</text>
+  <text x="1186" y="161" font-size="8.5" fill="#475569">6 阶段发现流水线</text>
+  <text x="1186" y="177" font-size="8.5" fill="#475569">阶段锁定 skill 过滤</text>
+  <text x="1186" y="193" font-size="8.5" fill="#475569">SSE 流式编排</text>
+  <text x="1186" y="209" font-size="8.5" fill="#475569">前序阶段结论传递</text>
+
+  <line x1="720" y1="238" x2="720" y2="252" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
 
   <!-- ════════════════════════════════════════════════════════════
        L2: BACKEND
      ════════════════════════════════════════════════════════════ -->
-  <rect x="40" y="218" width="1120" height="195" rx="6" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1" filter="url(#shadow)"/>
-  <text x="600" y="234" text-anchor="middle" font-size="10" font-weight="bold" fill="#991B1B">L2 — 后端服务 (Backend Services)</text>
-  <text x="60" y="247" font-size="7" fill="#64748B" font-style="italic">Python 3  ·  ThreadingHTTPServer  ·  Port :6000  ·  并发请求处理</text>
+  <rect x="40" y="252" width="1360" height="310" rx="6" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1" filter="url(#shadow)"/>
+  <text x="720" y="270" text-anchor="middle" font-size="13" font-weight="bold" fill="#991B1B">L2 — 后端服务 (Backend Services)</text>
+  <text x="56" y="286" font-size="9" fill="#64748B" font-style="italic">Python 3 标准库  ·  ThreadingHTTPServer  ·  端口 :6001  ·  38 个 API 端点  ·  无外部 Web 框架</text>
 
   <!-- Core API -->
-  <rect x="55" y="256" width="240" height="148" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="175" y="271" text-anchor="middle" font-size="8" font-weight="bold" fill="#991B1B">⚙️ Core API</text>
-  <line x1="65" y1="279" x2="285" y2="279" stroke="#FEE2E2" stroke-width="0.5"/>
-  <text x="65" y="294" font-size="6.8" fill="#475569">config.py · handler.py · routes.py</text>
-  <text x="65" y="311" font-size="6.8" fill="#475569">GET /api/datasets /tissues /stats</text>
-  <text x="65" y="328" font-size="6.8" fill="#475569">GET /api/umap-data /expression-stats</text>
-  <text x="65" y="345" font-size="6.8" fill="#475569">GET /api/plot /search /cell-types</text>
-  <text x="65" y="362" font-size="6.8" fill="#475569">POST /api/llm/chat (SSE streaming)</text>
-  <text x="65" y="379" font-size="6.8" fill="#475569">POST /api/milestone /heartbeat</text>
+  <rect x="56" y="296" width="256" height="252" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="184" y="318" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#991B1B">⚙️ Core API</text>
+  <line x1="68" y1="328" x2="300" y2="328" stroke="#FEE2E2" stroke-width="0.5"/>
+  <text x="68" y="348" font-size="8" fill="#64748B">config.py · handler.py · routes.py</text>
+  <text x="68" y="370" font-size="8" fill="#475569">GET  数据集 / 组织 / 统计 / 日志</text>
+  <text x="68" y="390" font-size="8" fill="#475569">GET  UMAP / 表达 / 分组 / 表格</text>
+  <text x="68" y="410" font-size="8" fill="#475569">GET  散点 / 箱线 / 火山 / 点图</text>
+  <text x="68" y="430" font-size="8" fill="#475569">GET  基因补全 / 文献摘要</text>
+  <text x="68" y="452" font-size="8" fill="#475569">POST LLM 对话（SSE 流式）</text>
+  <text x="68" y="472" font-size="8" fill="#475569">POST 药物流水线（SSE）</text>
+  <text x="68" y="492" font-size="8" fill="#475569">POST 里程碑 / 心跳 / 在线数</text>
+  <text x="68" y="516" font-size="8" fill="#9F1239">dict 路由表分发 · 路径白名单校验</text>
 
-  <!-- Analysis -->
-  <rect x="310" y="256" width="260" height="148" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="440" y="271" text-anchor="middle" font-size="8" font-weight="bold" fill="#991B1B">🔬 Analysis Modules</text>
-  <line x1="320" y1="279" x2="560" y2="279" stroke="#FEE2E2" stroke-width="0.5"/>
-  <rect x="325" y="288" width="230" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="440" y="301" text-anchor="middle" font-size="6.5" fill="#9F1239">umap.py — UMAP 坐标提取</text>
-  <rect x="325" y="310" width="230" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="440" y="323" text-anchor="middle" font-size="6.5" fill="#9F1239">expression.py — 基因表达统计</text>
-  <rect x="325" y="332" width="230" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="440" y="345" text-anchor="middle" font-size="6.5" fill="#9F1239">stats.py — MWU / Fisher exact 检验</text>
-  <rect x="325" y="354" width="230" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="440" y="367" text-anchor="middle" font-size="6.5" fill="#9F1239">plots.py — matplotlib → base64 PNG</text>
-  <rect x="325" y="376" width="230" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="440" y="389" text-anchor="middle" font-size="6.5" fill="#9F1239">utils.py — 调色板/基因解析/列检测</text>
-
-  <!-- Infra -->
-  <rect x="585" y="256" width="250" height="148" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="710" y="271" text-anchor="middle" font-size="8" font-weight="bold" fill="#991B1B">🏗️ Infrastructure</text>
-  <line x1="595" y1="279" x2="825" y2="279" stroke="#FEE2E2" stroke-width="0.5"/>
-  <rect x="600" y="288" width="220" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="710" y="301" text-anchor="middle" font-size="6.5" fill="#9F1239">scanner.py — 30s 扫描 .h5ad</text>
-  <rect x="600" y="310" width="220" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="710" y="323" text-anchor="middle" font-size="6.5" fill="#9F1239">search.py — 基因/疾病/PMID 搜索</text>
-  <rect x="600" y="332" width="220" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="710" y="345" text-anchor="middle" font-size="6.5" fill="#9F1239">pubmed.py — EuropePMC 摘要</text>
-  <rect x="600" y="354" width="220" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="710" y="367" text-anchor="middle" font-size="6.5" fill="#9F1239">caches.py — LRUCache</text>
-  <rect x="600" y="376" width="220" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="710" y="389" text-anchor="middle" font-size="6.5" fill="#9F1239">memory/ — memdir 文件记忆系统</text>
+  <!-- Analysis Modules -->
+  <rect x="324" y="296" width="256" height="252" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="452" y="318" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#991B1B">🔬 Analysis Modules</text>
+  <line x1="336" y1="328" x2="568" y2="328" stroke="#FEE2E2" stroke-width="0.5"/>
+  <text x="336" y="348" font-size="8" fill="#64748B">server/analysis/</text>
+  <text x="336" y="372" font-size="8" fill="#475569">umap.py — UMAP 坐标提取</text>
+  <text x="336" y="394" font-size="8" fill="#475569">expression.py — 单细胞表达</text>
+  <text x="336" y="416" font-size="8" fill="#475569">bulk.py — Bulk/蛋白 DE ·</text>
+  <text x="336" y="430" font-size="8" fill="#475569">        火山图 · 分组识别</text>
+  <text x="336" y="452" font-size="8" fill="#475569">stats.py — MWU / Fisher</text>
+  <text x="336" y="474" font-size="8" fill="#475569">plots.py — matplotlib → PNG</text>
+  <text x="336" y="496" font-size="8" fill="#475569">utils.py — 调色板 / 基因解析</text>
+  <text x="336" y="516" font-size="8" fill="#9F1239">        / 分组列检测</text>
 
   <!-- Agent System -->
-  <rect x="850" y="256" width="295" height="148" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="997" y="271" text-anchor="middle" font-size="8" font-weight="bold" fill="#991B1B">🤖 Agent System (ReAct Loop)</text>
-  <line x1="860" y1="279" x2="1135" y2="279" stroke="#FEE2E2" stroke-width="0.5"/>
-  <rect x="865" y="288" width="265" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="997" y="301" text-anchor="middle" font-size="6.5" fill="#9F1239">① Memory Prefetch → 自动搜索记忆</text>
-  <rect x="865" y="310" width="265" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="997" y="323" text-anchor="middle" font-size="6.5" fill="#9F1239">② assemble_prompt() → 13 章节拼接</text>
-  <rect x="865" y="332" width="265" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="997" y="345" text-anchor="middle" font-size="6.5" fill="#9F1239">③ for-loop ReAct: LLM ↔ tool_calls</text>
-  <rect x="865" y="354" width="265" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="997" y="367" text-anchor="middle" font-size="6.5" fill="#9F1239">④ 并行执行 (ThreadPool3) + hooks</text>
-  <rect x="865" y="376" width="265" height="18" rx="3" fill="#FFF1F2" stroke="#FDA4AF" stroke-width="0.5"/>
-  <text x="997" y="389" text-anchor="middle" font-size="6.5" fill="#9F1239">⑤ Streaming 重试 (502/503/504)</text>
+  <rect x="592" y="296" width="256" height="252" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="720" y="318" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#991B1B">🤖 Agent System (ReAct)</text>
+  <line x1="604" y1="328" x2="836" y2="328" stroke="#FEE2E2" stroke-width="0.5"/>
+  <text x="604" y="348" font-size="8" fill="#64748B">llm_proxy.py → agent/</text>
+  <text x="604" y="372" font-size="8" fill="#475569">llm_proxy — SSE 入口 ·</text>
+  <text x="604" y="386" font-size="8" fill="#475569">  按组学类型分域 skill</text>
+  <text x="604" y="408" font-size="8" fill="#475569">prompt.py — 13 章节拼装</text>
+  <text x="604" y="430" font-size="8" fill="#475569">evaluator.py — 结果评估</text>
+  <text x="604" y="444" font-size="8" fill="#475569">  + SQLite 日志</text>
+  <text x="604" y="466" font-size="8" fill="#475569">engine/hooks.py — 后置钩子</text>
+  <text x="604" y="488" font-size="8" fill="#475569">并行工具调用 (ThreadPool 3)</text>
+  <text x="604" y="510" font-size="8" fill="#9F1239">记忆预取 → 注入 system msg</text>
 
-  <line x1="600" y1="415" x2="600" y2="428" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
+  <!-- Skills -->
+  <rect x="860" y="296" width="256" height="252" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="988" y="318" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#991B1B">🧩 Skills — 83 个</text>
+  <line x1="872" y1="328" x2="1104" y2="328" stroke="#FEE2E2" stroke-width="0.5"/>
+  <text x="872" y="348" font-size="8" fill="#64748B">server/skills/&lt;name&gt;/</text>
+  <text x="872" y="370" font-size="8" fill="#475569">核心工具 6 — shell / skill /</text>
+  <text x="872" y="384" font-size="8" fill="#475569">  tool_search / memory ×3</text>
+  <text x="872" y="406" font-size="8" fill="#475569">light-* 28 — 图表 / 文献 /</text>
+  <text x="872" y="420" font-size="8" fill="#475569">  写作 / 投稿 / 引用核验</text>
+  <text x="872" y="442" font-size="8" fill="#475569">drug-* 29 — 6 阶段药物发现</text>
+  <text x="872" y="464" font-size="8" fill="#475569">bulk-* 10 — Bulk / 蛋白质组</text>
+  <text x="872" y="486" font-size="8" fill="#475569">single-* 10 — 单细胞全流程</text>
+  <text x="872" y="508" font-size="8" fill="#9F1239">protein-* / proteomics-* 4</text>
+
+  <!-- Infrastructure -->
+  <rect x="1128" y="296" width="256" height="252" rx="5" fill="#FFFFFF" stroke="#FCA5A5" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1256" y="318" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#991B1B">🏗️ Infrastructure</text>
+  <line x1="1140" y1="328" x2="1372" y2="328" stroke="#FEE2E2" stroke-width="0.5"/>
+  <text x="1140" y="348" font-size="8" fill="#475569">scanner.py — 30s 扫描 .h5ad</text>
+  <text x="1140" y="368" font-size="8" fill="#475569">search.py — 基因/疾病/PMID</text>
+  <text x="1140" y="388" font-size="8" fill="#475569">pubmed.py — EuropePMC 摘要</text>
+  <text x="1140" y="408" font-size="8" fill="#475569">caches.py — LRUCache（限 1000）</text>
+  <text x="1140" y="428" font-size="8" fill="#475569">core/adata_cache.py — AnnData</text>
+  <text x="1140" y="442" font-size="8" fill="#475569">  句柄缓存</text>
+  <text x="1140" y="462" font-size="8" fill="#475569">core/mcp_manager.py — MCP 连接</text>
+  <text x="1140" y="482" font-size="8" fill="#475569">events.py · online.py ·</text>
+  <text x="1140" y="496" font-size="8" fill="#475569">supplementary.py</text>
+  <text x="1140" y="516" font-size="8" fill="#9F1239">drug_stages.py · bulk_import.py</text>
+
+  <line x1="720" y1="565" x2="720" y2="579" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
 
   <!-- ════════════════════════════════════════════════════════════
        L3: DATA STORAGE
      ════════════════════════════════════════════════════════════ -->
-  <rect x="40" y="435" width="1120" height="85" rx="6" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow)"/>
-  <text x="600" y="451" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400E">L3 — 数据存储 (Data Storage)</text>
+  <rect x="40" y="579" width="1360" height="96" rx="6" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow)"/>
+  <text x="720" y="598" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400E">L3 — 数据存储 (Data Storage)</text>
 
-  <rect x="55" y="460" width="240" height="50" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="175" y="476" text-anchor="middle" font-size="8" font-weight="bold" fill="#92400E">📂 .h5ad Data</text>
-  <text x="175" y="493" text-anchor="middle" font-size="6.5" fill="#64748B">Data/Human/Lung · Kidney · Joint/...</text>
+  <rect x="56" y="608" width="320" height="52" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="216" y="628" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400E">📂 .h5ad 数据</text>
+  <text x="216" y="647" text-anchor="middle" font-size="8.5" fill="#64748B">Data/Human 32 器官 · Mouse · Monkey</text>
 
-  <rect x="320" y="460" width="240" height="50" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="440" y="476" text-anchor="middle" font-size="8" font-weight="bold" fill="#92400E">💾 Disk Cache</text>
-  <text x="440" y="493" text-anchor="middle" font-size="6.5" fill="#64748B">.scanner_cache.json  ·  mtime 比对</text>
+  <rect x="392" y="608" width="320" height="52" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="552" y="628" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400E">💾 磁盘缓存</text>
+  <text x="552" y="647" text-anchor="middle" font-size="8.5" fill="#64748B">.scanner_cache.json  ·  mtime 比对</text>
 
-  <rect x="585" y="460" width="240" height="50" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="705" y="476" text-anchor="middle" font-size="8" font-weight="bold" fill="#92400E">🧠 Memory Cache</text>
-  <text x="705" y="493" text-anchor="middle" font-size="6.5" fill="#64748B">LRUCache (obs stats · plots)  max 1000</text>
+  <rect x="728" y="608" width="320" height="52" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="628" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400E">🧠 内存缓存</text>
+  <text x="888" y="647" text-anchor="middle" font-size="8.5" fill="#64748B">LRUCache + adata_cache  ·  上限 1000</text>
 
-  <rect x="850" y="460" width="295" height="50" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="997" y="476" text-anchor="middle" font-size="8" font-weight="bold" fill="#92400E">📝 Logs · Events · Memory</text>
-  <text x="997" y="493" text-anchor="middle" font-size="6.5" fill="#64748B">GenSci.log · milestones.json · server/memory/</text>
+  <rect x="1064" y="608" width="320" height="52" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1224" y="628" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400E">📝 日志 · 事件 · 记忆</text>
+  <text x="1224" y="647" text-anchor="middle" font-size="8.5" fill="#64748B">GenSci.log · milestones.json · memory/</text>
 
-  <line x1="600" y1="522" x2="600" y2="535" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
+  <line x1="720" y1="678" x2="720" y2="692" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
 
   <!-- ════════════════════════════════════════════════════════════
        L4: EXTERNAL
      ════════════════════════════════════════════════════════════ -->
-  <rect x="40" y="542" width="1120" height="78" rx="6" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1" filter="url(#shadow)"/>
-  <text x="600" y="558" text-anchor="middle" font-size="10" font-weight="bold" fill="#5B21B6">L4 — 外部集成 (External)</text>
+  <rect x="40" y="692" width="1360" height="96" rx="6" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1" filter="url(#shadow)"/>
+  <text x="720" y="711" text-anchor="middle" font-size="13" font-weight="bold" fill="#5B21B6">L4 — 外部集成 (External)</text>
 
-  <rect x="170" y="568" width="270" height="44" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="305" y="583" text-anchor="middle" font-size="8" font-weight="bold" fill="#5B21B6">🧠 LLM Gateway</text>
-  <text x="305" y="599" text-anchor="middle" font-size="6.5" fill="#64748B">llm-gateway.ai.dgtmeta.com · Qwen3.5-397B</text>
+  <rect x="56" y="722" width="430" height="58" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="271" y="742" text-anchor="middle" font-size="10" font-weight="bold" fill="#5B21B6">🧠 LLM Gateway</text>
+  <text x="271" y="761" text-anchor="middle" font-size="8.5" fill="#64748B">llm-gateway.ai.dgtmeta.com  ·  Qwen3.5-397B</text>
+  <text x="271" y="774" text-anchor="middle" font-size="8" fill="#94A3B8">兼容 OpenAI 与 Anthropic 两种格式（自动判别）</text>
 
-  <rect x="465" y="568" width="270" height="44" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="600" y="583" text-anchor="middle" font-size="8" font-weight="bold" fill="#5B21B6">🔌 MCP Servers</text>
-  <text x="600" y="599" text-anchor="middle" font-size="6.5" fill="#64748B">GitHub · Playwright · Exa · Context7 · SeqThinking</text>
+  <rect x="505" y="722" width="430" height="58" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="720" y="742" text-anchor="middle" font-size="10" font-weight="bold" fill="#5B21B6">🔌 MCP Servers — 6 个（后端自带 client）</text>
+  <text x="720" y="761" text-anchor="middle" font-size="8.5" fill="#64748B">exa · context7 · sequential-thinking · github</text>
+  <text x="720" y="774" text-anchor="middle" font-size="8.5" fill="#64748B">playwright · tooluniverse</text>
 
-  <rect x="760" y="568" width="270" height="44" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
-  <text x="895" y="583" text-anchor="middle" font-size="8" font-weight="bold" fill="#5B21B6">📚 EuropePMC</text>
-  <text x="895" y="599" text-anchor="middle" font-size="6.5" fill="#64748B">PubMed 文献摘要 · pubmed.py 封装</text>
-
-  <!-- DATA FLOW -->
-  <text x="1080" y="110" font-size="6.5" fill="#64748B" font-style="italic">Request</text>
-  <text x="1080" y="122" font-size="6.5" fill="#64748B" font-style="italic">↓ JSON</text>
-  <text x="1080" y="134" font-size="6.5" fill="#64748B" font-style="italic">↑ base64 PNG</text>
+  <rect x="954" y="722" width="430" height="58" rx="5" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1169" y="742" text-anchor="middle" font-size="10" font-weight="bold" fill="#5B21B6">📚 学术检索 API</text>
+  <text x="1169" y="761" text-anchor="middle" font-size="8.5" fill="#64748B">EuropePMC · PubMed · OpenAlex · Crossref</text>
+  <text x="1169" y="774" text-anchor="middle" font-size="8" fill="#94A3B8">arXiv · Semantic Scholar · mygene.info（经 skill 脚本调用）</text>
 
   <!-- LEGEND -->
-  <g transform="translate(40,635)">
-    <rect width="1120" height="28" rx="4" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8"/>
-    <text x="15" y="19" font-size="8" font-weight="bold" fill="#475569">图例:</text>
-    <rect x="65" y="9" width="12" height="12" rx="3" fill="#F0FDF4" stroke="#86EFAC" stroke-width="0.8"/>
-    <text x="82" y="19" font-size="7" fill="#64748B">Frontend</text>
-    <rect x="145" y="9" width="12" height="12" rx="3" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.8"/>
-    <text x="162" y="19" font-size="7" fill="#64748B">Backend</text>
-    <rect x="220" y="9" width="12" height="12" rx="3" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8"/>
-    <text x="237" y="19" font-size="7" fill="#64748B">Data</text>
-    <rect x="280" y="9" width="12" height="12" rx="3" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="0.8"/>
-    <text x="297" y="19" font-size="7" fill="#64748B">External</text>
-    <line x1="360" y1="15" x2="390" y2="15" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
-    <text x="397" y="19" font-size="7" fill="#64748B">Request flow</text>
+  <g transform="translate(40,806)">
+    <rect width="1360" height="32" rx="4" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="0.8"/>
+    <text x="15" y="21" font-size="9" font-weight="bold" fill="#475569">图例:</text>
+    <rect x="72" y="10" width="13" height="13" rx="3" fill="#F0FDF4" stroke="#86EFAC" stroke-width="0.8"/>
+    <text x="91" y="21" font-size="8.5" fill="#64748B">Frontend</text>
+    <rect x="176" y="10" width="13" height="13" rx="3" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="0.8"/>
+    <text x="195" y="21" font-size="8.5" fill="#64748B">Backend</text>
+    <rect x="276" y="10" width="13" height="13" rx="3" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8"/>
+    <text x="295" y="21" font-size="8.5" fill="#64748B">Data</text>
+    <rect x="356" y="10" width="13" height="13" rx="3" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="0.8"/>
+    <text x="375" y="21" font-size="8.5" fill="#64748B">External</text>
+    <line x1="456" y1="16" x2="492" y2="16" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow-down)"/>
+    <text x="501" y="21" font-size="8.5" fill="#64748B">请求流向</text>
+    <text x="640" y="21" font-size="8.5" fill="#94A3B8">技能的具体实现（含文献检索栈）位于 server/skills/&lt;name&gt;/SKILL.md 与 scripts/，不在 server/*.py 中</text>
+    <text x="1330" y="21" text-anchor="end" font-size="8.5" fill="#94A3B8">数据截至 2026-09-22</text>
   </g>
-
-  <!-- VERSION BADGE -->
-  <rect x="1010" y="56" width="150" height="18" rx="9" fill="#6366F1" stroke="none" filter="url(#shadow-light)"/>
-  <text x="1085" y="69" text-anchor="middle" font-size="7" font-weight="bold" fill="#FFF">v2·v3·v4  Modular</text>
 </svg>

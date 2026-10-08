@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1140" width="100%" height="100%" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
+  <defs>
+    <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000012"/></filter>
+    <filter id="shadow-light"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0000000A"/></filter>
+  </defs>
+
+  <!-- ══════════ 标题 ══════════ -->
+  <text x="800" y="36" text-anchor="middle" font-size="30" font-weight="bold" fill="#1E293B">GenSciOmics — Drug Discovery Agent 架构</text>
+  <text x="800" y="62" text-anchor="middle" font-size="15" fill="#64748B">6 阶段临床前流水线  ·  29 个 drug-* skill  ·  每阶段一次完整 ReAct 循环  ·  数据全部来自公开数据库（ToolUniverse 网关背后 2623 个工具 / 595 个数据源类别）</text>
+
+  <!-- ══════════ 入口与串行编排 ══════════ -->
+  <rect x="40" y="78" width="1520" height="104" rx="6" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="76" cy="104" r="15" fill="#475569"/>
+  <text x="76" y="110" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">0</text>
+  <text x="104" y="110" font-size="17" font-weight="bold" fill="#334155">入口与串行编排</text>
+  <text x="104" y="136" font-size="12.5" fill="#475569">/drug-discovery 工作台：勾选阶段 + 填写 query → POST /api/drug/pipeline/stream（SSE）；阶段注册表由 GET /api/drug/stages 下发</text>
+  <text x="104" y="154" font-size="12.5" fill="#475569">按 order 串行，每阶段一次完整 ReAct 循环。前序阶段只把最终回复带入下一段（总预算 6000 字符 / 每段 2500，超长保留头 60% + 尾 40%）</text>
+  <text x="104" y="172" font-size="12.5" fill="#475569">每个 SSE 事件打 stage_id，以 stage_start / stage_done 标记推进。失败处置：内层明确报错 → 跳过该段继续跑；静默中断（无 done）→ 中止整条</text>
+
+  <!-- ══════════ 列头 ══════════ -->
+  <text x="40" y="204" font-size="13.5" font-weight="bold" fill="#64748B">阶段</text>
+  <text x="276" y="204" font-size="13.5" font-weight="bold" fill="#64748B">工作流</text>
+  <text x="698" y="204" font-size="13.5" font-weight="bold" fill="#64748B">数据库与工具</text>
+  <text x="1134" y="204" font-size="13.5" font-weight="bold" fill="#64748B">产出结论</text>
+  <line x1="40" y1="212" x2="1560" y2="212" stroke="#CBD5E1" stroke-width="1"/>
+
+  <!-- ══════════ ① 靶点与机制发现 ══════════ -->
+  <rect x="40" y="222" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="222" width="224" height="104" rx="6" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1"/>
+  <circle cx="76" cy="252" r="15" fill="#7C3AED"/>
+  <text x="76" y="258" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">1</text>
+  <text x="100" y="258" font-size="17" font-weight="bold" fill="#5B21B6">靶点与机制发现</text>
+  <text x="56" y="280" font-size="11" fill="#64748B">5 个 skill</text>
+  <text x="56" y="296" font-size="9.5" fill="#64748B">target-intelligence · gene-liability</text>
+  <text x="56" y="308" font-size="9.5" fill="#64748B">target-validation · gwas-target</text>
+  <text x="56" y="320" font-size="9.5" fill="#64748B">network-pharmacology</text>
+  <line x1="276" y1="232" x2="276" y2="316" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="232" x2="698" y2="316" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="232" x2="1134" y2="316" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="250" font-size="12.5" fill="#475569">解析靶点标识（基因 / UniProt / Ensembl），先消歧再取数</text>
+  <text x="288" y="268" font-size="12.5" fill="#475569">组织表达与定位（GTEx、HPA）→ 通路位置 → 互作网络 → 变异图谱</text>
+  <text x="288" y="286" font-size="12.5" fill="#475569">可成药性：DGIdb 已知药、ChEMBL 化合物、Pharos TDL 分级</text>
+  <text x="288" y="304" font-size="12.5" fill="#475569">遗传学证据（GWAS 位点 → 因果基因）→ 判定 GO / NO-GO / 有条件 GO</text>
+  <text x="710" y="250" font-size="12.5" fill="#475569">GTEx · HPA · STRING · BioGRID · UniProt · Ensembl</text>
+  <text x="710" y="268" font-size="12.5" fill="#475569">ClinVar · gnomAD · GWAS Catalog · OpenTargets · Pharos</text>
+  <text x="710" y="286" font-size="12.5" fill="#475569">DGIdb · ChEMBL · BindingDB · DisGeNET · GtoPdb</text>
+  <text x="710" y="304" font-size="12.5" fill="#475569">DepMap · CIViC · cBioPortal · OMIM · MGI</text>
+  <text x="1146" y="250" font-size="12.5" fill="#475569">靶点生物学画像：表达、通路位置、互作、变异</text>
+  <text x="1146" y="268" font-size="12.5" fill="#475569">已上市 / 在研药物清单与竞争格局</text>
+  <text x="1146" y="286" font-size="12.5" fill="#475569">可成药性判断 + Target Validation Score 0–100</text>
+  <text x="1146" y="304" font-size="12.5" fill="#475569">支持与反对推进的关键证据各若干条（逐条附来源）</text>
+
+  <!-- ══════════ ② 药物设计 ══════════ -->
+  <rect x="40" y="334" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="334" width="224" height="104" rx="6" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1"/>
+  <circle cx="76" cy="364" r="15" fill="#2563EB"/>
+  <text x="76" y="370" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">2</text>
+  <text x="100" y="370" font-size="17" font-weight="bold" fill="#1E3A8A">药物设计</text>
+  <text x="56" y="392" font-size="11" fill="#64748B">5 个 skill</text>
+  <text x="56" y="408" font-size="9.5" fill="#64748B">binder-discovery · small-molecule</text>
+  <text x="56" y="420" font-size="9.5" fill="#64748B">therapeutic-protein · gpcr-pharmacology</text>
+  <text x="56" y="432" font-size="9.5" fill="#64748B">antibody-engineering</text>
+  <line x1="276" y1="344" x2="276" y2="428" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="344" x2="698" y2="428" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="344" x2="1134" y2="428" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="362" font-size="12.5" fill="#475569">按靶点类型选路：小分子可及 → 结构 / 配体筛选；需生物药 → 从头设计</text>
+  <text x="288" y="380" font-size="12.5" fill="#475569">已知配体挖掘与相似性扩展（ChEMBL、BindingDB、PubChem）</text>
+  <text x="288" y="398" font-size="12.5" fill="#475569">从头设计：扩散模型生成骨架 → 序列设计 → 结构验证（pLDDT / pTM）</text>
+  <text x="288" y="416" font-size="12.5" fill="#475569">抗体：胚系比对人源化 → 亲和力成熟 → 可开发性（聚集 / 稳定性 / PTM）</text>
+  <text x="710" y="362" font-size="12.5" fill="#475569">ChEMBL · BindingDB · PubChem · PDB · AlphaFold</text>
+  <text x="710" y="380" font-size="12.5" fill="#475569">GPCRdb · SAbDab · IMGT · Enamine</text>
+  <text x="710" y="398" font-size="12.5" fill="#475569">RFdiffusion · ProteinMPNN · ESM（骨架与序列生成）</text>
+  <text x="710" y="416" font-size="12.5" fill="#475569">antibody-engineering 带本地脚本 developability.py</text>
+  <text x="1146" y="362" font-size="12.5" fill="#475569">计算候选清单：已知活性化合物 / 可改造先导 / 从头设计序列与骨架</text>
+  <text x="1146" y="380" font-size="12.5" fill="#475569">每个候选标注来源（ChEMBL / PDB / 文献）与已知活性数据</text>
+  <text x="1146" y="398" font-size="12.5" fill="#475569">GPCR：激动剂分类（正位 / 别位 / 偏向性）与亚型选择性</text>
+  <text x="1146" y="416" font-size="12.5" fill="#475569">抗体：结合表位、界面构象与可开发性评分</text>
+
+  <!-- ══════════ ③ 分子优化 ══════════ -->
+  <rect x="40" y="446" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="446" width="224" height="104" rx="6" fill="#ECFEFF" stroke="#67E8F9" stroke-width="1"/>
+  <circle cx="76" cy="476" r="15" fill="#0891B2"/>
+  <text x="76" y="482" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">3</text>
+  <text x="100" y="482" font-size="17" font-weight="bold" fill="#164E63">分子优化</text>
+  <text x="56" y="504" font-size="11" fill="#64748B">4 个 skill</text>
+  <text x="56" y="520" font-size="9.5" fill="#64748B">admet · pharmacokinetics</text>
+  <text x="56" y="532" font-size="9.5" fill="#64748B">interaction · chemical-sourcing</text>
+  <line x1="276" y1="456" x2="276" y2="540" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="456" x2="698" y2="540" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="456" x2="1134" y2="540" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="474" font-size="12.5" fill="#475569">逐个候选算 ADMET 性质与类药性（Lipinski 五规则）</text>
+  <text x="288" y="492" font-size="12.5" fill="#475569">代谢与转运体：CYP 底物 / 抑制剂 / 诱导剂，P-gp / BCRP / OATP</text>
+  <text x="288" y="510" font-size="12.5" fill="#475569">DDI 临床意义评分 + 处置建议（换药 / 减量 / 监测）</text>
+  <text x="288" y="528" font-size="12.5" fill="#475569">可采购性核对：按名称或结构查供应商目录并比价</text>
+  <text x="710" y="474" font-size="12.5" fill="#475569">ADMET-AI · SwissADME · PubChemTox · ChEMBL</text>
+  <text x="710" y="492" font-size="12.5" fill="#475569">DrugBank · DailyMed · PharmGKB（DDI）</text>
+  <text x="710" y="510" font-size="12.5" fill="#475569">ZINC · Enamine · eMolecules · Mcule（供应商目录）</text>
+  <text x="710" y="528" font-size="12.5" fill="#475569">本地脚本：nca_from_csv.py · pharmacology_ref.py</text>
+  <text x="1146" y="474" font-size="12.5" fill="#475569">多参数对照表（每行一个分子，逐列性质）</text>
+  <text x="1146" y="492" font-size="12.5" fill="#475569">淘汰清单：哪些不该进下一步、依据是哪一项</text>
+  <text x="1146" y="510" font-size="12.5" fill="#475569">hERG / AMES / DILI 任一 FAIL 按程序性风险处理，</text>
+  <text x="1146" y="528" font-size="12.5" fill="#475569">不被其他项的优良抵消；可采购候选与替代类似物</text>
+
+  <!-- ══════════ ④ 机制深化 ══════════ -->
+  <rect x="40" y="558" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="558" width="224" height="104" rx="6" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="1"/>
+  <circle cx="76" cy="588" r="15" fill="#4F46E5"/>
+  <text x="76" y="594" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">4</text>
+  <text x="100" y="594" font-size="17" font-weight="bold" fill="#312E81">机制深化</text>
+  <text x="56" y="616" font-size="11" fill="#64748B">5 个 skill</text>
+  <text x="56" y="632" font-size="9.5" fill="#64748B">mechanism · pathway-analysis</text>
+  <text x="56" y="644" font-size="9.5" fill="#64748B">regulatory-networks · repurposing</text>
+  <text x="56" y="656" font-size="9.5" fill="#64748B">protein-modification-analysis</text>
+  <line x1="276" y1="568" x2="276" y2="652" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="568" x2="698" y2="652" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="568" x2="1134" y2="652" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="586" font-size="12.5" fill="#475569">主线：靶点 → 下游信号 → 通路扰动 → 组织效应 → 临床结局</text>
+  <text x="288" y="604" font-size="12.5" fill="#475569">KEGG 疾病-药物-变异网络：共享通路 → 老药新用候选</text>
+  <text x="288" y="622" font-size="12.5" fill="#475569">化合物-靶点-疾病网络：脱靶效应与多靶点画像</text>
+  <text x="288" y="640" font-size="12.5" fill="#475569">调控层：TF-靶基因推断（基序 / ChIP-seq / eQTL）+ 翻译后修饰</text>
+  <text x="710" y="586" font-size="12.5" fill="#475569">DrugBank · ChEMBL · KEGG（Disease / Drug / Network / Variant）</text>
+  <text x="710" y="604" font-size="12.5" fill="#475569">Reactome · WikiPathways · STRING · INTACT · Enrichr</text>
+  <text x="710" y="622" font-size="12.5" fill="#475569">JASPAR · ENCODE · RegulomeDB · GTEx（调控层）</text>
+  <text x="710" y="640" font-size="12.5" fill="#475569">iPTMnet · ProtVar · ELM · MassIVE（PTM 层）</text>
+  <text x="1146" y="586" font-size="12.5" fill="#475569">机制链条，明确区分「文献已证实」与「基于通路推演」</text>
+  <text x="1146" y="604" font-size="12.5" fill="#475569">老药新用候选 + 机制依据 + 临床试验先例</text>
+  <text x="1146" y="622" font-size="12.5" fill="#475569">脱靶效应清单与多靶点（多药理学）画像</text>
+  <text x="1146" y="640" font-size="12.5" fill="#475569">翻译后修饰对靶点功能与可成药性的影响</text>
+
+  <!-- ══════════ ⑤ 药效确证 ══════════ -->
+  <rect x="40" y="670" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="670" width="224" height="104" rx="6" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="1"/>
+  <circle cx="76" cy="700" r="15" fill="#059669"/>
+  <text x="76" y="706" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">5</text>
+  <text x="100" y="706" font-size="17" font-weight="bold" fill="#065F46">药效确证</text>
+  <text x="56" y="728" font-size="11" fill="#64748B">4 个 skill</text>
+  <text x="56" y="744" font-size="9.5" fill="#64748B">dose-response · enzyme-kinetics</text>
+  <text x="56" y="756" font-size="9.5" fill="#64748B">synergy · cell-line-profiling</text>
+  <line x1="276" y1="680" x2="276" y2="764" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="680" x2="698" y2="764" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="680" x2="1134" y2="764" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="698" font-size="12.5" fill="#475569">浓度-反应数据 → 4 参数 logistic（Hill）拟合 → IC50 / EC50、Hill 斜率</text>
+  <text x="288" y="716" font-size="12.5" fill="#475569">酶动力学：Michaelis-Menten 拟合 Km / Vmax / kcat / kcat/Km + 抑制类型</text>
+  <text x="288" y="734" font-size="12.5" fill="#475569">联合用药：Bliss / HSA / Loewe / ZIP / Chou-Talalay CI 协同评分</text>
+  <text x="288" y="752" font-size="12.5" fill="#475569">细胞系选择：依赖图谱 + 突变 / CNV + 药物敏感性 → 排序推荐</text>
+  <text x="710" y="698" font-size="12.5" fill="#475569">DepMap · CCLE · Cellosaurus · COSMIC · PharmacoDB</text>
+  <text x="710" y="716" font-size="12.5" fill="#475569">cBioPortal · GDSC / CTRPv2 / PRISM · L1000（CLUE）</text>
+  <text x="710" y="734" font-size="12.5" fill="#475569">BRENDA（酶动力学）· SYNERGxDB（协同）</text>
+  <text x="710" y="752" font-size="12.5" fill="#475569">本地脚本 4 个：fit_dose_response / synergy_reference 等</text>
+  <text x="1146" y="698" font-size="12.5" fill="#475569">EC50 / IC50 区间与效力对比（与同类药比）</text>
+  <text x="1146" y="716" font-size="12.5" fill="#475569">协同 / 相加 / 拮抗判定 + 所用模型名与数值</text>
+  <text x="1146" y="734" font-size="12.5" fill="#475569">敏感与耐药细胞系清单及推荐模型</text>
+  <text x="1146" y="752" font-size="12.5" fill="#475569">结论要能回答「值不值得进下一步」</text>
+
+  <!-- ══════════ ⑥ 安评与注册情报 ══════════ -->
+  <rect x="40" y="782" width="1520" height="104" rx="6" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" filter="url(#shadow-light)"/>
+  <rect x="40" y="782" width="224" height="104" rx="6" fill="#FDF2F8" stroke="#F9A8D4" stroke-width="1"/>
+  <circle cx="76" cy="812" r="15" fill="#DB2777"/>
+  <text x="76" y="818" text-anchor="middle" font-size="15" font-weight="bold" fill="#FFFFFF">6</text>
+  <text x="100" y="818" font-size="17" font-weight="bold" fill="#831843">安评与注册情报</text>
+  <text x="56" y="840" font-size="11" fill="#64748B">6 个 skill</text>
+  <text x="56" y="856" font-size="9.5" fill="#64748B">toxicology · chemical-safety</text>
+  <text x="56" y="868" font-size="9.5" fill="#64748B">pharmacovigilance · adverse-events</text>
+  <text x="56" y="880" font-size="9.5" fill="#64748B">regulatory · pharmacogenomics</text>
+  <line x1="276" y1="792" x2="276" y2="876" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="698" y1="792" x2="698" y2="876" stroke="#E2E8F0" stroke-width="1"/>
+  <line x1="1134" y1="792" x2="1134" y2="876" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="288" y="810" font-size="12.5" fill="#475569">毒性终点：AOP 分子起始事件 → 细胞 → 器官 → 临床事件三角验证</text>
+  <text x="288" y="828" font-size="12.5" fill="#475569">FAERS 挖掘：PRR / ROR / IC 不成比例分析（WHO-UMC 判据）→ 信号分</text>
+  <text x="288" y="846" font-size="12.5" fill="#475569">标签与黑框警告、CTD 毒理基因组；化学危害分级（GHS / IARC）</text>
+  <text x="288" y="864" font-size="12.5" fill="#475569">药物基因组学（CPIC 剂量指南 / PharmGKB）→ 监管状态与路径选型</text>
+  <text x="710" y="810" font-size="12.5" fill="#475569">AOPWiki · FAERS · FDA 标签 · 橙皮书 · DailyMed</text>
+  <text x="710" y="828" font-size="12.5" fill="#475569">CTD · PubChemTox · STITCH · DrugBank · MedDRA</text>
+  <text x="710" y="846" font-size="12.5" fill="#475569">CPIC · PharmGKB · DPWG · ClinPGx · DisGeNET</text>
+  <text x="710" y="864" font-size="12.5" fill="#475569">报告须写明适用市场（美国 / 欧盟），不得混谈</text>
+  <text x="1146" y="810" font-size="12.5" fill="#475569">肝 / 心 / 肾等毒性终点及证据强度分级</text>
+  <text x="1146" y="828" font-size="12.5" fill="#475569">不良反应信号（PRR / ROR / IC 数值 + 评分）</text>
+  <text x="1146" y="846" font-size="12.5" fill="#475569">药物基因组学用药提示与代谢者状态</text>
+  <text x="1146" y="864" font-size="12.5" fill="#475569">批准状态 + 监管路径（NDA / BLA / 加速批准）</text>
+
+  <!-- ══════════ 横切能力 ══════════ -->
+  <rect x="40" y="898" width="1520" height="120" rx="6" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow)"/>
+  <text x="56" y="922" font-size="13.5" font-weight="bold" fill="#92400E">横切能力 —— 六段共用</text>
+  <rect x="56" y="928" width="360" height="80" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8"/>
+  <text x="68" y="950" font-size="12.5" font-weight="bold" fill="#92400E">ToolUniverse 网关</text>
+  <text x="68" y="970" font-size="11" fill="#78716C">MCP 只暴露 5 个路由工具，背后是</text>
+  <text x="68" y="986" font-size="11" fill="#78716C">execute_tool / find_tools / get_tool_info /</text>
+  <text x="68" y="1002" font-size="11" fill="#78716C">grep_tools / list_tools → 2623 工具 / 595 类别</text>
+  <rect x="432" y="928" width="360" height="80" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8"/>
+  <text x="444" y="950" font-size="12.5" font-weight="bold" fill="#92400E">29 个 drug-* skill</text>
+  <text x="444" y="970" font-size="11" fill="#78716C">自 ToolUniverse 1.4.0 移植，Apache-2.0 许可</text>
+  <text x="444" y="986" font-size="11" fill="#78716C">阶段 → skill 映射为单一数据源：</text>
+  <text x="444" y="1002" font-size="11" fill="#78716C">server/drug_stages.py（加阶段只改这一处）</text>
+  <rect x="808" y="928" width="360" height="80" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8"/>
+  <text x="820" y="950" font-size="12.5" font-weight="bold" fill="#92400E">阶段锁定</text>
+  <text x="820" y="970" font-size="11" fill="#78716C">skills_filter 只过滤系统提示词里列出的</text>
+  <text x="820" y="986" font-size="11" fill="#78716C">skill 名单；get_openai_tools() 仍返回全量</text>
+  <text x="820" y="1002" font-size="11" fill="#78716C">工具 schema → 是引导，不是沙箱</text>
+  <rect x="1184" y="928" width="360" height="80" rx="5" fill="#FFFFFF" stroke="#FCD34D" stroke-width="0.8"/>
+  <text x="1196" y="950" font-size="12.5" font-weight="bold" fill="#92400E">证据硬规则与产出落点</text>
+  <text x="1196" y="970" font-size="11" fill="#78716C">数字 / ID / 结论必须来自实际调用，</text>
+  <text x="1196" y="986" font-size="11" fill="#78716C">每条结论附来源（数据库 + 记录 ID / PMID）</text>
+  <text x="1196" y="1002" font-size="11" fill="#78716C">产出写 $GENSCI_RESULTS_DIR，严禁写入源码目录</text>
+
+  <!-- ══════════ 能力边界 ══════════ -->
+  <rect x="40" y="1026" width="1520" height="76" rx="6" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1" filter="url(#shadow)"/>
+  <text x="56" y="1050" font-size="13.5" font-weight="bold" fill="#991B1B">能力边界 —— 写死在注册表里，不允许被过度承诺</text>
+  <text x="56" y="1070" font-size="12.5" fill="#7F1D1D">ToolUniverse 覆盖的是「用公开数据做研究与评估」。以下能力没有，被问到时必须直说做不到，不得编造流程或产出：</text>
+  <text x="56" y="1090" font-size="12.5" fill="#7F1D1D">① IND/CTA/eCTD 申报文档撰写　② GLP 毒理试验设计（种属 / 剂量组 / 终点）　③ CMC / 制剂 / 生产工艺　④ in-vivo PK/PD、动物药效模型、异速放大　⑤ 专用 SAR / 多参数先导优化</text>
+
+  <!-- ══════════ 图例 ══════════ -->
+  <rect x="40" y="1110" width="1520" height="24" rx="4" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="52" y="1117" width="10" height="10" fill="#7C3AED"/>
+  <text x="68" y="1126" font-size="11" fill="#64748B">6 阶段按临床前通路串行推进</text>
+  <rect x="268" y="1117" width="10" height="10" fill="#FCD34D"/>
+  <text x="284" y="1126" font-size="11" fill="#64748B">横切能力（六段共用）</text>
+  <rect x="460" y="1117" width="10" height="10" fill="#FCA5A5"/>
+  <text x="476" y="1126" font-size="11" fill="#64748B">能力边界（明确排除项）</text>
+  <text x="1548" y="1126" text-anchor="end" font-size="11" fill="#94A3B8">数据截至 2026-09-22</text>
+</svg>

@@ -182,7 +182,7 @@ node -e "console.log(require('playwright-core').chromium.executablePath())"
 
 ## Architecture (v2 — Modular Refactor)
 
-**GenSci v2** — single-cell data analysis platform. Refactored from a monolithic codebase into domain modules.
+**GenSciOmics** — multi-omics analysis platform (single-cell / bulk RNA / proteomics / drug discovery). Refactored from a monolithic codebase into domain modules.
 
 ### Stack
 
@@ -460,7 +460,7 @@ server/agent/
 
 **说明：** 这是一个标准的 ReAct 循环，**与 Claude Code 完全对齐**。意图理解、工具选择(Skill 检索)、任务规划**全部由 LLM 在循环中自动完成**，后端没有独立的分类/检索/规划模块。
 
-| 能力 | Claude Code | Single-cell Atlas | 结论 |
+| 能力 | Claude Code | GenSciOmics | 结论 |
 |------|-------------|-------------------|------|
 | 意图识别 | LLM 从对话上下文自动理解 | LLM 自动理解（Qwen3.5） | ✅ 对齐，两者都不需要独立分类器 |
 | 任务规划 | ReAct 循环中自然展开，无 plan() 函数 | 同左，process_chat_streaming() 的 for-range 循环 | ✅ 对齐，都是 LLM 决定调用顺序 |

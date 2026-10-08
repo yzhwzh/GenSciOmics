@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 926" width="100%" height="100%" style="background:#F8FAFC;font-family:'Segoe UI',Arial,sans-serif">
+  <defs>
+    <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000012"/></filter>
+    <filter id="shadow-light"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0000000A"/></filter>
+    <marker id="ar" viewBox="0 0 10 10" refX="5" refY="9" markerWidth="4.5" markerHeight="4.5" orient="auto">
+      <path d="M 0 1 L 5 9 L 10 1 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <!-- ══════════ TITLE ══════════ -->
+  <text x="720" y="34" text-anchor="middle" font-size="28" font-weight="bold" fill="#1E293B">GenSciOmics — 智能体 Harness 架构</text>
+  <text x="720" y="58" text-anchor="middle" font-size="14" fill="#64748B">Agent Harness  ·  ReAct 主循环  ·  六段链路  +  四个横切子系统（琥珀色 = 嵌入链路的模块）</text>
+
+  <!-- ══════════ 起点：用户输入 ══════════ -->
+  <rect x="40" y="74" width="1360" height="76" rx="6" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="98" r="16" fill="#7C3AED"/>
+  <text x="84" y="104" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">0</text>
+  <text x="112" y="104" font-size="18" font-weight="bold" fill="#5B21B6">用户输入</text>
+  <text x="112" y="126" font-size="12" fill="#475569">FreeAnalysisTab → POST /api/llm/chat/stream（SSE）· messages[] 装配，system prompt 置于 [0]</text>
+  <text x="112" y="142" font-size="12" fill="#475569">追加 &lt;system-reminder&gt;：技能提醒 / 产出落点（$GENSCI_RESULTS_DIR）/ 图片协议</text>
+
+  <rect x="876" y="85" width="256" height="52" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="106" font-size="12.5" font-weight="bold" fill="#92400E">记忆域（按用户隔离）</text>
+  <text x="888" y="126" font-size="10.5" fill="#78716C">user_id → 净化 → server/memory/&lt;id&gt;/</text>
+
+  <rect x="1144" y="85" width="256" height="52" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="106" font-size="12.5" font-weight="bold" fill="#92400E">记忆预取</text>
+  <text x="1156" y="126" font-size="10.5" fill="#78716C">首轮前搜索 · 命中注入 &lt;memory-prefetch&gt;</text>
+
+  <line x1="84" y1="151" x2="84" y2="161" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ① 理解意图 ══════════ -->
+  <rect x="40" y="162" width="1360" height="90" rx="6" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="186" r="16" fill="#1D4ED8"/>
+  <text x="84" y="192" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">1</text>
+  <text x="112" y="192" font-size="18" font-weight="bold" fill="#1E3A8A">理解意图</text>
+  <text x="112" y="214" font-size="13" fill="#475569">LLM 从对话上下文自行理解 —— 无独立意图分类器，也无 planner 分解模块（对齐 Claude Code 的 ReAct）</text>
+  <text x="112" y="230" font-size="11.5" fill="#64748B">assemble_prompt() 分层拼装：身份 / 核心规则 / 数据访问 / 图片协议 / shell 约束 / 错误恢复 / 对话规则 / 输出格式 / 技能列表 / 最终指令</text>
+  <text x="112" y="245" font-size="11.5" fill="#64748B">注入当日日期、real_path 与 data type —— count → DESeq2/edgeR；TPM/FPKM → limma-trend；Intensity → limma + eBayes</text>
+  <line x1="860" y1="174" x2="860" y2="240" stroke="#DBEAFE" stroke-width="1"/>
+  <rect x="876" y="173" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="194" font-size="12.5" font-weight="bold" fill="#92400E">Prompt 拼装器</text>
+  <text x="888" y="214" font-size="10.5" fill="#78716C">agent/prompt.py · 按段拼装，无模板引擎</text>
+  <text x="888" y="230" font-size="10.5" fill="#78716C">身份 + 规则 + 技能菜单 + 数据集上下文</text>
+  <rect x="1144" y="173" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="194" font-size="12.5" font-weight="bold" fill="#92400E">无分类器 · 无 planner</text>
+  <text x="1156" y="214" font-size="10.5" fill="#78716C">意图由 LLM 自行理解，不预先分类</text>
+  <text x="1156" y="230" font-size="10.5" fill="#78716C">任务拆解在循环中自然展开</text>
+
+  <line x1="84" y1="253" x2="84" y2="263" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ② 匹配 Skill ══════════ -->
+  <rect x="40" y="264" width="1360" height="90" rx="6" fill="#ECFEFF" stroke="#A5F3FC" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="288" r="16" fill="#0E7490"/>
+  <text x="84" y="294" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">2</text>
+  <text x="112" y="294" font-size="18" font-weight="bold" fill="#155E75">匹配 Skill</text>
+  <text x="112" y="316" font-size="13" fill="#475569">菜单即全部 —— 技能名与描述全列进 system prompt，LLM 按描述自选，无向量 / TF-IDF 检索</text>
+  <text x="112" y="332" font-size="11.5" fill="#64748B">scan_skills() 扫 server/skills/*/SKILL.md 的 frontmatter（name + description），组成「Available Skills」段</text>
+  <text x="112" y="347" font-size="11.5" fill="#64748B">再按组学类型收窄可见范围，避免把 88 个技能一次全塞给模型</text>
+  <line x1="860" y1="276" x2="860" y2="342" stroke="#CFFAFE" stroke-width="1"/>
+  <rect x="876" y="275" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="296" font-size="12.5" font-weight="bold" fill="#92400E">OMICS_SKILL_FILTERS</text>
+  <text x="888" y="316" font-size="10.5" fill="#78716C">BulkRNA → bulk-* ；Protein → proteomics-*</text>
+  <text x="888" y="332" font-size="10.5" fill="#78716C">Drug → drug-* ；默认（单细胞）→ single-*</text>
+  <rect x="1144" y="275" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="296" font-size="12.5" font-weight="bold" fill="#92400E">Skill 菜单</text>
+  <text x="1156" y="316" font-size="10.5" fill="#78716C">82 个技能目录 · 6 个函数型核心工具</text>
+  <text x="1156" y="332" font-size="10.5" fill="#78716C">模型只看见「名字 + 一句话描述」</text>
+
+  <line x1="84" y1="355" x2="84" y2="365" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ③ 加载 Skill ══════════ -->
+  <rect x="40" y="366" width="1360" height="90" rx="6" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="390" r="16" fill="#0F766E"/>
+  <text x="84" y="396" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">3</text>
+  <text x="112" y="396" font-size="18" font-weight="bold" fill="#115E59">加载 Skill</text>
+  <text x="112" y="418" font-size="13" fill="#475569">skill("name") → SKILL_REGISTRY 查表 → 把 SKILL.md 全文作为工具结果回灌给模型</text>
+  <text x="112" y="434" font-size="11.5" fill="#64748B">注册键是目录名（与 frontmatter 的 name 由回归测试钉住一致，二者漂移会导致「列出来却查不到」）</text>
+  <text x="112" y="449" font-size="11.5" fill="#64748B">加载后模型拿到的是指令文档 + scripts/ 下现成脚本的路径，而不是代码本身</text>
+  <line x1="860" y1="378" x2="860" y2="444" stroke="#CCFBF1" stroke-width="1"/>
+  <rect x="876" y="377" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="398" font-size="12.5" font-weight="bold" fill="#92400E">SKILL_REGISTRY</text>
+  <text x="888" y="418" font-size="10.5" fill="#78716C">82 个目录 + 6 个函数型工具（无目录）</text>
+  <text x="888" y="434" font-size="10.5" fill="#78716C">加技能 = 加一个目录，重启即自动发现</text>
+  <rect x="1144" y="377" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="398" font-size="12.5" font-weight="bold" fill="#92400E">技能 = 目录</text>
+  <text x="1156" y="418" font-size="10.5" fill="#78716C">SKILL.md 指令 + scripts/ + references/</text>
+  <text x="1156" y="434" font-size="10.5" fill="#78716C">没有 __init__.py 则降级为「参考技能」</text>
+
+  <line x1="84" y1="457" x2="84" y2="467" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ④ 调用工具 ══════════ -->
+  <rect x="40" y="468" width="1360" height="90" rx="6" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="492" r="16" fill="#047857"/>
+  <text x="84" y="498" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">4</text>
+  <text x="112" y="498" font-size="18" font-weight="bold" fill="#065F46">调用工具</text>
+  <text x="112" y="520" font-size="13" fill="#475569">一张统一注册表收口 Native 工具与 MCP 工具，同一轮内的多个调用并行执行</text>
+  <text x="112" y="536" font-size="11.5" fill="#64748B">查 ALL_TOOLS → Native 走 fn(**args)，MCP 走 mcp__&lt;server&gt;__&lt;tool&gt; 代理；两者对模型是同一个 Tool schema</text>
+  <text x="112" y="551" font-size="11.5" fill="#64748B">ThreadPoolExecutor(max_workers=3) 并行，单工具 120s 超时；一次异常只做掉那一个工具，不拖垮整轮</text>
+  <line x1="860" y1="480" x2="860" y2="546" stroke="#D1FAE5" stroke-width="1"/>
+  <rect x="876" y="479" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="500" font-size="12.5" font-weight="bold" fill="#92400E">工具管理</text>
+  <text x="888" y="520" font-size="10.5" fill="#78716C">核心 6：shell / skill / tool_search</text>
+  <text x="888" y="536" font-size="10.5" fill="#78716C">　+ memory_read / write / delete</text>
+  <rect x="1144" y="479" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="500" font-size="12.5" font-weight="bold" fill="#92400E">MCP 管理器</text>
+  <text x="1156" y="520" font-size="10.5" fill="#78716C">6 个 server 启动时发现并注册</text>
+  <text x="1156" y="536" font-size="10.5" fill="#78716C">stdio / http 两种传输，带进程探活</text>
+
+  <line x1="84" y1="559" x2="84" y2="569" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ⑤ 产出结果 ══════════ -->
+  <rect x="40" y="570" width="1360" height="90" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="594" r="16" fill="#15803D"/>
+  <text x="84" y="600" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">5</text>
+  <text x="112" y="600" font-size="18" font-weight="bold" fill="#14532D">产出结果</text>
+  <text x="112" y="622" font-size="13" fill="#475569">工具结果回灌进消息栈，循环续跑，直到模型不再要求调工具</text>
+  <text x="112" y="638" font-size="11.5" fill="#64748B">结果截断 50,000 字符入 messages；shell 的 stdout 只取末 5,000 字符，避免把上下文一次烧穿</text>
+  <text x="112" y="653" font-size="11.5" fill="#64748B">每个工具跑完立即执行 Post-tool Hooks，把「下一步该注意什么」拼成一条 user 消息插回去</text>
+  <line x1="860" y1="582" x2="860" y2="648" stroke="#DCFCE7" stroke-width="1"/>
+  <rect x="876" y="581" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="602" font-size="12.5" font-weight="bold" fill="#92400E">Post-tool Hooks（3 个）</text>
+  <text x="888" y="622" font-size="10.5" fill="#78716C">图片协议提醒 · 产出落点守卫 · 错误恢复</text>
+  <text x="888" y="638" font-size="10.5" fill="#78716C">落点守卫比对 mtime，写进 skills/ 即报</text>
+  <rect x="1144" y="581" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="602" font-size="12.5" font-weight="bold" fill="#92400E">结果回灌格式</text>
+  <text x="1156" y="622" font-size="10.5" fill="#78716C">有 stdout 取 stdout，否则 JSON 序列化</text>
+  <text x="1156" y="638" font-size="10.5" fill="#78716C">出错则包成 Error: 文本，模型能读懂并改参</text>
+
+  <line x1="84" y1="661" x2="84" y2="671" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- ══════════ ⑥ 结果确认与收敛 ══════════ -->
+  <rect x="40" y="672" width="1360" height="90" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1" filter="url(#shadow)"/>
+  <circle cx="84" cy="696" r="16" fill="#166534"/>
+  <text x="84" y="702" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">6</text>
+  <text x="112" y="702" font-size="18" font-weight="bold" fill="#14532D">结果确认与收敛</text>
+  <text x="112" y="724" font-size="13" fill="#475569">模型不再要求调工具即为收尾；收尾前先过一遍「有没有真的执行」</text>
+  <text x="112" y="740" font-size="11.5" fill="#64748B">判据不枚举「已完成 / 已生成」这类措辞（那是打地鼠），改判「这段文字指向了一个已经存在的产物」—— 零工具调用时它不可能存在</text>
+  <text x="112" y="755" font-size="11.5" fill="#64748B">轮次上限 MAX_TOOL_ITERATIONS = 50；逼近上限时注入「立即总结、不要再调工具」，到顶则带 warning 收尾</text>
+  <line x1="860" y1="684" x2="860" y2="750" stroke="#DCFCE7" stroke-width="1"/>
+  <rect x="876" y="683" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="888" y="704" font-size="12.5" font-weight="bold" fill="#92400E">执行兜底</text>
+  <text x="888" y="724" font-size="10.5" fill="#78716C">零工具却引用产物 → 补跑，最多纠正 2 次</text>
+  <text x="888" y="740" font-size="10.5" fill="#78716C">只有硬判据才向用户挂可见提示</text>
+  <rect x="1144" y="683" width="256" height="68" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8" filter="url(#shadow-light)"/>
+  <text x="1156" y="704" font-size="12.5" font-weight="bold" fill="#92400E">Evaluator 充分性评估</text>
+  <text x="1156" y="724" font-size="10.5" fill="#78716C">检索结果够不够，不够就生成跟进查询</text>
+  <text x="1156" y="740" font-size="10.5" fill="#78716C">挂在非流式 process_chat 路径</text>
+
+  <!-- ══════════ 横切子系统 ══════════ -->
+  <text x="40" y="794" font-size="15" font-weight="bold" fill="#92400E">横切子系统 —— 不属于任何单一段，在上面六段里被反复调用</text>
+
+  <rect x="40" y="806" width="328" height="80" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow-light)"/>
+  <text x="52" y="827" font-size="13" font-weight="bold" fill="#92400E">工具管理 · core/tool.py</text>
+  <text x="52" y="847" font-size="10.5" fill="#78716C">统一 Tool dataclass：name / description / input_schema /</text>
+  <text x="52" y="863" font-size="10.5" fill="#78716C">fn / is_mcp / is_deferred；register_tool 装饰器注册</text>
+  <text x="52" y="879" font-size="10.5" fill="#78716C">延迟工具经 tool_search 发现 · 结果上限 100k 字符</text>
+
+  <rect x="384" y="806" width="328" height="80" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow-light)"/>
+  <text x="396" y="827" font-size="13" font-weight="bold" fill="#92400E">记忆系统 · server/memory/</text>
+  <text x="396" y="847" font-size="10.5" fill="#78716C">文件式，一篇记忆一个 md + YAML frontmatter</text>
+  <text x="396" y="863" font-size="10.5" fill="#78716C">四类：user / feedback / project / reference</text>
+  <text x="396" y="879" font-size="10.5" fill="#78716C">工具跑在 worker 线程 → root 走显式参数注入</text>
+
+  <rect x="728" y="806" width="328" height="80" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow-light)"/>
+  <text x="740" y="827" font-size="13" font-weight="bold" fill="#92400E">错误处理</text>
+  <text x="740" y="847" font-size="10.5" fill="#78716C">LLM 侧：429 / 502 / 503 / 504 指数退避重试 2 次</text>
+  <text x="740" y="863" font-size="10.5" fill="#78716C">错误体正则脱敏 sk-*** 后再回传，不泄漏密钥</text>
+  <text x="740" y="879" font-size="10.5" fill="#78716C">工具侧：异常包成 error 回灌；shell 三级超时</text>
+
+  <rect x="1072" y="806" width="328" height="80" rx="5" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1" filter="url(#shadow-light)"/>
+  <text x="1084" y="827" font-size="13" font-weight="bold" fill="#92400E">结果确认</text>
+  <text x="1084" y="847" font-size="10.5" fill="#78716C">① 执行兜底：宣称有产物却零工具调用 → 补跑</text>
+  <text x="1084" y="863" font-size="10.5" fill="#78716C">② Post-tool Hooks：图片协议 / 落点守卫</text>
+  <text x="1084" y="879" font-size="10.5" fill="#78716C">③ Evaluator 充分性评估（非流式路径）</text>
+
+  <!-- ══════════ LEGEND ══════════ -->
+  <g transform="translate(40,896)">
+    <rect width="1360" height="16" rx="3" fill="#F1F5F9"/>
+    <rect x="12" y="3" width="11" height="11" rx="2" fill="#EFF6FF" stroke="#93C5FD" stroke-width="0.8"/>
+    <text x="32" y="12" font-size="10" fill="#64748B">主链路（蓝 → 绿 = 推进方向）</text>
+    <rect x="190" y="3" width="11" height="11" rx="2" fill="#FFFBEB" stroke="#FCD34D" stroke-width="0.8"/>
+    <text x="210" y="12" font-size="10" fill="#64748B">嵌入链路的模块（横切子系统）</text>
+    <text x="390" y="12" font-size="10" fill="#94A3B8">一次请求 = system prompt 拼装 1 次 + 循环 N 轮（N ≤ 50）；每轮 = 1 次 LLM 调用 + 0..k 次工具调用</text>
+    <text x="1348" y="12" text-anchor="end" font-size="10" fill="#94A3B8">数据截至 2026-09-22</text>
+  </g>
+</svg>

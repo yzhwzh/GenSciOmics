@@ -1,0 +1,251 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1386" width="1600" height="1386" font-family="'Segoe UI',Arial,sans-serif">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <filter id="shadow-light" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="1386" fill="#F8FAFC"/>
+
+  <!-- 标题 -->
+  <text x="40" y="42" font-size="32" font-weight="700" fill="#0F172A">单细胞分析智能体 · Skill 结构</text>
+  <text x="40" y="68" font-size="15" fill="#475569">GenSciOmics Free Analysis（scRNA）· 共 11 个 skill · 系统提示词一次性列出名字与描述，LLM 按需 skill(name) 拉取正文</text>
+  <line x1="40" y1="82" x2="1560" y2="82" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- 带 1：入口与注入链路 -->
+  <rect x="40" y="93" width="4" height="14" rx="2" fill="#334155"/>
+  <text x="52" y="104" font-size="14.5" font-weight="700" fill="#334155">智能体入口与技能注入链路</text>
+
+  <rect x="40" y="116" width="356" height="118" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <circle cx="66" cy="141" r="13" fill="#475569"/>
+  <text x="66" y="146" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+  <text x="88" y="146" font-size="14.5" font-weight="700" fill="#1E293B">入口</text>
+  <text x="56" y="176" font-size="12.5" fill="#475569">单细胞数据集走 AnalysisPage 第 5 个 Tab</text>
+  <text x="56" y="194" font-size="12.5" fill="#475569">FreeAnalysisTab omicsType='scRNA'</text>
+  <text x="56" y="212" font-size="12.5" fill="#475569">POST /api/llm/chat/stream（SSE）</text>
+
+  <path d="M404 169 L414 175 L404 181" fill="none" stroke="#94A3B8" stroke-width="1.5"/>
+
+  <rect x="428" y="116" width="356" height="118" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <circle cx="454" cy="141" r="13" fill="#475569"/>
+  <text x="454" y="146" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+  <text x="476" y="146" font-size="14.5" font-weight="700" fill="#1E293B">按组学类型过滤</text>
+  <text x="444" y="176" font-size="12.5" fill="#475569">llm_proxy.py:25 DEFAULT_SKILL_FILTER</text>
+  <text x="444" y="194" font-size="12.5" fill="#475569">= ['single-*', 'statistical-analysis']</text>
+  <text x="444" y="212" font-size="12.5" fill="#475569">88 个 skill → 命中 11 个</text>
+
+  <path d="M792 169 L802 175 L792 181" fill="none" stroke="#94A3B8" stroke-width="1.5"/>
+
+  <rect x="816" y="116" width="356" height="118" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <circle cx="842" cy="141" r="13" fill="#475569"/>
+  <text x="842" y="146" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+  <text x="864" y="146" font-size="14.5" font-weight="700" fill="#1E293B">注入系统提示词</text>
+  <text x="832" y="176" font-size="12.5" fill="#475569">agent/__init__.py:358 裁剪 skill 列表</text>
+  <text x="832" y="194" font-size="12.5" fill="#475569">agent/prompt.py:327 逐行渲染</text>
+  <text x="832" y="212" font-size="12.5" fill="#475569">- **name**: description</text>
+
+  <path d="M1180 169 L1190 175 L1180 181" fill="none" stroke="#94A3B8" stroke-width="1.5"/>
+
+  <rect x="1204" y="116" width="356" height="118" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <circle cx="1230" cy="141" r="13" fill="#475569"/>
+  <text x="1230" y="146" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+  <text x="1252" y="146" font-size="14.5" font-weight="700" fill="#1E293B">按需加载正文</text>
+  <text x="1220" y="176" font-size="12.5" fill="#475569">LLM 调 skill(name) → SkillTool:31</text>
+  <text x="1220" y="194" font-size="12.5" fill="#475569">返回完整 SKILL.md，并注入</text>
+  <text x="1220" y="212" font-size="12.5" fill="#475569">Base directory for this skill 一行</text>
+
+  <!-- 带 2：11 个 skill -->
+  <rect x="40" y="243" width="4" height="14" rx="2" fill="#334155"/>
+  <text x="52" y="254" font-size="14.5" font-weight="700" fill="#334155">11 个 Skill · 按单细胞分析阶段分组</text>
+  <text x="380" y="254" font-size="12.5" fill="#94A3B8">分组只是取材视角；LLM 看到的是平铺的 11 条 name + description，自行选择</text>
+  <line x1="40" y1="266" x2="1560" y2="266" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- 组 A -->
+  <rect x="40" y="273" width="10" height="10" rx="2" fill="#7C3AED"/>
+  <text x="60" y="284" font-size="15" font-weight="700" fill="#7C3AED">A · 细胞类型注释</text>
+  <text x="244" y="284" font-size="12.5" fill="#94A3B8">把已聚类的簇映射成生物学身份</text>
+  <text x="1560" y="284" font-size="11.5" fill="#94A3B8" text-anchor="end">2 个 skill</text>
+
+  <rect x="40" y="294" width="748" height="150" rx="10" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1.2"/>
+  <rect x="41" y="295" width="4" height="148" rx="2" fill="#7C3AED"/>
+  <text x="60" y="320" font-size="16" font-weight="700" fill="#5B21B6">single-annotation</text>
+  <text x="60" y="345" font-size="13.5" fill="#334155">6 条并列注释路线 —— SCSA 自动簇注释 / MetaTiME 微环境状态 / CellVote 共识 /</text>
+  <text x="60" y="364" font-size="13.5" fill="#334155">CellMatch 本体映射 / GPTAnno / 加权 KNN 标签迁移</text>
+  <text x="60" y="389" font-size="12.5" fill="#475569">输入 · 已聚类 AnnData + marker 表；CellVote 需 ≥2 个既有注释列；MetaTiME 需 obsm['X_scVI']</text>
+  <text x="60" y="414" font-size="12.5" fill="#475569">产出 · adata.obs 注释列：scsa_celltype_cellmarker / MetaTiME / CellVote_celltype /</text>
+  <text x="60" y="433" font-size="12.5" fill="#475569">cell_ontology / gpt_celltype / transf_celltype</text>
+
+  <rect x="812" y="294" width="748" height="150" rx="10" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1.2"/>
+  <rect x="813" y="295" width="4" height="148" rx="2" fill="#7C3AED"/>
+  <text x="832" y="320" font-size="16" font-weight="700" fill="#5B21B6">single-cell-annotation</text>
+  <text x="832" y="345" font-size="13.5" fill="#334155">ov.single.Annotation(adata) 单一门面，三选一后端（文档明写互斥，非串行阶段）：</text>
+  <text x="832" y="364" font-size="13.5" fill="#334155">CellTypist / gpt4celltype / SCSA</text>
+  <text x="832" y="389" font-size="12.5" fill="#475569">输入 · 已归一化含 cluster 列的 AnnData；CellTypist 需模型 .pkl；gpt4celltype 需 AGI_API_KEY</text>
+  <text x="832" y="414" font-size="12.5" fill="#475569">产出 · obs['celltypist_prediction'] + obsm['celltypist_decision_matrix'] /</text>
+  <text x="832" y="433" font-size="12.5" fill="#475569">obs['gpt4celltype_prediction'] / obs['scsa_prediction']</text>
+
+  <!-- 组 B -->
+  <rect x="40" y="449" width="10" height="10" rx="2" fill="#2563EB"/>
+  <text x="60" y="460" font-size="15" font-weight="700" fill="#2563EB">B · 状态动力学与轨迹</text>
+  <text x="244" y="460" font-size="12.5" fill="#94A3B8">从速度矢量到命运概率与伪时间</text>
+  <text x="1560" y="460" font-size="11.5" fill="#94A3B8" text-anchor="end">3 个 skill</text>
+
+  <rect x="40" y="470" width="490" height="150" rx="10" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.2"/>
+  <rect x="41" y="471" width="4" height="148" rx="2" fill="#2563EB"/>
+  <text x="60" y="496" font-size="16" font-weight="700" fill="#1E3A8A">single-cell-rna-velocity</text>
+  <text x="60" y="521" font-size="13.5" fill="#334155">RNA 速率；覆盖 scvelo / dynamo /</text>
+  <text x="60" y="540" font-size="13.5" fill="#334155">latentvelo / graphvelo 四类后端</text>
+  <text x="60" y="565" font-size="12.5" fill="#475569">输入 · 含 spliced/unspliced 层的 .h5ad</text>
+  <text x="60" y="590" font-size="12.5" fill="#475569">产出 · layers[velocity_key] · Ms/Mu ·</text>
+  <text x="60" y="609" font-size="12.5" fill="#475569">velocity_S_graph · velocity_gv* · leiden</text>
+
+  <rect x="554" y="470" width="490" height="150" rx="10" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.2"/>
+  <rect x="555" y="471" width="4" height="148" rx="2" fill="#2563EB"/>
+  <text x="574" y="496" font-size="16" font-weight="700" fill="#1E3A8A">single-cell-cellrank-fate</text>
+  <text x="574" y="521" font-size="13.5" fill="#334155">VelocityKernel + ConnectivityKernel</text>
+  <text x="574" y="540" font-size="13.5" fill="#334155">混合 → GPCCA → 宏观态 / 终态与命运概率</text>
+  <text x="574" y="565" font-size="12.5" fill="#475569">输入 · 需已有 velocity / velocity_graph / Ms</text>
+  <text x="574" y="590" font-size="12.5" fill="#475569">产出 · obs 命运概率列（如 beta_fate）·</text>
+  <text x="574" y="609" font-size="12.5" fill="#475569">macrostates / terminal_states · 分支流图</text>
+
+  <rect x="1068" y="470" width="490" height="150" rx="10" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.2"/>
+  <rect x="1069" y="471" width="4" height="148" rx="2" fill="#2563EB"/>
+  <text x="1088" y="496" font-size="16" font-weight="700" fill="#1E3A8A">single-cell-trajectory-inference</text>
+  <text x="1088" y="521" font-size="13.5" fill="#334155">ov.single.TrajInfer；方法三选一</text>
+  <text x="1088" y="540" font-size="13.5" fill="#334155">diffusion_map / slingshot / palantir，PAGA 汇总</text>
+  <text x="1088" y="565" font-size="12.5" fill="#475569">输入 · cluster-ready AnnData；origin label 必须存在</text>
+  <text x="1088" y="590" font-size="12.5" fill="#475569">产出 · obs 各方法伪时间列（dpt/slingshot/palantir）</text>
+  <text x="1088" y="609" font-size="12.5" fill="#475569">obsm['palantir_fate_probabilities'] · uns['paga']</text>
+
+  <!-- 组 C -->
+  <rect x="40" y="625" width="10" height="10" rx="2" fill="#0891B2"/>
+  <text x="60" y="636" font-size="15" font-weight="700" fill="#0891B2">C · 调控网络与细胞互作</text>
+  <text x="244" y="636" font-size="12.5" fill="#94A3B8">转录因子活性与配受体通讯</text>
+  <text x="1560" y="636" font-size="11.5" fill="#94A3B8" text-anchor="end">2 个 skill</text>
+
+  <rect x="40" y="646" width="748" height="150" rx="10" fill="#ECFEFF" stroke="#67E8F9" stroke-width="1.2"/>
+  <rect x="41" y="647" width="4" height="148" rx="2" fill="#0891B2"/>
+  <text x="60" y="672" font-size="16" font-weight="700" fill="#164E63">single-cell-scenic</text>
+  <text x="60" y="697" font-size="13.5" fill="#334155">转录因子调控网络 → regulon → AUCell 活性打分；GRN 分支</text>
+  <text x="60" y="716" font-size="13.5" fill="#334155">三选一 RegDiffusion / GRNBoost2 / GENIE3</text>
+  <text x="60" y="741" font-size="12.5" fill="#475569">输入 · 稀疏 raw-count layer（拒绝已 log-normalized）；cisTarget 库与 motif 表需自备，本 skill 不下载</text>
+  <text x="60" y="766" font-size="12.5" fill="#475569">产出 · adjacencies · regulons · auc_mtx · RSS 表 ·</text>
+  <text x="60" y="785" font-size="12.5" fill="#475569">二值活性矩阵 · TF 调控网络图</text>
+
+  <rect x="812" y="646" width="748" height="150" rx="10" fill="#ECFEFF" stroke="#67E8F9" stroke-width="1.2"/>
+  <rect x="813" y="647" width="4" height="148" rx="2" fill="#0891B2"/>
+  <text x="832" y="672" font-size="16" font-weight="700" fill="#164E63">single-cell-cellphonedb-communication</text>
+  <text x="832" y="697" font-size="13.5" fill="#334155">CellPhoneDB v5 配受体分析 + CellChat 风格可视化</text>
+  <text x="832" y="716" font-size="13.5" fill="#334155">（网络 / bubble / chord / 信号角色热图）</text>
+  <text x="832" y="741" font-size="12.5" fill="#475569">输入 · 带有效细胞类型列的注释 AnnData；矩阵需 log-normalized 且非 scaled</text>
+  <text x="832" y="766" font-size="12.5" fill="#475569">产出 · cpdb_results（means / pvalues）· adata_cpdb 与通路通讯强度 ·</text>
+  <text x="832" y="785" font-size="12.5" fill="#475569">中心性得分 · sender / receiver layers</text>
+
+  <!-- 组 D -->
+  <rect x="40" y="801" width="10" height="10" rx="2" fill="#059669"/>
+  <text x="60" y="812" font-size="15" font-weight="700" fill="#059669">D · 差异表达与统计</text>
+  <text x="244" y="812" font-size="12.5" fill="#94A3B8">组间比较与通用统计出口</text>
+  <text x="1560" y="812" font-size="11.5" fill="#94A3B8" text-anchor="end">2 个 skill</text>
+
+  <rect x="40" y="822" width="748" height="150" rx="10" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="1.2"/>
+  <rect x="41" y="823" width="4" height="148" rx="2" fill="#059669"/>
+  <text x="60" y="848" font-size="16" font-weight="700" fill="#065F46">single-cell-differential-expression</text>
+  <text x="60" y="873" font-size="13.5" fill="#334155">指定细胞类型内做 condition vs condition 差异表达；</text>
+  <text x="60" y="892" font-size="13.5" fill="#334155">后端三选一 wilcoxon / t-test / memento-de</text>
+  <text x="60" y="917" font-size="12.5" fill="#475569">输入 · obs 含 condition 列与细胞类型列；建议保留 raw counts 于 adata.raw 或 layers['counts']</text>
+  <text x="60" y="942" font-size="12.5" fill="#475569">产出 · DEG 表（log2FC · pvalue · padj · qvalue · baseMean ·</text>
+  <text x="60" y="961" font-size="12.5" fill="#475569">pct_ctrl · pct_test · pct_diff）</text>
+
+  <rect x="812" y="822" width="748" height="150" rx="10" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="1.2"/>
+  <rect x="813" y="823" width="4" height="148" rx="2" fill="#059669"/>
+  <text x="832" y="848" font-size="16" font-weight="700" fill="#065F46">statistical-analysis</text>
+  <rect x="1332" y="832" width="212" height="22" rx="11" fill="#059669"/>
+  <text x="1438" y="847" font-size="11.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">11 个里唯一自带生产脚本</text>
+  <text x="832" y="873" font-size="13.5" fill="#334155">共表达 / 相关 · Venn·UpSet 组合计数表 · marker 基因 · 表达可视化 ·</text>
+  <text x="832" y="892" font-size="13.5" fill="#334155">统计检验 · CSV 导出 · 基因功能查询（mygene.info）</text>
+  <text x="832" y="917" font-size="12.5" fill="#475569">输入 · .h5ad 路径；obs 列名按约定 CellType / Sample / Group</text>
+  <text x="832" y="942" font-size="12.5" fill="#475569">产出 · PNG（/api/results?file=）· Markdown 计数表 · CSV 到 /tmp/gensci_results/</text>
+  <text x="832" y="961" font-size="12.5" fill="#475569">stdout 统计量与 p 值 · 由 7 个 scripts/*.py 执行</text>
+
+  <!-- 组 E -->
+  <rect x="40" y="977" width="10" height="10" rx="2" fill="#4F46E5"/>
+  <text x="60" y="988" font-size="15" font-weight="700" fill="#4F46E5">E · 表征与下游工具箱</text>
+  <text x="244" y="988" font-size="12.5" fill="#94A3B8">基础模型嵌入与教程式下游清单</text>
+  <text x="1560" y="988" font-size="11.5" fill="#94A3B8" text-anchor="end">2 个 skill</text>
+
+  <rect x="40" y="998" width="748" height="150" rx="10" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="1.2"/>
+  <rect x="41" y="999" width="4" height="148" rx="2" fill="#4F46E5"/>
+  <text x="60" y="1024" font-size="16" font-weight="700" fill="#312E81">single-cell-foundation-model</text>
+  <text x="60" y="1049" font-size="13.5" fill="#334155">经 ov.llm.SCLLMManager 统一调用 5 个基础模型 ——</text>
+  <text x="60" y="1068" font-size="13.5" fill="#334155">scGPT / Geneformer / scFoundation / UCE / CellPLM</text>
+  <text x="60" y="1093" font-size="12.5" fill="#475569">输入 · .h5ad；Geneformer 需 var 内 ENSEMBL ID；整合需 batch_key；需各后端 checkpoint</text>
+  <text x="60" y="1118" font-size="12.5" fill="#475569">产出 · obsm['X_&lt;backend&gt;'] —— 依次 512 / 256 / 768 / 1280 / 512 维，</text>
+  <text x="60" y="1137" font-size="12.5" fill="#475569">对应上述 5 个后端</text>
+
+  <rect x="812" y="998" width="748" height="150" rx="10" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="1.2"/>
+  <rect x="813" y="999" width="4" height="148" rx="2" fill="#4F46E5"/>
+  <text x="832" y="1024" font-size="16" font-weight="700" fill="#312E81">single-downstream-analysis</text>
+  <text x="832" y="1049" font-size="13.5" fill="#334155">8 个 OmicVerse 下游教程的可执行 checklist —— AUCell 通路打分 /</text>
+  <text x="832" y="1068" font-size="13.5" fill="#334155">metacell DEG / scDrug 药敏 / cNMF / NOCD / lazy 报告</text>
+  <text x="832" y="1093" font-size="12.5" fill="#475569">输入 · 含 clustering + embedding 的 AnnData；SCENIC 段需非 log 变换的 raw counts</text>
+  <text x="832" y="1118" font-size="12.5" fill="#475569">产出 · h5ad 持久化 · HTML 报告（generate_scRNA_report）·</text>
+  <text x="832" y="1137" font-size="12.5" fill="#475569">scenic_obj.pkl · 火山图 / 热图 / dotplot</text>
+
+  <!-- 带 3：能力边界 -->
+  <rect x="40" y="1161" width="4" height="14" rx="2" fill="#B91C1C"/>
+  <text x="52" y="1172" font-size="14.5" font-weight="700" fill="#B91C1C">能力边界与已知缺口</text>
+  <text x="194" y="1172" font-size="12.5" fill="#94A3B8">过滤发生在提示词层，不是执行层 —— 本图不声称「只能调用这 11 个」</text>
+
+  <rect x="40" y="1184" width="356" height="156" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <rect x="41" y="1185" width="4" height="154" rx="2" fill="#64748B"/>
+  <text x="60" y="1210" font-size="13.5" font-weight="700" fill="#334155">过滤是提示词引导，不是沙箱</text>
+  <text x="58" y="1236" font-size="12.5" fill="#475569">skills_filter 只裁剪系统提示词里的 skill 列表</text>
+  <text x="58" y="1254" font-size="12.5" fill="#475569">工具集不裁：_get_tools() 仍返回全部</text>
+  <text x="58" y="1272" font-size="12.5" fill="#475569">skill() 查全局 SKILL_REGISTRY（88 个），不带过滤</text>
+  <text x="58" y="1290" font-size="12.5" fill="#475569">实测：不在清单里的 light-figure-drawing /</text>
+  <text x="58" y="1308" font-size="12.5" fill="#475569">drug-toxicology 也能被 skill() 加载</text>
+
+  <rect x="428" y="1184" width="356" height="156" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <rect x="429" y="1185" width="4" height="154" rx="2" fill="#64748B"/>
+  <text x="448" y="1210" font-size="13.5" font-weight="700" fill="#334155">11 个全是「文档型」skill</text>
+  <text x="446" y="1236" font-size="12.5" fill="#475569">全部没有 __init__.py，注册后 func is None</text>
+  <text x="446" y="1254" font-size="12.5" fill="#475569">不注册为 LLM 可调函数，只以 SKILL.md 参考卡存在</text>
+  <text x="446" y="1272" font-size="12.5" fill="#475569">纯代码执行仅 6 个 function tool：</text>
+  <text x="446" y="1290" font-size="12.5" fill="#475569">shell / skill / tool_search / memory_read /</text>
+  <text x="446" y="1308" font-size="12.5" fill="#475569">memory_write / memory_delete</text>
+
+  <rect x="816" y="1184" width="356" height="156" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <rect x="817" y="1185" width="4" height="154" rx="2" fill="#64748B"/>
+  <text x="836" y="1210" font-size="13.5" font-weight="700" fill="#334155">只有 1 个自带生产脚本</text>
+  <text x="834" y="1236" font-size="12.5" fill="#475569">statistical-analysis 有 7 个 scripts/*.py 真正跑数据</text>
+  <text x="834" y="1254" font-size="12.5" fill="#475569">另有 5 个 smoke 脚本（cpdb / deg / velocity /</text>
+  <text x="834" y="1272" font-size="12.5" fill="#475569">scenic / trajectory）是验证夹具：造合成数据、</text>
+  <text x="834" y="1290" font-size="12.5" fill="#475569">断言布尔量，不读用户数据集</text>
+  <text x="834" y="1308" font-size="12.5" fill="#475569">其余 4 个是教程 playbook，由 LLM 读后写 shell 执行</text>
+
+  <rect x="1204" y="1184" width="356" height="156" rx="10" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1.2" filter="url(#shadow-light)"/>
+  <rect x="1205" y="1185" width="4" height="154" rx="2" fill="#DC2626"/>
+  <text x="1224" y="1210" font-size="13.5" font-weight="700" fill="#991B1B">已知对不上的引用</text>
+  <text x="1222" y="1236" font-size="12.5" fill="#475569">search_skills() 是幽灵函数：全仓不存在，</text>
+  <text x="1222" y="1254" font-size="12.5" fill="#475569">single-downstream-analysis:105 却要求模型调用</text>
+  <text x="1222" y="1272" font-size="12.5" fill="#475569">正确写法是 skill('single-cell-scenic')</text>
+  <text x="1222" y="1290" font-size="12.5" fill="#475569">另有 5 处指向不存在的 skill 目录</text>
+  <text x="1222" y="1308" font-size="12.5" fill="#475569">触发条件基本不会发生；失败是干净报错</text>
+
+  <!-- 页脚 -->
+  <line x1="40" y1="1356" x2="1560" y2="1356" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="40" y="1365" width="10" height="10" rx="5" fill="#7C3AED"/>
+  <text x="56" y="1374" font-size="11.5" fill="#64748B">A 细胞类型注释</text>
+  <rect x="168" y="1365" width="10" height="10" rx="5" fill="#2563EB"/>
+  <text x="184" y="1374" font-size="11.5" fill="#64748B">B 状态动力学与轨迹</text>
+  <rect x="312" y="1365" width="10" height="10" rx="5" fill="#0891B2"/>
+  <text x="328" y="1374" font-size="11.5" fill="#64748B">C 调控网络与细胞互作</text>
+  <rect x="456" y="1365" width="10" height="10" rx="5" fill="#059669"/>
+  <text x="472" y="1374" font-size="11.5" fill="#64748B">D 差异表达与统计</text>
+  <rect x="568" y="1365" width="10" height="10" rx="5" fill="#4F46E5"/>
+  <text x="584" y="1374" font-size="11.5" fill="#64748B">E 表征与下游工具箱</text>
+  <text x="1560" y="1374" font-size="11.5" fill="#94A3B8" text-anchor="end">来源：server/skills/ 11 个目录 · server/llm_proxy.py:25 · src/components/analysis/FreeAnalysisTab.tsx:63</text>
+</svg>
