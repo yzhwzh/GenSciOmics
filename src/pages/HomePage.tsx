@@ -5,24 +5,20 @@ import TissueAtlas from '../components/TissueAtlas'
 import UpdateLog from '../components/UpdateLog'
 import OnlineUsers from '../components/OnlineUsers'
 import StatsTable from '../components/StatsTable'
-import { fetchDatasetsFresh } from '../api/datasets'
+import { fetchDatasetsFresh, summarizeDatasets } from '../api/datasets'
 
 export default function HomePage() {
-  const [stats, setStats] = useState({ organs: 0, diseases: 0, datasets: 0 })
+  const [stats, setStats] = useState({ organs: 0, diseases: 0, studies: 0, omics: 0 })
 
   useEffect(() => {
     // fetchDatasetsFresh, not fetchDatasets: this one-shot count should reflect
     // the datasets the scanner has just picked up, and the cached variant would
     // hold a stale number for its whole TTL. The .catch() below still covers a
     // malformed body the same way the Array.isArray guard used to.
+    // 口径（按 PMID 计套数 / Health 不算病种 / 组学从数据实算）集中在
+    // summarizeDatasets，并由 src/api/datasets.test.ts 钉住。
     fetchDatasetsFresh().then((data) => {
-      const tissues = new Set(data.map((d) => d.tissue?.toLowerCase()))
-      const diseases = new Set(data.map((d) => d.disease))
-      setStats({
-        organs: tissues.size,
-        diseases: diseases.size,
-        datasets: data.length,
-      })
+      setStats(summarizeDatasets(data))
     }).catch(() => {})
   }, [])
 
@@ -50,11 +46,11 @@ export default function HomePage() {
               <div className="text-[11px] text-text-muted uppercase tracking-wider mt-1">Diseases</div>
             </div>
             <div className="text-center">
-              <div className="text-[26px] font-bold text-brand">{stats.datasets || '—'}</div>
-              <div className="text-[11px] text-text-muted uppercase tracking-wider mt-1">Datasets</div>
+              <div className="text-[26px] font-bold text-brand">{stats.studies || '—'}</div>
+              <div className="text-[11px] text-text-muted uppercase tracking-wider mt-1">Studies</div>
             </div>
             <div className="text-center">
-              <div className="text-[26px] font-bold text-brand">4</div>
+              <div className="text-[26px] font-bold text-brand">{stats.omics || '—'}</div>
               <div className="text-[11px] text-text-muted uppercase tracking-wider mt-1">Omics Types</div>
             </div>
           </div>
