@@ -118,6 +118,11 @@ def handle_tissues(handler, q):
 
 def handle_stats(handler, q):
     with datasets_lock:
+        # 'Multi-organ' 是泛器官整合数据（Tabula Sapiens、TCGA、多器官蛋白组），
+        # 回答的是「跨哪些器官」，没有单一器官可归类 —— 强行摊进「按组织统计」表
+        # 只会把同一篇 PMID 再计到某一栏。故排除。
+        # 注意：这条只过滤 rows；本函数末尾按 PMID 数健康/疾病套数时用的是**未过滤**
+        # 的 datasets。两者分母本就不同，别为了「看着一致」把它们改成同一个列表。
         all_ds = [d for d in datasets if d['tissue'] not in ('Health', 'Multi-organ')]
     species_set = sorted(set(d['species'] for d in all_ds))
     tissue_set = sorted(set(d['tissue'] for d in all_ds))

@@ -2008,4 +2008,101 @@ SVG 路径语法里**逗号只能分隔「值」，永远不能分隔「命令�
 
 ---
 
-*后续新缺陷按 B41、B42... 追加。*
+## B41. Multi-organ 被当成疾病名，同一 PMID 在健康与疾病两栏各计一次 (2026-10-13)
+
+### 现象
+
+Dataset Statistics by Tissue 里 Monkey 显示 `1H · 1D`，Human 显示 `5H · 58D`。
+用户指出这是**同一套数据被数了两遍**：「不是要按PMID进行统计吗，这个明显是同一套数据啊」。
+
+### 根因
+
+路径约定是 `Data/<物种>/<组织>/<疾病>/<组学>/`，`disease` 字段取自第 3 级。
+`Multi-organ` 底下**没有疾病级**，于是 `scanner.py` 用 `FLAT_TISSUES = {'Multi-organ'}`
+特判，把**组织名抄进** `disease` 字段（`disease = tissue`）。
+
+而 `routes.py:148` 判健康与否只看字符串：
+
+```python
+is_health = d.get('disease', '').lower() == 'health' or d.get('tissue', '').lower() == 'health'
+```
+
+`'Multi-organ'` 落进 else，被当成疾病。关键在于健康与疾病是**两个独立的 PMID 集合**：
+
+```python
+species_health.setdefault(sp, set()).add(pmid)   # routes.py:150
+species_disease.setdefault(sp, set()).add(pmid)  # routes.py:152
+```
+
+同一篇研究只要既挂在 `<器官>/Health/` 下、又挂在 `Multi-organ/` 下，就**两边各进一次**：
+
+| 物种 | PMID | 挂在哪 |
+|---|---|---|
+| Human | 35549404 | Tabula Sapiens：28 个单器官 `Health` 软链 **+** 1 个 `Multi-organ` 合并文件 |
+| Monkey | 35831300 | `Lung/Health/scRNA/` **+** `Multi-organ/scRNA/` |
+
+`Multi-organ` 回答的是「哪些器官」，不是「健康还是疾病」—— 一个**组织范围**被当成了疾病标签。
+
+### 修复
+
+1. **补齐路径层级**，4 个软链各进一级（软链指向仓库外，真实数据未动；
+   `.bulk_cache/` 随源目录一起移动）：
+
+   | 原路径 | 新路径 | 现在读作 |
+   |---|---|---|
+   | `Multi-organ/scRNA/35549404.Tabula.h5ad` | `Multi-organ/Health/scRNA/…` | `disease='Health'` |
+   | `Multi-organ/scRNA/35831300.Monkey.h5ad` | `Multi-organ/Health/scRNA/…` | `disease='Health'` |
+   | `Multi-organ/BulkRNA/29625048.TCGA.TPM.txt` | `Multi-organ/Cancer/BulkRNA/…` | `disease='Cancer'` |
+   | `Multi-organ/Protein/42310461.Multi.Intensity.txt` | `Multi-organ/Cancer/Protein/…` | `disease='Cancer'` |
+
+2. **删除 `FLAT_TISSUES` 及其分支** —— 路径约定现在**无特例**。
+   该常量全仓仅 2 处引用（定义处 + 唯一使用处），无模块 import 它。
+
+3. **补上守卫**（代码评审指出）：删掉特判后，一条少一级的路径会把组学名顶到疾病位上 ——
+   `Multi-organ/Metabolism/x.h5ad` 会读成 `disease='Metabolism'`，而 `Metabolism` 恰是
+   `OMICS_TYPES` 的一员，于是静默落进疾病分栏，**正是本次修掉的错误类别**。现在判为
+   `'unknown'` 并往 stderr 报警（`server/scanner.py`，`_extract_path_fields`）。
+
+**为什么没有按「Multi-organ 就算健康」一刀切**：`Multi-organ` 底下共 4 套，其中 **2 套是真疾病**
+（TCGA 泛癌 `Tumor 10291 / Normal 737`；肿瘤蛋白组 `Tumor/Non-tumor/Normal/Fetal`）。
+照目录名切成健康，会把这两套肿瘤研究标成健康数据。归类必须落在**数据集本身**。
+
+### 验证
+
+新增 `server/tests/test_multi_organ_classification.py`，4 组断言。RED 阶段 1 通过 / 4 失败：
+
+```
+[1] disease 不得等于 tissue          FAIL  Human/Multi-organ×3, Monkey/Multi-organ×1
+[2] 同一 PMID 不得同时计入 H 和 D     FAIL  Human 5H+58D=63≠62;  Monkey 1H+1D=2≠1
+[3] Monkey 多器官图谱应标 Health      FAIL  实际 'Multi-organ'
+[4] 缺疾病层级的路径不得把组学名当疾病  FAIL  disease='Metabolism'
+```
+
+断言 [2] 走的是**生产代码** `routes.handle_stats`（不是复述其规则）：健康 + 疾病套数
+== 该物种去重 PMID 总数，等价于「无 PMID 重复计数」——因为 `|h|+|d| = |并集| + |交集|`，
+等式成立**当且仅当**交集为空。
+
+修后：Monkey `1H · 0D`、Human `5H · 57D`。`npm run test:py` 21 文件全绿；
+`npm test` 19 文件 / 170 用例全绿。
+
+### 涉及文件
+
+`server/scanner.py`、`server/tests/test_multi_organ_classification.py`（新增）、
+`Data/Human/Multi-organ/` 与 `Data/Monkey/Multi-organ/` 下 4 个软链的路径
+
+### 关键教训
+
+- **目录名是路径层级，不是语义标签。** `Multi-organ` 回答「哪些器官」，不回答「健康还是疾病」。
+  把「位置」当「含义」用，就得到一个看着合理的**假标签** —— 它不报错，只让统计悄悄错。
+- **两个集合并排计数时，先问「同一个 key 会不会同时进两边」。** 健康与疾病各是一个 `set`，
+  重复计数不抛任何异常，只让总数虚高。症状是「1H · 1D」这种看着像两套数据的数。
+- **改数据结构之前，先把判别信号验死。** 曾想用 `disease_count`（`obs['Disease'].nunique()`）
+  自动区分健康与疾病，实测**全部 59 条疾病数据集都是 0** —— 这一列基本不存在；反向也有一条
+  健康数据 `disease_count == 1`。信号验死了才改用显式声明，否则会按一个假判别器去改。
+- **测试断言要么落在结构上，要么标明它钉的是数据快照。** [3] 的第一版写「Monkey 疾病数为 0」，
+  按项目约定合法地新增一个 Monkey 疾病数据集就会误报，逼后人削弱守卫；改成「该图谱 PMID
+  未被劈进两栏」后，只有真正的回归才会让它变红。
+
+---
+
+*后续新缺陷按 B42、B43... 追加。*

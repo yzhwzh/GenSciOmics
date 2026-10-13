@@ -21,7 +21,12 @@ from events import log_event
 
 
 # ─── Path convention constants ────────────────────────────────
-FLAT_TISSUES = {'Multi-organ'}  # tissues without a disease subdirectory
+# 每个数据集都在 <species>/<tissue>/<disease>/<omics>/ 下 —— 没有例外。
+# 曾有 FLAT_TISSUES = {'Multi-organ'}，让 Multi-organ 少一级、并把组织名抄进
+# disease 字段。结果是一个**组织范围**被当成疾病读：同一个 PMID 既算健康
+# （单器官 Health 目录下那份）又算疾病（Multi-organ 那份），套数虚高。
+# 软链已补上疾病层级，该特例随之删除。回归守卫见
+# server/tests/test_multi_organ_classification.py。
 OMICS_TYPES = {'scRNA', 'BulkRNA', 'Protein', 'Metabolism', 'spatial'}
 BULK_EXTENSIONS = {'.txt', '.tsv', '.csv', '.xlsx'}
 
@@ -271,14 +276,18 @@ def _extract_path_fields(path: Path) -> dict:
         idx = 1
 
     tissue = parts[idx] if len(parts) > idx else 'unknown'
-    if tissue in FLAT_TISSUES:
-        disease = tissue
-        omics_type = parts[idx + 1] if len(parts) > idx + 1 and parts[idx + 1] in OMICS_TYPES else 'scRNA'
-    else:
-        disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
-        omics_type = 'scRNA'
-        if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
-            omics_type = parts[idx + 2]
+    disease = parts[idx + 1] if len(parts) > idx + 1 else 'unknown'
+    # 少一级的路径会把组学名顶到疾病位上 —— 例如
+    # Data/Human/Multi-organ/Metabolism/x.h5ad 会读成 disease='Metabolism'，
+    # 静默落进疾病分栏，正是上面那条约定要防的错误类别。组学名不可能是疾病
+    # 名，所以这里判为「缺疾病层级」而不是照抄，并留一条警告免得静默。
+    if disease in OMICS_TYPES:
+        print(f'[GenSci] Path is missing a disease segment, treating disease as '
+              f'unknown: {path}', file=sys.stderr)
+        disease = 'unknown'
+    omics_type = 'scRNA'
+    if len(parts) > idx + 2 and parts[idx + 2] in OMICS_TYPES:
+        omics_type = parts[idx + 2]
 
     fname = path.stem
     pmid = fname.split('.')[0].split('_')[0] if '_' in fname else fname.split('.')[0]
