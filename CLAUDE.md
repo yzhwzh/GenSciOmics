@@ -146,6 +146,11 @@ npm run test:coverage         # vitest with coverage report
 
 ## 本机环境注意事项
 
+> 完整的环境清点 —— Python 双 conda 环境（`claude-code` ∪ `OmicVerse`）、硬依赖与版本、
+> 可选依赖、环境变量、外部 CLI 与 MCP、端口网络、从零复现步骤 —— 见
+> **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)**。
+> 本节只讲两个**本机特有的坑**，不重复上面那份。
+
 ### 浏览器工具用 `playwright`，不要用 `plugin:ecc:playwright`
 
 两个 MCP server 同名，但本机只有前者能用：
