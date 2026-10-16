@@ -13,7 +13,7 @@ from config import DATA_DIRS, RESULTS_DIR
 
 from scanner import datasets, datasets_lock
 from caches import LRUCache
-from core.adata_cache import get_adata
+from core.adata_cache import get_adata, file_identity
 
 # Caches for expensive .h5ad reads
 _analysis_info_cache = LRUCache(max_size=500)
@@ -187,7 +187,11 @@ def handle_analysis_info(handler, q):
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
         return
-    cache_key = f'ai:{real_path_str}:{pmid}'
+    # B42 根因：这个键以前只有 path+pmid，**没有文件身份**。就地改写 .h5ad 的
+    # 窗口里第一次请求读失败，那条错误就被存在这个键下；改写完成后键一点没变，
+    # 于是接口永远吐那条旧错，直到重启进程。加上文件身份（mtime+size+inode），
+    # 文件一变就必然 miss —— 缓存的答案不会再活得比它依据的字节更久。
+    cache_key = f'ai:{real_path_str}:{pmid}:{file_identity(real_path_str)}'
     cached = _analysis_info_cache.get(cache_key)
     if cached:
         # 摘要可能是在这条 _analysis_info_cache 条目**之后**才被抓进来的
@@ -264,7 +268,12 @@ def handle_analysis_info(handler, q):
                      'celltype_count': 0, 'cell_type_names': [], 'error': str(e)}
     result = {'pmid': pmid, 'abstract': abstract_info,
               'abstract_ready': abstract_info is not None, 'stats': stats}
-    _analysis_info_cache.set(cache_key, result)
+    # B42: 读失败（文件正在被就地改写 / 缓存句柄坏了）是**瞬时**状态，而 cache_key
+    # 里没有 mtime —— 一旦把这次失败存进去，文件改好之后这个端点还会一直吐旧错误，
+    # 「改完标签点进去就是 Read failed，重启才好」就是这么来的。失败那一份只服务
+    # 本次请求，不入缓存；下一次请求会重新去读。
+    if not stats.get('error'):
+        _analysis_info_cache.set(cache_key, result)
     handler._json(result)
 
 
@@ -314,13 +323,24 @@ def handle_umap_data(handler, q):
     if not real_path or not real_path.is_file():
         handler._send_error('Invalid file path')
         return
-    cache_key = f'umap:{real_path_str}:{color_by}:{max_points}:{gene}:{gene2}:{palette}'
+    # B42：同 handle_analysis_info —— 键里必须有文件身份，否则改写窗口里存下来的
+    # 那份结果（哪怕是个错误）会一直服务下去。`file_identity` 是根本修法；
+    # 下面的 read_failed 门控是第二道保险，覆盖「改写保持了 mtime/size/inode」
+    # 那种极端情况（纯元数据改动）。
+    cache_key = (f'umap:{real_path_str}:{color_by}:{max_points}:{gene}:{gene2}'
+                 f':{palette}:{file_identity(real_path_str)}')
     cached = _umap_cache.get(cache_key)
     if cached:
         handler._json(cached)
         return
     data = _get_umap_data(real_path, color_by, max_points, gene, palette, gene2)
-    _umap_cache.set(cache_key, data)
+    # B42: 同上 —— 读失败是瞬时的，而 cache_key 里没有 mtime。`read_failed` 只由
+    # 异常分支打上（analysis/umap.py），「这份数据本来就没有 X_umap」不带这个标记，
+    # 照旧缓存。失败那一份只服务本次请求。
+    if data.get('read_failed'):
+        data = {k: v for k, v in data.items() if k != 'read_failed'}
+    else:
+        _umap_cache.set(cache_key, data)
     handler._json(data)
 
 

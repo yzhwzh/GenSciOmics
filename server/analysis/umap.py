@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import anndata
-from core.adata_cache import get_adata, locked_backed_adata
+from core.adata_cache import get_adata, locked_backed_adata, invalidate
 
 def _get_umap_data(real_path: Path, color_by: str = 'CellType',
                    max_points: int = 50000, gene: str = '',
@@ -182,7 +182,18 @@ def _get_umap_data(real_path: Path, color_by: str = 'CellType',
             'sample_step': step,
         }
     except Exception as e:
+        # 本函数开头用的是**裸** get_adata，没有 locked_backed_adata 的那条驱逐
+        # 分支；一旦这个句柄读不出东西，它会一直待在缓存里（键里的 mtime 在改写
+        # 完成后就不动了），此后每次都从同一个坏句柄上失败 —— B42 里「改完数据
+        # 就得重启后端」有一半是这么来的。这里显式驱逐，让下一次请求重新打开。
+        # 代价只有一次重开，而且只发生在本来就要报错的请求上。
+        invalidate(str(real_path))
         print(f'[GenSci] UMAP data error: {e}', file=sys.stderr)
         import traceback
         traceback.print_exc()
-        return {'error': str(e)}
+        # read_failed 把「读不出来」和「这份数据本来就没有 X_umap」分开：前者是
+        # 瞬时的（文件正在被就地改写 / 缓存句柄坏了，见 core/adata_cache 的 B42），
+        # 调用方**不得缓存**；后者是数据事实，缓存无所谓。routes.handle_umap_data
+        # 按这个键决定存不存 —— 它的缓存键里没有 mtime，存住一个瞬时错误就等于
+        # 文件修好之后 UMAP 页还一直吐旧错。
+        return {'error': str(e), 'read_failed': True}
