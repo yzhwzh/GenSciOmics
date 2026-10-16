@@ -1,7 +1,28 @@
 #!/usr/bin/env python3
 """Shared utility functions for analysis modules."""
 
+import re
+
 import numpy as np
+
+
+# 判为「对照」的关键词。**全部走 is_control()，别再抄这个字面量** —— 改造前这
+# 一行元组在 6 个地方各写了一遍（连本文件的 build_cond_palette 都自成一份）。
+_CONTROL_KEYS = ('control', 'normal', 'healthy')
+
+
+def is_control(name) -> bool:
+    """标签是否算「对照」：control / normal / healthy，大小写不敏感、子串匹配。
+
+    排序（`cond_sort_key`）与取色（`build_cond_palette`）共用这一份判定，改这里
+    两边一起变。子串匹配是刻意的 —— `Control2`、`Healthy donor` 都该算对照。
+    """
+    ln = str(name).lower()
+    return any(k in ln for k in _CONTROL_KEYS)
+
+
+# 标签里第一段连续数字 —— cond_sort_key 用它做数值排序。
+_NUM_IN_NAME = re.compile(r'\d+')
 
 
 # Maximally-distinguishable categorical palette (glasbey-like)
@@ -96,7 +117,7 @@ def build_cond_palette(conditions: list[str], palette_name: str = 'default') -> 
     palette = {}
     idx = 0
     for c in conditions:
-        if any(k in c.lower() for k in ('control', 'normal', 'healthy')):
+        if is_control(c):
             palette[c] = cond['control']
         else:
             palette[c] = cond['disease'][idx % len(cond['disease'])]
@@ -214,7 +235,32 @@ def resolve_group_column(adata, group_col: str = 'Group') -> str:
 
 
 def cond_sort_key(name: str) -> tuple:
-    """Sort: non-control first, control last. Secondary: alphabetically."""
-    ln = name.lower()
-    is_ctrl = any(k in ln for k in ('control', 'normal', 'healthy'))
-    return (1 if is_ctrl else 0, name)
+    """条件/分组标签的排序键：数字按数值升序，非数字次之，control 最后。
+
+    纯字典序会把天数排成 `150, 200, 260, 40, 90` —— 本仓 40425564.STGD 的
+    `Group` 就是 40/90/150/200/260（分化天数）。含数字的标签一律取**第一段**
+    连续数字参与数值排序，`1 month`/`6 months`/`12 months` 这类也顺带排对。
+
+    返回 `(int, int, str)` 三段**同型**元组：元组比较是逐位来的，某一位一旦
+    出现 int 与 str 相比就会 TypeError，所以位型必须一致。
+
+    顺序：数字标签(0) < 非数字标签(1) < control(2)。**control 判定优先于数字判定** ——
+    否则 `Control2` 这种名字会因为含数字被分到 (0,…) 排到**最前**，"control 最后"
+    就被破坏了。
+
+    对**不含数字**的标签，本函数与改造前逐字等价（`['Disease','Control']` 两种实现
+    都给 `[Disease, Control]`），只有含数字的标签会改变顺序 —— 这正是本次要改的。
+
+    两处已知取舍：
+    - `COVID19` 这类**含数字但非序数**的名字会按 19 参与数值排序，排到无数字名字
+      之前（`bulk._group_sort_key` 原本就是这个行为，沿用）。
+    - 取的是第一段数字，所以 `A001-D40` 得到的是 `001` 而非 `40` —— 它修不了以
+      样本名作横轴的顺序，那是另一套代码。
+    """
+    s = str(name)
+    if is_control(s):
+        return (2, 0, s)
+    m = _NUM_IN_NAME.search(s)
+    if m:
+        return (0, int(m.group()), s)
+    return (1, 0, s)

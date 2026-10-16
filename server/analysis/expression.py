@@ -25,10 +25,17 @@ def _get_expression_stats(real_path: Path, genes_str: str,
     - by_sample: per-sample raw values with condition labels
     - by_celltype: aggregate per cell type
     - conditions: list of unique condition (Group) values
+
+    Note: `cell_type_filter` 是**死参数** —— 签名里有，函数体从不读它，也无人传入
+    （全仓只有这一处出现）。保留只是为了不动调用方签名；别以为它真在过滤。
     """
     genes = [g.strip() for g in genes_str.split(',') if g.strip()]
 
-    cache_key = (str(real_path), real_path.stat().st_mtime, condition_col or '', tuple(sorted(genes)))
+    # `group_by` 必须进缓存键：`by_sample` 是**按 group_by 分组**的结果，
+    # 键里不带它的话，第二次用别的 group_by 请求会命中第一次的缓存，页面拿到
+    # 的是另一套分组的数据（而且看不出来）。condition_col 同理，早已在键里。
+    cache_key = (str(real_path), real_path.stat().st_mtime, condition_col or '',
+                 group_by, tuple(sorted(genes)))
     cached = _expr_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -64,12 +71,20 @@ def _get_expression_stats(real_path: Path, genes_str: str,
             if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
                 cond_col = condition_col
 
-            sample_vals = adata.obs[group_by].values
-            cond_vals = adata.obs[cond_col].values if cond_col else None
-            unique_samples = sorted(set(str(x) for x in sample_vals))
-            unique_conditions = sorted(set(str(x) for x in cond_vals)) if cond_col else ['All']
-            all_ct_values = adata.obs['CellType'].values if 'CellType' in adata.obs.columns else None
-            unique_ct = sorted(set(str(x) for x in all_ct_values)) if all_ct_values is not None else []
+            # 标签一律取字符串 —— 与 stats.py / plots.py 同一个 idiom（B43）。
+            #
+            # 不这么做的话，下面每一条 `sample_vals == us` / `all_ct_values == ct`
+            # 都是拿**原始值**比**字符串标签**（us / ct 来自 `str(x)` 的集合）：
+            # 组列或 CellType 若是 int64，比较全 False → 三个 by_* 列表**全空**，
+            # 而且**不抛任何异常** —— 前端只是一片空白，没人会知道是标签类型的问题。
+            sample_vals = adata.obs[group_by].values.astype(str)
+            cond_vals = adata.obs[cond_col].values.astype(str) if cond_col else None
+            unique_samples = sorted(set(sample_vals))
+            unique_conditions = sorted(set(cond_vals)) if cond_col else ['All']
+            all_ct_values = (adata.obs['CellType'].values.astype(str)
+                             if 'CellType' in adata.obs.columns else None)
+            # all_ct_values 上面已 .astype(str)，这里不必再 str(x) 空包一层。
+            unique_ct = sorted(set(all_ct_values)) if all_ct_values is not None else []
 
             # Every requested gene column is read once, here, while the file lock
             # is held. Three aggregation passes below each need all of them, and

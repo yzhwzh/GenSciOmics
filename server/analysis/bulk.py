@@ -9,7 +9,6 @@ table.
 
 import base64
 import io
-import re
 import sys
 import threading
 from pathlib import Path
@@ -23,7 +22,7 @@ import seaborn as sns
 from scipy.stats import mannwhitneyu, ttest_ind
 
 from core.adata_cache import locked_backed_adata
-from analysis.utils import build_cond_palette
+from analysis.utils import build_cond_palette, cond_sort_key
 from scanner import _extract_data_type  # filename → count/TPM/FPKM/RPKM/Intensity
 
 
@@ -82,16 +81,17 @@ def _classify_group(value: str) -> str:
 
 
 def _group_sort_key(name: str) -> tuple:
-    """Boxplot group order: if a group name contains a number, sort by that
-    number ascending; non-numeric names (e.g. 'Normal') come after, with
-    control/normal/healthy last. Both tuple branches share the (int, int, str)
-    shape so mixed names stay comparable."""
-    ln = name.lower()
-    m = re.search(r'\d+', name)
-    if m:
-        return (0, int(m.group()), name)
-    is_ctrl = any(k in ln for k in ('control', 'normal', 'healthy'))
-    return (1, 1 if is_ctrl else 0, name)
+    """Boxplot group order.
+
+    本函数原先自带一份实现，与 `utils.cond_sort_key` 是同一个规则的两份副本
+    （连同 plots.py / stats.py 里的 7 个内联 lambda，一共 11 份）。现统一委托到
+    `utils.cond_sort_key`，只保留这个薄壳，免得动 3 个调用点。
+
+    行为有一处**收紧**：原实现先看数字再看 control，于是 `Control2` 这种名字会因
+    含数字被分到数字组排到最前；现在 control 判定优先，它正确地排在最后。
+    不含数字的名字（`Tumor`/`Normal`/`Control`）逐字不变。
+    """
+    return cond_sort_key(name)
 
 
 def _find_case_control(group_vals) -> tuple[str | None, str | None]:

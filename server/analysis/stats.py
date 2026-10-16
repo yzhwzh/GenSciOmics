@@ -14,7 +14,7 @@ from config import OBS_COLUMNS
 
 from analysis.utils import (extract_gene_columns, in_memory_matrix, merge_op_separator,
                             normalize_gene2_op, reduce_bool_masks,
-                            resolve_gene_indices, resolve_group_column)
+                            resolve_gene_indices, resolve_group_column, cond_sort_key)
 
 
 def _get_per_sample_table(real_path: str, genes_str: str,
@@ -166,10 +166,8 @@ def _get_per_sample_mutest(real_path: str, genes_str: str,
             unique_ct = sorted(set(ct_vals))
             unique_samples = sorted(set(sample_vals))
 
-            # Order groups: disease first, control last
-            def _g_sort(g):
-                return 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0
-            unique_groups = sorted(set(cond_vals), key=lambda g: (_g_sort(g), g))
+            # Order groups: numeric ascending, disease, control last (see utils)
+            unique_groups = sorted(set(cond_vals), key=cond_sort_key)
 
             # Sample -> group map
             sf = pd.DataFrame({'S': sample_vals, 'G': cond_vals}).drop_duplicates('S')
@@ -334,8 +332,7 @@ def _get_aggregate_table(real_path: str, genes_str: str,
             if grouped:
                 group_col = resolve_group_column(adata, group_col)
                 g_vals = adata.obs[group_col].values.astype(str)
-                unique_groups = sorted(set(g_vals), key=lambda g: (
-                    1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0, g))
+                unique_groups = sorted(set(g_vals), key=cond_sort_key)
 
             X = adata.X
             rows = []

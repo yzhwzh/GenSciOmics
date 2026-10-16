@@ -15,7 +15,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import AutoMinorLocator
 
-from analysis.utils import (build_cond_palette, cond_sort_key, get_palette,
+from analysis.utils import (build_cond_palette, cond_sort_key, get_palette, is_control,
                             merge_op_separator, normalize_gene2_op, reduce_bool_masks)
 from scipy.stats import mannwhitneyu
 import scanpy as sc
@@ -62,14 +62,31 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
             col = adata.X[:, gene_idx]
             gene_expr = col.toarray().flatten() if hasattr(col, 'toarray') else np.array(col).flatten()
 
-            sample_vals = adata.obs['Sample'].values
-            ct_vals = adata.obs['CellType'].values
+            # 标签一律取字符串 —— 与 stats.py 一致（那里每处取数都写了 .astype(str)）。
+            #
+            # 不这么做的话，下面每一条 `ct_vals == ct` / `cond_vals == cond` 都是拿
+            # **原始值**去比**字符串标签**：Group 若是 int64（本仓就有一份，取值
+            # 40/90/150/200/260 的分化天数），`cond_vals == '150'` 全 False →
+            # mask 静默全空 → 图不是画错，是根本画不出来（B43）。
+            #
+            # 用 astype(str) 而不是 str()：**整数**列给 '40' 而不是 '40.0'，页面上
+            # 显示的天数就是标签本身。（这个保证只对整数成立：列一旦是 float64 ——
+            # 有一个 NaN、或经 R/CSV 往返，就会变成 float —— astype(str) 同样给
+            # '40.0'。真需要挡住这一点，得先判 dtype 再取整数。）
+            #
+            # 副作用：缺失标签（NaN）以前因为「NaN != '任何字符串'」被静默丢掉，
+            # 现在会被 group 成一个名为 'nan' 的类别画出来。是丢还是画，没定；
+            # 本仓的数据集暂时都没有缺失 Group/CellType，先记在这里。
+            sample_vals = adata.obs['Sample'].values.astype(str)
+            ct_vals = adata.obs['CellType'].values.astype(str)
             cond_vals = None
             if condition_col and condition_col != 'None' and condition_col in adata.obs.columns:
-                cond_vals = adata.obs[condition_col].values
+                cond_vals = adata.obs[condition_col].values.astype(str)
 
-        unique_ct = sorted(set(str(x) for x in ct_vals))
-        unique_samples = sorted(set(str(x) for x in sample_vals))
+        # ct_vals / sample_vals 上面已 .astype(str)，不必再 str(x) 空包一层 ——
+        # 留着只会让下一个读代码的人以为这两个数组还是原始 numpy 值。
+        unique_ct = sorted(set(ct_vals))
+        unique_samples = sorted(set(sample_vals))
         # Build DataFrame for plotting
         rows = []
         for s in unique_samples:
@@ -141,6 +158,12 @@ def _generate_plot(real_path: str, gene: str, condition_col: str,
                     else:
                         val = float(sub.mean())
                     agg_rows.append({'CellType': ct, 'Condition': cond, 'Value': val})
+            if not agg_rows:
+                # 防御：agg_rows 为空时 `pd.DataFrame([])` **没有列**，seaborn 会报
+                # 「Could not interpret value `CellType` for `x`」—— 把「一行都没有」
+                # 说成「没有这个列」，正是 B43 现场那句把人引偏的报错。这里跟上面
+                # boxplot 分支一样明说数据不足。
+                return {'error': 'Insufficient data'}
             agg = pd.DataFrame(agg_rows)
             sns.barplot(
                 data=agg, x='CellType', y='Value', hue='Condition',
@@ -252,7 +275,8 @@ def _generate_celltype_composition(real_path: str, gene: str,
             if g1_idx is None:
                 return {'error': f'Gene "{gene}" not found'}
 
-            ct_vals = adata.obs['CellType'].values
+            # 取字符串，理由见 _generate_plot 里那段（B43）
+            ct_vals = adata.obs['CellType'].values.astype(str)
             # Read only the needed gene columns (avoid full matrix)
             g1_expr = adata[:, g1_idx].X
             g1_expr = np.asarray(g1_expr.toarray() if hasattr(g1_expr, 'toarray') else g1_expr).flatten()
@@ -410,9 +434,11 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
                         cond_col = candidate
                         break
 
-            sample_vals = adata.obs['Sample'].values
-            ct_vals = adata.obs['CellType'].values
-            cond_vals = adata.obs[cond_col].values if cond_col else None
+            # 取字符串，理由见 _generate_plot 里那段（B43）：下面
+            # `ratio_long['CellType'] == ct` 也是拿整列比字符串标签。
+            sample_vals = adata.obs['Sample'].values.astype(str)
+            ct_vals = adata.obs['CellType'].values.astype(str)
+            cond_vals = adata.obs[cond_col].values.astype(str) if cond_col else None
         # Compute cell type ratio per sample
         df = pd.DataFrame({
             'Sample': sample_vals, 'CellType': ct_vals,
@@ -422,13 +448,15 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
         pivot = df.pivot_table(index='CellType', columns='Sample', aggfunc='size', fill_value=0, observed=False)
         ratio = pivot / pivot.sum(axis=0)  # normalize to fractions
 
-        # Order samples: disease -> control
+        # Order samples by condition: control **first**, then disease.
+        # 注：这里 control 是排**最前**（键 0），与本仓其余 9 处「control 最后」方向
+        # 相反，且与这条注释原先写的 "disease -> control" 对不上。本次只把内联关键词
+        # 换成 is_control()，**没动这个方向** —— 翻转它会挪动这张堆叠柱状图的 x 轴样本
+        # 顺序，那是另一个决定，不该由 B43/B45 顺手改掉。
         if cond_vals is not None:
             cond_map = df[['Sample', 'Cond']].drop_duplicates().set_index('Sample')['Cond'].to_dict()
             def sort_key(s):
-                c = cond_map.get(s, '')
-                is_ctrl = any(k in c.lower() for k in ('control', 'normal', 'healthy'))
-                return (0 if is_ctrl else 1, s)
+                return (0 if is_control(cond_map.get(s, '')) else 1, s)
             sample_order = sorted(ratio.columns, key=sort_key)
         else:
             sample_order = sorted(ratio.columns)
@@ -474,9 +502,9 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
         # Color x-axis labels by condition
         if cond_vals is not None:
             cond_to_color = {}
-            all_conds = sorted(set(cond_vals), key=lambda c: 1 if any(k in c.lower() for k in ('control', 'normal', 'healthy')) else 0)
+            all_conds = sorted(set(cond_vals), key=cond_sort_key)
             for i, c in enumerate(all_conds):
-                if any(k in c.lower() for k in ('control', 'normal', 'healthy')):
+                if is_control(c):
                     cond_to_color[c] = cond_cfg['control']
                 else:
                     cond_to_color[c] = cond_cfg['disease'][i % len(cond_cfg['disease'])]
@@ -524,12 +552,11 @@ def _generate_cell_ratio_plot(real_path: str, condition_col: str = '',
         else:
             ratio_long['Condition'] = 'All'
 
-        cond_order = sorted(ratio_long['Condition'].unique(),
-                            key=lambda c: 1 if any(k in c.lower() for k in ('control', 'normal', 'healthy')) else 0)
+        cond_order = sorted(ratio_long['Condition'].unique(), key=cond_sort_key)
         ct_order = sorted(ratio_long['CellType'].unique())
 
         # Statistical test: each disease vs control
-        control_conds = [c for c in cond_order if any(k in c.lower() for k in ('control', 'normal', 'healthy'))]
+        control_conds = [c for c in cond_order if is_control(c)]
         disease_conds = [c for c in cond_order if c not in control_conds]
 
         sig_celltypes = set()
@@ -642,12 +669,14 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
                 except Exception:
                     pass
 
-            sample_vals = adata.obs['Sample'].values
-            ct_vals = adata.obs['CellType'].values
-            group_vals = adata.obs[group_var].values if group_var else None
+            # 取字符串，理由见 _generate_plot 里那段（B43）
+            sample_vals = adata.obs['Sample'].values.astype(str)
+            ct_vals = adata.obs['CellType'].values.astype(str)
+            group_vals = adata.obs[group_var].values.astype(str) if group_var else None
 
-        unique_ct = sorted(set(str(x) for x in ct_vals))
-        unique_samples = sorted(set(str(x) for x in sample_vals))
+        # 同上：ct_vals / sample_vals 已在取数处 .astype(str)。
+        unique_ct = sorted(set(ct_vals))
+        unique_samples = sorted(set(sample_vals))
         # Pivot: CellType x Sample -> count
         df = pd.DataFrame({'Sample': sample_vals, 'CellType': ct_vals})
         pivot = df.pivot_table(index='CellType', columns='Sample', aggfunc='size', fill_value=0, observed=False)
@@ -672,8 +701,7 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
         # Order: group by condition, then by sample name within each group
         if s_to_g:
             # Determine group order: disease groups first, control last
-            group_order = sorted(set(s_to_g.values()),
-                                 key=lambda g: 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0)
+            group_order = sorted(set(s_to_g.values()), key=cond_sort_key)
             sample_order = sorted(unique_samples,
                                   key=lambda s: (group_order.index(s_to_g.get(s, 'Unknown')) if s_to_g.get(s, 'Unknown') in group_order else 99, s))
         else:
@@ -683,8 +711,7 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
 
         # Colors
         if group_vals is not None:
-            all_groups = sorted(set(str(x) for x in group_vals),
-                                key=lambda g: 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0)
+            all_groups = sorted(set(group_vals), key=cond_sort_key)
         else:
             all_groups = ['All']
 
@@ -692,7 +719,7 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
         group_colors = {}
         di = 0
         for g in all_groups:
-            if any(k in g.lower() for k in ('control', 'normal', 'healthy')):
+            if is_control(g):
                 group_colors[g] = cond_cfg['control']
             else:
                 group_colors[g] = cond_cfg['disease'][di % len(cond_cfg['disease'])]
@@ -852,8 +879,7 @@ def _generate_umap_ratio_plots(real_path: str, group_var: str = '',
             id_vars='CellType', var_name='Sample', value_name='Ratio')
         ratio_long['Group'] = ratio_long['Sample'].apply(lambda s: s_to_g.get(s, 'Unknown'))
 
-        group_order = sorted(ratio_long['Group'].unique(),
-                             key=lambda g: 1 if any(k in g.lower() for k in ('control', 'normal', 'healthy')) else 0)
+        group_order = sorted(ratio_long['Group'].unique(), key=cond_sort_key)
 
         n_groups = len(group_order)
         fw3 = max(12, n_ct * 1.0 + n_groups * 0.6)
@@ -987,10 +1013,13 @@ def _generate_marker_dotplot(real_path: str, palette_name: str = 'default',
             if not marker_major and not target_genes:
                 return {'error': 'No marker genes or Target genes available for this dataset'}
 
-            # Get available groups BEFORE subsetting (for frontend dropdown)
+            # Get available groups BEFORE subsetting (for frontend dropdown).
+            # cond_sort_key, not sorted(): 纯字典序会把这个下拉框排成
+            # 150/200/260/40/90（天数），用户看到的是乱的。
             groups = []
             if 'Group' in adata.obs.columns:
-                groups = sorted(set(str(g) for g in adata.obs['Group'].unique()))
+                groups = sorted(set(str(g) for g in adata.obs['Group'].unique()),
+                                key=cond_sort_key)
 
             # Build plot_dict from var_names (in memory even with backed mode)
             var_names = set(str(n).upper() for n in adata.var_names)
@@ -1011,6 +1040,19 @@ def _generate_marker_dotplot(real_path: str, palette_name: str = 'default',
 
             if 'CellType' not in adata.obs.columns:
                 return {'error': 'CellType column not found in obs'}
+
+            # 数值型 CellType 必须转字符串再交给 scanpy（B43，第五处消费者）。
+            #
+            # `sc.pl.dotplot(groupby='CellType')` 对数值列会**自动分箱**，刻度变成
+            # `Interval(0.286, 0.571, closed='right')`；下面 `CellNumber.loc[i.get_text()]`
+            # 再按刻度文字回查计数，于是 KeyError —— 图只剩一个错误。本文件其它四处
+            # 已经在取数时 `astype(str)`，这里是漏掉的第五处。
+            #
+            # 只转数值列，不动 category/object：categorical 的 `.values` 本来就是字符串
+            # （不是 codes），而 `astype(str)` 会把 category 降级成 object，scanpy 随即
+            # 按字典序重排 —— 那会平白改变现有数据集 y 轴的细胞类型顺序。
+            if pd.api.types.is_numeric_dtype(adata.obs['CellType']):
+                adata.obs['CellType'] = adata.obs['CellType'].astype(str)
 
             # This block exists to get X into memory so the file lock can be released
             # before plotting — not to read less. Subsetting genes does NOT read less:

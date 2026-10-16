@@ -2289,4 +2289,344 @@ GET /api/analysis-info  → cells=42317 genes=31606 celltypes=12  error=None
 
 ---
 
-*后续新缺陷按 B43、B44... 追加。*
+## B43. 标签列不是字符串时图表画不出来 —— 把「没有行」报成「没有这一列」 (2026-10-16)
+
+### 现象
+
+用户点进 40425564.STGD，柱状图整页报错：
+
+```
+ValueError: Could not interpret value `CellType` for `x`.
+            An entry with this name does not appear in `data`.
+```
+
+而 `CellType` **明明就在 obs 里**（12 个细胞类型）。用户报的就是这句 —— 它把人引向
+列名/大小写/重命名，全是错的方向。
+
+### 根因
+
+**`pd.DataFrame([])` 没有列。** 聚合分支的 `agg_rows` 是空的，seaborn 拿到一个无列的
+DataFrame 再找 `x='CellType'`，只能报「没有这个列」—— 它说不出「你一行数据都没有」。
+
+那为什么是空的？**拿原始 obs 值去比字符串标签**：
+
+```python
+condition = str(c_sub[0])               # '150'
+combo = ct_mask & (cond_vals == cond)   # int64 数组 == '150' → 全 False
+```
+
+这份数据的 `Group` 是 **int64**，取值 40/90/150/200/260 —— 是**分化天数**（Sample 就叫
+`A001-D40`…`A001-D260`），不是 Disease/Control。于是每一条 mask 全 False、`agg_rows`
+全空，最后在 seaborn 里炸开。
+
+**同一个根因还有第二副面孔，而且更危险。** `CellType` 是数字时（`seurat_clusters`
+那种），箱线图分支自己那条 `if not rows: return {'error': 'Insufficient data'}` 会先命中
+—— 一份 42317 个细胞的健康数据被告知「数据不足」。**一个是报错，一个是安静地给错答案。**
+修之前两条都实测复现了（见下）。
+
+**为什么只有图表坏、表格一直是好的：`stats.py` 每一处取数都写了 `.astype(str)`**
+（:59 :163 :328 :571）。用户看到的正是「表格正常、图崩了」—— 这不是新缺陷，是 `plots.py`
+漏抄了同仓已有的那一层处理。
+
+### 修复
+
+`server/analysis/plots.py` 四处取数点补 `.astype(str)`，与 `stats.py` 同一个 idiom；代码评审
+又抓出**第五处**。但这几处**不是同一性质**，得分开记 —— 混成一张「修复表」会让后人以为
+每一处都修掉了一个崩溃：
+
+| 位置 | 函数 | 性质 |
+|---|---|---|
+| :74-78 | `_generate_plot` | **崩溃修复** —— 用户那句原话 |
+| :431-433 | `_generate_cell_ratio_plot` | **崩溃修复** —— 真数据实测 `'int' object has no attribute 'lower'` |
+| :664-666 | `_generate_umap_ratio_plots` | **崩溃修复** —— 同上 |
+| :271 | `_generate_celltype_composition` | **仅一致性** —— 本来就不崩，见下 |
+
+`:271` 那处要说清楚，免得后人以为它修了什么：该函数用的是 `sorted(set(ct_vals))`
+（:327，**没有** `str()` 包装），两侧同型，int64 也照样比得中 —— 真数据上修复前后都是
+OK。它只是让标签走同一个 idiom。本来想用「混型 object 列」给它造一个复现用例，
+实测 anndata **根本写不出**这种列（`TypeError: Can't implicitly convert non-string
+objects to strings`）—— 没有真实触发场景，所以它就该被记成一致性改动。
+
+**第五处：`_generate_marker_dotplot`。** 它把 `CellType` **原样**交给 scanpy
+（`groupby='CellType'`），数值列会被 scanpy **自动分箱**，刻度文字变成
+`Interval(0.286, 0.571, closed='right')`；紧接着按刻度文字回查细胞计数的 `.loc[...]`
+就 KeyError。机制与主因（空 mask）不同，但用户看到的是一回事：标签列是数字 → 图只剩
+一个错误。本数据集的 `CellType` 是 category，所以这一条目前是**潜在**缺陷（实测修复
+前后都 OK）；但把 CellType 存成整数编码的数据集很常见，故一并修掉。
+
+这里的修法**刻意与其它四处不同**：只在 `pd.api.types.is_numeric_dtype` 为真时才转。
+category/object 列原样交给 scanpy —— 因为 `astype(str)` 会把 category 降级成 object，
+scanpy 随即按字典序重排，白白改变现有数据集 y 轴的细胞类型顺序。
+
+另在 barplot 分支补 `if not agg_rows: return {'error': 'Insufficient data'}`，与 boxplot
+分支对齐，让「没有行」这件事说人话。（按修后的逻辑它已不可达 —— 纯防御，见下。）
+
+同类缺陷在 `server/analysis/expression.py` 里的形态**更隐蔽**：那里同样拿原始值比字符串
+标签，但不抛异常 —— `by_sample` / `by_celltype` / `by_sample_celltype` 三个列表**全空**，
+前端只是一片空白。改法与 plots.py 相同。
+
+### 验证
+
+新增 `server/tests/test_numeric_label_columns.py`（自包含，**10 组 / 27 断言**）。
+
+**每条用例都验过「修复前会红」** —— 这条是重点。把 `plots.py` + `expression.py` 一起
+回退，跑出来的不是「全绿」，是：
+
+```
+PASS 10 / FAIL 17
+✗ int64 Group + 柱状图 不得报错（实际: Could not interpret value `CellType` for `x`...）  ← 用户原话
+✗ int64 CellType + 箱线图 不得报错（实际: Insufficient data）                            ← 安静说「数据不足」
+✗ marker dotplot 不得报错（实际: [Interval(0.286, 0.571, closed='right'), ...]）          ← scanpy 自动分箱
+✗ umap ratio plots 不得报错（实际: 'int' object has no attribute 'lower'）
+✗ cell ratio plot 不得报错（实际: 'int' object has no attribute 'lower'）
+✗ by_celltype 不得为空 (实际 0 行)
+```
+
+10 组用例里 10 组都有红断言；唯一的对照组（字符串标签）按设计两侧都绿。
+修后 **PASS 27 / FAIL 0**。
+
+> 这一步不是走形式。上一版本有两个用例**怎么都不会红**：一条 `group_var` 传的是字符串列
+> （不是 int64 那一列），另一条根本没调用产品代码、只是把 `.astype(str)` 又应用了一遍
+> 然后断言 numpy 的语义。前者被改成传 `'Group'`，后者删掉换成了 marker dotplot。
+> 现在 `main()` 里加了一道自检：模块内定义的每个 `test_*` 都必须登记在 `TESTS` 里，
+> 否则直接判失败 —— 因为「用例写了但没登记」这次真的发生过，而 `npm run test:py`
+> 照样全绿。
+
+真数据端到端（40425564.STGD，直接调用函数，修复前/后对照）：
+
+| 调用 | 修复前 | 修复后 |
+|---|---|---|
+| `_generate_umap_ratio_plots(P, 'Group')` | ✗ `'int' object has no attribute 'lower'` | ✓ |
+| `_generate_cell_ratio_plot(P, 'Group')` | ✗ 同上 | ✓ |
+| `_generate_celltype_composition(P, 'EGFR')` | ✓ | ✓（仅一致性，符合上表） |
+| `_generate_marker_dotplot(P, …)` | ✓ | ✓（本数据集 CellType 是 category，属潜在） |
+
+注意 `_generate_umap_ratio_plots` 那行不是构造出来的：前端
+`src/api/analysis.ts:373` 的默认 `groupVar` 就是 `'Group'`，而本数据集的 Group 正是
+int64 —— 也就是说不修的话，UMAP 页的比例图是坏的。
+
+`npm run test:py` 23 文件全绿（原 22 + 新增 1）；`npx tsc --noEmit` exit 0。
+
+### 遗留（**未修**，别当成已解决）
+
+- **数值天数的排序是坏的** → **已修，见 B45。** `cond_sort_key` 按字典序排，
+  `40/90/150/200/260` 排成 `150, 200, 260, 40, 90`。修复前图根本画不出来，所以这
+  **不是回归**，是修完才**新暴露**的。当次刻意没动（是产品判断），同日经用户确认后
+  单独立为 B45 处理。
+- **缺失标签现在会变成一个 `'nan'` 类别。** 以前 NaN 因为「不等于任何字符串」被静默
+  丢掉，现在会被分组画出来。是丢还是画，没定；本仓数据集暂时都没有缺失 Group/CellType。
+- **`astype(str)` 对 float 列不给整数标签。** 注释里写的「给 '40' 而不是 '40.0'」只对
+  整数 dtype 成立 —— 列一旦是 float64（有一个 NaN、或经 R/CSV 往返就会），同样给 `'40.0'`。
+  已把注释改准，但没写防它。
+- **`cell_type_filter` 是死参数**：`expression.py:20` 签名叫这个名，函数体从不读它，
+  全仓无调用者。只在 docstring 里标了，没删（删签名会动调用方）。
+
+### 涉及文件
+
+`server/analysis/plots.py`、`server/analysis/expression.py`（同一个 idiom；另含 B44 的
+缓存键修复）、`server/tests/test_numeric_label_columns.py`（新增）
+
+### 关键教训
+
+- **空 DataFrame 的报错会指认错的对象。** `pd.DataFrame([])` 没有列，seaborn 只能说
+  「没有这一列」。见到「列不存在」时，先验证列在不在，**再验证行在不在** —— 这一条
+  能省下一整轮查列名的工夫。
+- **同一个根因会有不止一副面孔，也不止在一个文件里。** 这里是「报错的柱状图」「安静地
+  说数据不足的箱线图」「scanpy 自动分箱的 dotplot」与「返回空表的 expression stats」。
+  修完报错别急着收工。
+- **一个洞往往只在「漏抄的那一处」。** `stats.py` 全都 `.astype(str)`，`plots.py` 一处
+  都没有。先找「哪一份是好的」，比想「该怎么修」又快又稳 —— 修法就是抄回来。
+- **「改了四处」和「崩了四处」要分开记。** 四处里只有三处是真崩的，`:271` 那处在真数据上
+  本来就不崩（两侧同型）。把一致性改动混进「修复表」，下次有人照着它去判断风险就会判错。
+  **没有复现路径的改动，就该记成没有复现路径的改动。**
+- **用例定义了却没登记，等于没写。** 这次真发生过：三个用例写好没进 `main()` 的元组，
+  `npm run test:py` 照样全绿。现在 `main()` 会自检「每个 `test_*` 是否都已登记」。
+- **不会红的用例比没有用例更坏。** 一个「怎么改都绿」的用例会让人以为覆盖到了。判据很
+  简单：把生产代码改回去，它得红。这次就靠这条揪出两个假用例。
+
+---
+
+## B44. `_get_expression_stats` 缓存键漏了 `group_by`，换分组拿到上一组的结果 (2026-10-16)
+
+### 现象
+
+**无报错。** 先用 `group_by='Sample'` 请求一次，再用 `group_by='seurat_clusters'` 请求
+同一个文件 —— 第二次**返回的是第一次的结果**，页面上的分组方式换不过来。
+
+### 根因
+
+缓存键是 `(real_path, mtime, condition_col, genes)`，而 `by_sample` 是**按 `group_by`
+分组**算出来的。键里不带它，两次请求撞成同一个键，第二次直接命中第一次的缓存。
+
+B44 是修 B43 时代码评审顺带发现的 —— 它不属于「标签列不是字符串」那类，是缓存正确性问题，
+故单列一号。
+
+### 修复
+
+`server/analysis/expression.py`：把 `group_by` 加进缓存键。
+
+### 验证
+
+真数据（40425564.STGD），连续两次调用：
+
+```
+修复前  第 1 次 group_by=Sample -> ['A001-D150', 'A001-D200', 'A001-D260']
+        第 2 次 group_by=Group  -> ['A001-D150', 'A001-D200', 'A001-D260']   ← 拿到的是上一次的
+        第 2 次拿到的其实是第 1 次的？ True
+
+修复后  第 1 次 group_by=Sample -> ['A001-D150', 'A001-D200', 'A001-D260']
+        第 2 次 group_by=Group  -> ['150', '200', '260']                    ← 正确
+        第 2 次拿到的其实是第 1 次的？ False
+```
+
+### 涉及文件
+
+`server/analysis/expression.py`
+
+### 关键教训
+
+- **缓存键必须覆盖全部影响输出的入参。** 漏一个不会报错，只会安静地返回别人的结果 ——
+  比崩溃难查得多。写 `cache_key` 时对着函数体逐个参数过一遍。
+- 顺带一提：同一个函数里 `condition_col` 在键里、`group_by` 不在，说明键是被**逐个补**
+  出来的，不是照签名生成的。这类键值得定期对照签名复核。
+
+---
+
+## B45. 条件/分组标签按字典序排，天数被打乱 (2026-10-16)
+
+### 现象
+
+B43 把图修得能画出来之后，顺序暴露出来是**字典序**的：
+
+```
+150, 200, 260, 40, 90        ← 应为 40, 90, 150, 200, 260
+```
+
+这是 B43 修完才**新暴露**的，不是回归 —— 改前图根本画不出来。B43 当次刻意没动它
+（判断为产品问题），同日经用户确认后单独立为本条。
+
+### 根因
+
+`utils.cond_sort_key` 只做了「control 排最后 + 其余按字典序」，**从没看过数字**。
+
+而这条规则在仓库里被**手写了 8 遍**：`plots.py` 5 处内联 lambda、`stats.py` 2 处、
+`bulk.py` 1 处自带实现（`_group_sort_key`）。其中几处内联 lambda **连次级键都没有**：
+
+```python
+key=lambda c: 1 if any(k in c.lower() for k in ('control', 'normal', 'healthy')) else 0
+```
+
+并列项于是保持 `set(...)` 的迭代顺序 —— 也就是说，除了排序规则不对，**顺序本身
+还是不确定的**。
+
+### 修复
+
+收敛成 `utils.cond_sort_key` **一份**：数字按数值升序、非数字次之、control 最后。
+上面 8 处全部改为调用它，`bulk._group_sort_key` 只留一个薄壳（免得动它 3 个调用点）。
+
+**关键是 control 判定必须排在数字判定之前** —— 用户明确要求「control 排最后的逻辑
+不变」。`bulk.py` 的原实现是反过来的：先看数字再看 control，于是 `Control2` 这种名字
+会因为含数字被分进数字组、排到**最前**。现在它正确地排在最后。（这是相对
+`bulk._group_sort_key` 旧行为的一处**收紧**，对这个名字而言是修好了。）
+
+排序键返回 `(int, int, str)` 三段**同型**元组 —— 元组比较逐位来，位型不一致时 int 与
+str 相比会直接 TypeError，这是这类键最容易踩的坑。
+
+### 已知取舍（写进 docstring 了，不是没想到）
+
+- 取的是**第一段**连续数字：`1 month` / `6 months` / `12 months` 于是排对（1, 6, 12）；
+  但 `A001-D40` 得到的是 `001` 而不是 `40`，所以**以样本名做横轴的顺序修不到** ——
+  本数据集 Sample 轴仍是 `d150, d200, d260, d40, d90`。那是另一套代码。
+- `COVID19` 这类**含数字但不是序数**的名字会按 19 参与数值排序，排到无数字名字之前。
+  这是 `bulk.py` 原本就有的行为，沿用。
+
+### 验证
+
+新增 `server/tests/test_group_sort_order.py`（12 组 / 17 断言）。
+
+RED：把 `cond_sort_key` 回退成改造前 → `PASS 12 / FAIL 5`，五条失败正是数值序断言：
+
+```
+✗ 天数应按数值升序 (实际 ['150', '200', '260', '40', '90'])
+✗ 1..12 应按数值升序 (实际 ['1', '10', '11', '12', '2', '3']...)
+✗ 月数应按数值升序 (实际 ['1 month', '12 months', '6 months'])
+```
+
+修后 `PASS 17 / FAIL 0`。真数据（40425564.STGD）`Group` 排序实测：
+
+```
+旧（字典序）: ['150', '200', '260', '40', '90']
+新（数值序）: ['40', '90', '150', '200', '260']
+```
+
+接口实测（后端重启到新代码后）：
+
+```
+/api/marker-dotplot  groups   → ['40','90','150','200','260']   ← 前端下拉框
+/api/umap-ratio-plots pairwise → ['40_vs_90','40_vs_150','40_vs_200',...]
+```
+
+`marker-dotplot` 那处是**接完线复查时才发现的第 9 处**（第一轮只改了 8 处），已补上，
+并在 `test_numeric_label_columns.py` 里加了一条断言锁住它 —— 光靠肉眼比对接口返回，
+这一处很容易漏过去。
+
+`npm run test:py` 全绿；`npx tsc --noEmit` exit 0。
+
+### 冗余清理（同日复查，用户问「代码是否有冗余」）
+
+第一轮只做了「把 8 处替换成调用」，本次复查又清掉三类残留 —— 都属于**这次改动自己
+引入的**冗余，不是陈年旧账：
+
+1. **`_CONTROL_KEYS` 提出来了，却没人用。** 第一轮把它提成常量，注释还写着「排序与
+   取色共用同一套判定」—— 但 `build_cond_palette`（**同一个文件里**）和 `plots.py` 四处
+   取色判断仍各写各的字面量。**注释在撒谎。** 现补 `utils.is_control(name)`，5 处
+   （`utils.py:120`、`plots.py:507/559/722`，以及 `cond_sort_key` 自己）全部改为调用它，
+   注释现在才是真的。
+
+   测试里的 `_old_key` **刻意保留字面量** —— 它要复现的是改造前的行为，跟着一起改就
+   失去对照意义了。
+
+2. **对已经 `.astype(str)` 的数组再 `str(x)` 空包一层** —— `plots.py` 4 处、
+   `expression.py` 1 处。行为上无害，但**有害于阅读**：下一个人看到 `str(x)` 会以为这个
+   数组还是原始 numpy 值，而「数组到底是不是字符串」正是 B43 全部踩坑的根。已删。
+
+3. **第 10 处排序键，方向是反的 —— 刻意不动。** `plots.py:459` 的 `sort_key` 把 control
+   排**最前**（`(0 if is_control(...) else 1, s)`），与本仓其余 9 处「control 最后」相反，
+   也与它自己上方那行注释 `# Order samples: disease -> control` 对不上。本次只把字面量
+   换成 `is_control()`，**没有翻转方向** —— 那会挪动这张堆叠柱状图的 x 轴样本顺序，是
+   注释写错还是代码写错需要单独判断，不该由 B43/B45 顺手改掉。已在原处加注说明。
+
+   顺带订正：本文件初稿与测试 docstring 里都写过「手写了 11 遍」，那是把**取色**时判断
+   是否 control 的同类判断也算进去了。真正的**排序**规则是 **8 遍**，另 5 处只判断不
+   排序。数字已统一为 8。
+
+### 涉及文件
+
+`server/analysis/utils.py`、`server/analysis/plots.py`、`server/analysis/stats.py`、
+`server/analysis/bulk.py`、`server/analysis/expression.py`（第 2 类冗余清理）、
+`server/tests/test_group_sort_order.py`（新增）、
+`server/tests/test_numeric_label_columns.py`
+
+### 关键教训
+
+- **同一个规则手写 8 遍，就会有 8 个各不相同的行为。** 收敛成一份之后，「control 最后」
+  才第一次是**真的**处处成立 —— 之前它在 8 个地方各是各的（有的还没次级键）。
+- **没有次级键的排序是不确定的。** `key=lambda x: 0 if a else 1` 的并列项会退回输入
+  顺序，输入若是 `set` 则没有任何保障。任何排序键都该给一个能定序的末位（这里是原
+  字符串本身）。
+- **提出常量 ≠ 接线完成。** `_CONTROL_KEYS` 定义了、注释也声明「两边共用」，但真正
+  使用它的只有作者刚写的那一处 —— 其余副本原封不动。**「我抽了个常量」和「所有副本
+  都改过来了」是两件事**，后者要逐处 grep 才算数。同一条也适用于 B43 的「改了四处」
+  与「崩了四处」。（`grep -rn "'control', 'normal', 'healthy'"` 是最便宜的验收。）
+- **用户给的约束要变成一条测试。** 「control 保持不变」若只靠本次实现恰好满足，下次
+  重构就会悄悄破掉。`Control2` 那条用例就是把这个约束钉死的。
+- **改完要看接口返回的真实值，不要只看单测。** 单测全绿之后，`marker-dotplot` 的
+  `groups` 仍然是字典序 —— 那是第 9 处，单测覆盖不到它。真数据端到端是最后一道网。
+- **注释会过期，而且过期得比代码久。** `# Order samples: disease -> control` 下方就是
+  反向实现，`_CONTROL_KEYS` 上方就是「共用」的假声明 —— 两处都是复查看代码时顺带
+  发现的，没有任何测试会因此变红。核对注释与它**紧邻的那几行**，是读改代码时的固定
+  动作。
+
+---
+
+*后续新缺陷按 B46、B47... 追加。*
